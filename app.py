@@ -130,7 +130,42 @@ class UserAuthSystem:
                 profile_date TIMESTAMP
             )
         ''')
+        # Add new columns for enhanced profile features
+        try:
+            cursor.execute('ALTER TABLE users ADD COLUMN bio TEXT')
+            print("✓ Added bio column to users table")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e):
+                print(f"Bio column addition error: {e}")
         
+        try:
+            cursor.execute('ALTER TABLE users ADD COLUMN profile_photo_url TEXT')
+            print("✓ Added profile_photo_url column to users table")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e):
+                print(f"Profile photo URL column addition error: {e}")
+        
+        # Create profile privacy settings table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS profile_privacy (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                share_personality_scores BOOLEAN DEFAULT 1,
+                share_values_scores BOOLEAN DEFAULT 1,
+                share_lifestyle_info BOOLEAN DEFAULT 1,
+                share_social_preferences BOOLEAN DEFAULT 1,
+                share_contact_info BOOLEAN DEFAULT 1,
+                share_detailed_analysis BOOLEAN DEFAULT 1,
+                share_bio BOOLEAN DEFAULT 1,
+                share_photo BOOLEAN DEFAULT 1,
+                share_exact_location BOOLEAN DEFAULT 0,
+                share_age BOOLEAN DEFAULT 1,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (id),
+                UNIQUE(user_id)
+            )
+        ''')
+    
         # User profiles table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS user_profiles (
@@ -843,7 +878,7 @@ class EmailFollowupSystem:
             subject = f"How did your meetup with {other_user_name} go?"
             
             # Get the base URL for your app
-            base_url = os.environ.get('BASE_URL', 'http://localhost:8050')
+            base_url = os.environ.get('BASE_URL', 'http://localhost:8080')
             yes_url = f"{base_url}/followup-response/{token}/yes"
             no_url = f"{base_url}/followup-response/{token}/no"
             
@@ -1520,6 +1555,7 @@ def render_template_with_header(title: str, content: str, user_info: Dict = None
         user_nav = f'''
             <div class="user-info">
                 <span>{user_info.get('first_name', user_info.get('email', ''))}</span>
+                <a href="/edit-profile" class="btn btn-secondary" style="padding: 8px 16px; font-size: 14px;">✏️ Edit Profile</a>
                 <a href="/contact-requests" class="btn btn-secondary">Requests{notification_badge}</a>
                 <a href="/logout" class="btn btn-secondary">Logout</a>
             </div>
@@ -2063,6 +2099,374 @@ def onboarding_step(step):
         profile=existing_profile,
         is_last_step=(step == 10)
     )
+
+@app.route('/edit-profile', methods=['GET', 'POST'])
+@login_required
+def edit_profile():
+    """Enhanced profile editing with privacy controls"""
+    user_id = session['user_id']
+    user_info = user_auth.get_user_info(user_id)
+    
+    if request.method == 'POST':
+        # Handle form submission
+        try:
+            # Update basic user info
+            email = request.form.get('email', '').strip()
+            phone = request.form.get('phone', '').strip()
+            first_name = request.form.get('first_name', '').strip()
+            last_name = request.form.get('last_name', '').strip()
+            
+            # Update user table
+            conn = sqlite3.connect('users.db')
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE users 
+                SET email = ?, phone = ?, first_name = ?, last_name = ?
+                WHERE id = ?
+            ''', (email, phone, first_name, last_name, user_id))
+            
+            # Get existing profile data
+            existing_profile = user_auth.get_user_profile(user_id) or {}
+            
+            # Update profile data
+            existing_profile.update({
+                'bio': request.form.get('bio', '').strip(),
+                'location': request.form.get('location', '').strip(),
+                'postcode': request.form.get('postcode', '').strip(),
+                'profile_photo_url': request.form.get('profile_photo_url', '').strip(),
+                
+                # Privacy settings - what sections can be shared
+                'privacy_settings': {
+                    'share_personality_scores': 'share_personality_scores' in request.form,
+                    'share_values_scores': 'share_values_scores' in request.form,
+                    'share_lifestyle_info': 'share_lifestyle_info' in request.form,
+                    'share_social_preferences': 'share_social_preferences' in request.form,
+                    'share_contact_info': 'share_contact_info' in request.form,
+                    'share_detailed_analysis': 'share_detailed_analysis' in request.form,
+                    'share_bio': 'share_bio' in request.form,
+                    'share_photo': 'share_photo' in request.form,
+                    'share_exact_location': 'share_exact_location' in request.form,
+                    'share_age': 'share_age' in request.form
+                }
+            })
+            
+            # Save updated profile
+            user_auth.save_user_profile(user_id, existing_profile)
+            
+            conn.commit()
+            conn.close()
+            
+            flash('Profile updated successfully!', 'success')
+            return redirect('/edit-profile')
+            
+        except Exception as e:
+            print(f"Error updating profile: {e}")
+            flash('Error updating profile. Please try again.', 'error')
+    
+    # GET request - show edit form
+    existing_profile = user_auth.get_user_profile(user_id) or {}
+    privacy_settings = existing_profile.get('privacy_settings', {})
+    
+    content = f'''
+    <div class="container" style="max-width: 800px;">
+        <h1 style="font-size: 28px; text-align: center; margin-bottom: 32px;">Edit Your Profile</h1>
+        
+        <form method="POST" enctype="multipart/form-data">
+            <!-- Basic Information Section -->
+            <div style="background: #f8f9fa; border-radius: 8px; padding: 25px; margin-bottom: 30px; border-left: 4px solid #6c5ce7;">
+                <h3 style="margin-top: 0; color: #6c5ce7;">Basic Information</h3>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+                    <div>
+                        <label style="display: block; margin-bottom: 8px; font-weight: 500;">First Name</label>
+                        <input type="text" name="first_name" value="{user_info.get('first_name', '')}" required
+                               style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; background: white;">
+                    </div>
+                    <div>
+                        <label style="display: block; margin-bottom: 8px; font-weight: 500;">Last Name</label>
+                        <input type="text" name="last_name" value="{user_info.get('last_name', '')}" required
+                               style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; background: white;">
+                    </div>
+                </div>
+                
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; margin-bottom: 8px; font-weight: 500;">Email Address</label>
+                    <input type="email" name="email" value="{user_info.get('email', '')}" required
+                           style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; background: white;">
+                </div>
+                
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; margin-bottom: 8px; font-weight: 500;">Phone Number</label>
+                    <input type="tel" name="phone" value="{user_info.get('phone', '')}" required
+                           style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; background: white;">
+                    <div style="font-size: 12px; color: #666; margin-top: 4px;">Used for contact requests when matches want to connect</div>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px; margin-bottom: 20px;">
+                    <div>
+                        <label style="display: block; margin-bottom: 8px; font-weight: 500;">Location (City/Area)</label>
+                        <input type="text" name="location" value="{existing_profile.get('location', '')}" required
+                               style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; background: white;">
+                    </div>
+                    <div>
+                        <label style="display: block; margin-bottom: 8px; font-weight: 500;">Postcode</label>
+                        <input type="text" name="postcode" value="{existing_profile.get('postcode', '')}" required
+                               style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; background: white;">
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Bio Section -->
+            <div style="background: #f8f9fa; border-radius: 8px; padding: 25px; margin-bottom: 30px; border-left: 4px solid #28a745;">
+                <h3 style="margin-top: 0; color: #28a745;">About You</h3>
+                
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; margin-bottom: 8px; font-weight: 500;">Bio / Personal Description</label>
+                    <textarea name="bio" rows="4" placeholder="Tell potential matches about yourself, your interests, what you're looking for in a friendship..."
+                              style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; background: white; resize: vertical;">{existing_profile.get('bio', '')}</textarea>
+                    <div style="font-size: 12px; color: #666; margin-top: 4px;">This helps matches get to know you better before connecting</div>
+                </div>
+                
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; margin-bottom: 8px; font-weight: 500;">Profile Photo URL (Optional)</label>
+                    <input type="url" name="profile_photo_url" value="{existing_profile.get('profile_photo_url', '')}"
+                           placeholder="https://example.com/your-photo.jpg"
+                           style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; background: white;">
+                    <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                        Upload your photo to a service like Imgur, Google Drive (public), or use a social media photo URL
+                    </div>
+                    {render_photo_preview(existing_profile.get('profile_photo_url', ''))}
+                </div>
+            </div>
+            
+            <!-- Privacy Settings Section -->
+            <div style="background: #f8f9fa; border-radius: 8px; padding: 25px; margin-bottom: 30px; border-left: 4px solid #dc3545;">
+                <h3 style="margin-top: 0; color: #dc3545;">Privacy & Sharing Settings</h3>
+                <p style="margin-bottom: 20px; font-size: 14px; color: #666;">
+                    Control what information is visible to your matches. Unchecked items will be hidden from other users.
+                </p>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                    <div style="background: white; padding: 15px; border-radius: 6px; border: 1px solid #ddd;">
+                        <h4 style="margin-top: 0; margin-bottom: 15px; color: #333; font-size: 16px;">Profile Information</h4>
+                        {render_privacy_checkbox('share_bio', 'Share bio/description', privacy_settings)}
+                        {render_privacy_checkbox('share_photo', 'Share profile photo', privacy_settings)}
+                        {render_privacy_checkbox('share_age', 'Share exact age', privacy_settings)}
+                        {render_privacy_checkbox('share_exact_location', 'Share exact location/postcode', privacy_settings)}
+                        {render_privacy_checkbox('share_contact_info', 'Allow contact info sharing', privacy_settings)}
+                    </div>
+                    
+                    <div style="background: white; padding: 15px; border-radius: 6px; border: 1px solid #ddd;">
+                        <h4 style="margin-top: 0; margin-bottom: 15px; color: #333; font-size: 16px;">Compatibility Details</h4>
+                        {render_privacy_checkbox('share_personality_scores', 'Share personality compatibility scores', privacy_settings)}
+                        {render_privacy_checkbox('share_values_scores', 'Share values alignment scores', privacy_settings)}
+                        {render_privacy_checkbox('share_lifestyle_info', 'Share lifestyle preferences', privacy_settings)}
+                        {render_privacy_checkbox('share_social_preferences', 'Share social preferences', privacy_settings)}
+                        {render_privacy_checkbox('share_detailed_analysis', 'Share detailed AI analysis', privacy_settings)}
+                    </div>
+                </div>
+                
+                <div style="background: #fff3cd; padding: 15px; border-radius: 6px; margin-top: 20px; border: 1px solid #ffeaa7;">
+                    <strong>Privacy Note:</strong> Your overall compatibility score and basic matching will always work regardless of these settings. 
+                    These controls only affect what additional details matches can see about you.
+                </div>
+            </div>
+            
+            <!-- Action Buttons -->
+            <div style="display: flex; gap: 15px; justify-content: center; margin-top: 40px;">
+                <a href="/dashboard" class="btn btn-secondary" style="padding: 16px 32px;">Cancel</a>
+                <button type="submit" class="btn btn-primary" style="padding: 16px 32px; font-size: 16px;">
+                    Save Changes
+                </button>
+            </div>
+        </form>
+        
+        <!-- Re-run Matching Section -->
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 25px; border-radius: 8px; margin-top: 40px; text-align: center;">
+            <h3 style="margin-top: 0; color: white;">Want New Matches?</h3>
+            <p style="margin-bottom: 20px; opacity: 0.9;">
+                If you've made significant changes to your profile, you can re-run the AI matching system to find new compatible users.
+            </p>
+            <a href="/rematch" class="btn" style="background: white; color: #667eea; padding: 12px 24px; font-weight: 600; text-decoration: none; border-radius: 6px;">
+                🔄 Find New Matches
+            </a>
+        </div>
+    </div>
+    
+    <script>
+        // Photo preview functionality
+        function updatePhotoPreview() {{
+            const url = document.querySelector('input[name="profile_photo_url"]').value;
+            const preview = document.getElementById('photo-preview');
+            
+            if (url && url.match(/\.(jpeg|jpg|gif|png|webp)$/i)) {{
+                preview.innerHTML = `
+                    <div style="margin-top: 10px;">
+                        <div style="font-size: 12px; color: #666; margin-bottom: 5px;">Preview:</div>
+                        <img src="${{url}}" style="width: 100px; height: 100px; object-fit: cover; border-radius: 8px; border: 2px solid #ddd;" 
+                             onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                        <div style="display: none; padding: 10px; background: #f8d7da; color: #721c24; border-radius: 4px; font-size: 12px;">
+                            Could not load image. Please check the URL.
+                        </div>
+                    </div>
+                `;
+            }} else if (url) {{
+                preview.innerHTML = `
+                    <div style="margin-top: 10px; padding: 8px; background: #fff3cd; color: #856404; border-radius: 4px; font-size: 12px;">
+                        Please enter a direct image URL (ending in .jpg, .png, etc.)
+                    </div>
+                `;
+            }} else {{
+                preview.innerHTML = '';
+            }}
+        }}
+        
+        // Add event listener to photo URL input
+        document.querySelector('input[name="profile_photo_url"]').addEventListener('input', updatePhotoPreview);
+        
+        // Initial preview load
+        updatePhotoPreview();
+    </script>
+    '''
+    
+    return render_template_with_header("Edit Profile", content, user_info)
+
+def render_privacy_checkbox(name: str, label: str, privacy_settings: dict, default: bool = True) -> str:
+    """Render a privacy setting checkbox"""
+    checked = 'checked' if privacy_settings.get(name, default) else ''
+    return f'''
+    <div style="display: flex; align-items: center; margin-bottom: 10px;">
+        <input type="checkbox" name="{name}" {checked} 
+               style="margin-right: 8px; transform: scale(1.2);">
+        <label style="margin: 0; font-size: 14px; cursor: pointer; flex: 1;">{label}</label>
+    </div>
+    '''
+
+def render_photo_preview(photo_url: str) -> str:
+    """Render photo preview if URL exists"""
+    if photo_url and photo_url.strip():
+        return f'''
+        <div id="photo-preview" style="margin-top: 10px;">
+            <div style="font-size: 12px; color: #666; margin-bottom: 5px;">Current photo:</div>
+            <img src="{photo_url}" style="width: 100px; height: 100px; object-fit: cover; border-radius: 8px; border: 2px solid #ddd;" 
+                 onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+            <div style="display: none; padding: 10px; background: #f8d7da; color: #721c24; border-radius: 4px; font-size: 12px;">
+                Could not load current image.
+            </div>
+        </div>
+        '''
+    else:
+        return '<div id="photo-preview"></div>'
+
+@app.route('/rematch')
+@login_required
+def rematch():
+    """Re-run matching for user with updated profile"""
+    user_id = session['user_id']
+    
+    # Start background matching
+    thread = threading.Thread(target=process_matching_background_enhanced, args=(user_id,))
+    thread.daemon = True
+    thread.start()
+    
+    flash('Finding new matches based on your updated profile...', 'success')
+    return redirect('/processing')
+
+# Also update the dashboard to show profile photo and respect privacy settings
+def render_enhanced_match_card(match: Dict, index: int) -> str:
+    """Enhanced match card that respects privacy settings"""
+    privacy = match.get('privacy_settings', {})
+    
+    # Get match's profile data
+    match_profile = {}
+    try:
+        conn = sqlite3.connect('users.db')
+        cursor = conn.cursor()
+        cursor.execute('SELECT profile_data FROM user_profiles WHERE user_id = ?', (match['matched_user_id'],))
+        result = cursor.fetchone()
+        if result:
+            match_profile = json.loads(result[0])
+        conn.close()
+    except:
+        pass
+    
+    privacy_settings = match_profile.get('privacy_settings', {})
+    
+    # Profile photo or initials
+    if privacy_settings.get('share_photo', True) and match_profile.get('profile_photo_url'):
+        profile_image = f'''
+            <img src="{match_profile['profile_photo_url']}" 
+                 style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 3px solid #6c5ce7;"
+                 onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+            <div style="display: none; width: 80px; height: 80px; border-radius: 50%; background: linear-gradient(135deg, #6c5ce7, #a29bfe); display: flex; align-items: center; justify-content: center; color: white; font-size: 32px; font-weight: 600;">
+                {get_initials(match['matched_user_name'])}
+            </div>
+        '''
+    else:
+        profile_image = f'''
+            <div style="width: 80px; height: 80px; border-radius: 50%; background: linear-gradient(135deg, #6c5ce7, #a29bfe); display: flex; align-items: center; justify-content: center; color: white; font-size: 32px; font-weight: 600;">
+                {get_initials(match['matched_user_name'])}
+            </div>
+        '''
+    
+    # Bio section
+    bio_section = ""
+    if privacy_settings.get('share_bio', True) and match_profile.get('bio'):
+        bio_section = f'''
+            <div style="background: white; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #28a745;">
+                <div style="font-size: 14px; color: #666; margin-bottom: 5px;">About {match['matched_user_name'].split()[0]}:</div>
+                <div style="color: #333; line-height: 1.5;">{match_profile['bio']}</div>
+            </div>
+        '''
+    
+    # Detailed scores (respect privacy)
+    detailed_scores = ""
+    if privacy_settings.get('share_personality_scores', True):
+        detailed_scores = f'''
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin: 15px 0;">
+                <div style="text-align: center; background: white; padding: 15px; border-radius: 8px;">
+                    <div style="font-size: 11px; color: #666; text-transform: uppercase; margin-bottom: 5px;">Personality</div>
+                    <div style="font-size: 20px; font-weight: bold; color: #6c5ce7;">{match['personality_score']}</div>
+                </div>
+                <div style="text-align: center; background: white; padding: 15px; border-radius: 8px;">
+                    <div style="font-size: 11px; color: #666; text-transform: uppercase; margin-bottom: 5px;">Values</div>
+                    <div style="font-size: 20px; font-weight: bold; color: #28a745;">{match['values_score']}</div>
+                </div>
+                <div style="text-align: center; background: white; padding: 15px; border-radius: 8px;">
+                    <div style="font-size: 11px; color: #666; text-transform: uppercase; margin-bottom: 5px;">Lifestyle</div>
+                    <div style="font-size: 20px; font-weight: bold; color: #17a2b8;">{match['lifestyle_score']}</div>
+                </div>
+            </div>
+        '''
+    
+    return f'''
+        <div style="background: #f8f9fa; border-radius: 15px; padding: 30px; margin: 25px 0; border-left: 5px solid #6c5ce7;">
+            <div style="display: flex; align-items: center; margin-bottom: 20px; gap: 20px;">
+                {profile_image}
+                <div>
+                    <div style="font-size: 24px; font-weight: bold; margin-bottom: 5px;">{match['matched_user_name']}</div>
+                    <div style="font-size: 14px; color: #666;">Compatibility Score: {match['overall_score']}%</div>
+                </div>
+            </div>
+            
+            {bio_section}
+            {detailed_scores}
+            
+            <div style="text-align: center; margin-top: 20px;">
+                <a href="/send-contact-request/{match['matched_user_id']}" 
+                   style="background: #6c5ce7; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 500;">
+                   📞 Request Contact
+                </a>
+            </div>
+        </div>
+    '''
+
+def get_initials(name: str) -> str:
+    """Get initials from name"""
+    parts = name.split()
+    if len(parts) >= 2:
+        return parts[0][0] + parts[-1][0]
+    return parts[0][0] if parts else "?"
 
 def render_onboarding_template(step, total_steps, step_title, step_description, step_content, profile, is_last_step):
     """Render onboarding template with navigation"""
@@ -3399,7 +3803,7 @@ if __name__ == '__main__':
     print("\n" + "="*60)
     print("💜 USER MATCHING PLATFORM")
     print("="*60)
-    print("🌐 URL: http://localhost:8050")
+    print("🌐 URL: http://localhost:8080")
     print("📝 Features: User profiles + AI matching + Block lists")
     print("🔒 Security: Full authentication + privacy controls")
     print("📊 Database: users.db")
@@ -3407,5 +3811,5 @@ if __name__ == '__main__':
     print("="*60 + "\n")
     
     # Run the app
-    port = int(os.environ.get('PORT', 8050))
+    port = int(os.environ.get('PORT', 8080))
     app.run(host='0.0.0.0', port=port, debug=True)
