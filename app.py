@@ -1802,7 +1802,8 @@ def dashboard():
         matches = user_auth.get_user_matches(user_id)
         
         # Track dashboard view
-        interaction_tracker.track_profile_view(user_id, None, 0)
+        if interaction_tracker:
+            interaction_tracker.track_profile_view(user_id, None, 0)
         
         if matches:
             # Show matches
