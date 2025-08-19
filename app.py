@@ -1,3 +1,13 @@
+import os
+import warnings
+# Fix for macOS TensorFlow threading issues
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
+os.environ['OMP_NUM_THREADS'] = '1'
+os.environ['MKL_NUM_THREADS'] = '1'
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+os.environ['CUDA_VISIBLE_DEVICES'] = ''
+
+
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -18,14 +28,7 @@ import re
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
-import os
-import warnings
 
-# Fix for macOS TensorFlow threading issues
-os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
-os.environ['OMP_NUM_THREADS'] = '1'
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
 # Suppress protobuf warnings
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -1427,7 +1430,7 @@ def process_matching_background(user_id: int):
         processing_status[user_id]['progress'] = 25
         
         # Run matching against all other users
-        matches = matching_system.run_matching(user_id)
+        matches = enhanced_matching_system.run_matching(user_id)
         processing_status[user_id]['progress'] = 75
         
         print(f"✓ Found {len(matches)} matches")
@@ -2287,9 +2290,7 @@ def edit_profile():
             <p style="margin-bottom: 20px; opacity: 0.9;">
                 If you've made significant changes to your profile, you can re-run the AI matching system to find new compatible users.
             </p>
-            <a href="/rematch" class="btn" style="background: white; color: #667eea; padding: 12px 24px; font-weight: 600; text-decoration: none; border-radius: 6px;">
-                🔄 Find New Matches
-            </a>
+            
         </div>
     </div>
     
@@ -2299,7 +2300,7 @@ def edit_profile():
             const url = document.querySelector('input[name="profile_photo_url"]').value;
             const preview = document.getElementById('photo-preview');
             
-            if (url && url.match(/\.(jpeg|jpg|gif|png|webp)$/i)) {{
+            if (url ) {{
                 preview.innerHTML = `
                     <div style="margin-top: 10px;">
                         <div style="font-size: 12px; color: #666; margin-bottom: 5px;">Preview:</div>
@@ -2358,19 +2359,7 @@ def render_photo_preview(photo_url: str) -> str:
     else:
         return '<div id="photo-preview"></div>'
 
-@app.route('/rematch')
-@login_required
-def rematch():
-    """Re-run matching for user with updated profile"""
-    user_id = session['user_id']
-    
-    # Start background matching
-    thread = threading.Thread(target=process_matching_background_enhanced, args=(user_id,))
-    thread.daemon = True
-    thread.start()
-    
-    flash('Finding new matches based on your updated profile...', 'success')
-    return redirect('/processing')
+
 
 # Also update the dashboard to show profile photo and respect privacy settings
 def render_enhanced_match_card(match: Dict, index: int) -> str:
@@ -3018,7 +3007,7 @@ def complete_onboarding_enhanced():
                 user_auth.add_blocked_user(user_id, blocked_phone=phone)
         
         # Start enhanced background matching
-        thread = threading.Thread(target=process_matching_background_enhanced, args=(user_id,))
+        thread = threading.Thread(target=process_matching_background, args=(user_id,))
         thread.daemon = True
         thread.start()
         
