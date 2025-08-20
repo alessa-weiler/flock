@@ -29,6 +29,13 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 
+import secrets
+from datetime import datetime, timedelta
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from urllib.parse import quote
+
 
 # Suppress protobuf warnings
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -249,7 +256,17 @@ class UserAuthSystem:
             )
         ''')
 
-
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                token TEXT UNIQUE NOT NULL,
+                expires_at TIMESTAMP NOT NULL,
+                used BOOLEAN DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (id)
+            )
+        ''')
         conn.commit()
         conn.close()
         print("✓ User authentication database initialized")
@@ -724,6 +741,211 @@ class UserAuthSystem:
             return result[0] if result else None
         except Exception as e:
             return None
+
+    def create_password_reset_token(self, email: str) -> Dict[str, Any]:
+        """Create a password reset token for a user"""
+        try:
+            conn = sqlite3.connect('users.db')
+            cursor = conn.cursor()
+            
+            # Check if user exists
+            cursor.execute('SELECT id, first_name FROM users WHERE email = ? AND is_active = 1', (email,))
+            user = cursor.fetchone()
+            
+            if not user:
+                conn.close()
+                # Don't reveal if email exists or not for security
+                return {'success': True, 'message': 'If this email exists, a reset link has been sent'}
+            
+            user_id, first_name = user
+            
+            # Generate secure token
+            token = secrets.token_urlsafe(32)
+            expires_at = datetime.now() + timedelta(hours=1)  # Token expires in 1 hour
+            
+            # Store token in database
+            cursor.execute('''
+                INSERT INTO password_reset_tokens (user_id, token, expires_at)
+                VALUES (?, ?, ?)
+            ''', (user_id, token, expires_at))
+            
+            conn.commit()
+            conn.close()
+            
+            # Send reset email
+            self.send_password_reset_email(email, first_name, token)
+            
+            return {'success': True, 'message': 'If this email exists, a reset link has been sent'}
+            
+        except Exception as e:
+            print(f"Error creating password reset token: {e}")
+            return {'success': False, 'error': 'Failed to process reset request'}
+
+    def send_password_reset_email(self, to_email: str, first_name: str, token: str):
+        """Send password reset email"""
+        try:
+            base_url = os.environ.get('BASE_URL', 'http://localhost:8080')
+            reset_url = f"{base_url}/reset-password/{token}"
+            
+            subject = "Reset Your Connect Password"
+            
+            html_content = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <style>
+                    body {{ font-family: 'Inter', sans-serif; line-height: 1.6; color: #333; }}
+                    .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                    .header {{ background: linear-gradient(135deg, #6c5ce7, #a29bfe); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }}
+                    .content {{ background: white; padding: 30px; border: 1px solid #ddd; }}
+                    .button {{ display: inline-block; padding: 15px 30px; margin: 10px; text-decoration: none; border-radius: 6px; font-weight: bold; text-align: center; background: #6c5ce7; color: white; }}
+                    .footer {{ background: #f8f9fa; padding: 20px; text-align: center; font-size: 12px; color: #666; border-radius: 0 0 8px 8px; }}
+                    .warning {{ background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 6px; margin: 20px 0; color: #856404; }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <h1 style="margin: 0; font-size: 24px;">Password Reset</h1>
+                        <p style="margin: 10px 0 0 0; opacity: 0.9;">Reset your Connect password</p>
+                    </div>
+                    
+                    <div class="content">
+                        <h2>Hi {first_name}!</h2>
+                        
+                        <p>We received a request to reset your password for your Connect account. If you didn't make this request, you can safely ignore this email.</p>
+                        
+                        <div style="text-align: center; margin: 30px 0;">
+                            <a href="{reset_url}" class="button">Reset My Password</a>
+                        </div>
+                        
+                        <div class="warning">
+                            <strong>Security Note:</strong> This link will expire in 1 hour and can only be used once. If you need a new reset link, please request another one from the login page.
+                        </div>
+                        
+                        <p>If the button doesn't work, copy and paste this link into your browser:</p>
+                        <p style="word-break: break-all; font-family: monospace; background: #f8f9fa; padding: 10px; border-radius: 4px;">{reset_url}</p>
+                        
+                        <p>Best regards,<br>The Connect Team</p>
+                    </div>
+                    
+                    <div class="footer">
+                        <p>This email was sent because a password reset was requested for your Connect account.</p>
+                        <p>If you have any questions, please contact us at support@connect.com</p>
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
+            
+            # Send the email
+            msg = MIMEMultipart('alternative')
+            msg['Subject'] = subject
+            msg['From'] = EMAIL_FROM
+            msg['To'] = to_email
+            
+            html_part = MIMEText(html_content, 'html')
+            msg.attach(html_part)
+            
+            with smtplib.SMTP(EMAIL_HOST, EMAIL_PORT) as server:
+                server.starttls()
+                server.login(EMAIL_USER, EMAIL_PASSWORD)
+                server.send_message(msg)
+                
+            print(f"✓ Password reset email sent to {to_email}")
+            
+        except Exception as e:
+            print(f"Error sending password reset email to {to_email}: {e}")
+
+    def validate_reset_token(self, token: str) -> Dict[str, Any]:
+        """Validate a password reset token"""
+        try:
+            conn = sqlite3.connect('users.db')
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                SELECT prt.user_id, prt.expires_at, prt.used, u.email, u.first_name
+                FROM password_reset_tokens prt
+                JOIN users u ON prt.user_id = u.id
+                WHERE prt.token = ?
+            ''', (token,))
+            
+            result = cursor.fetchone()
+            conn.close()
+            
+            if not result:
+                return {'valid': False, 'error': 'Invalid reset token'}
+            
+            user_id, expires_at, used, email, first_name = result
+            
+            # Check if token is used
+            if used:
+                return {'valid': False, 'error': 'This reset link has already been used'}
+            
+            # Check if token is expired
+            expires_datetime = datetime.strptime(expires_at, '%Y-%m-%d %H:%M:%S')
+            if datetime.now() > expires_datetime:
+                return {'valid': False, 'error': 'This reset link has expired. Please request a new one.'}
+            
+            return {
+                'valid': True,
+                'user_id': user_id,
+                'email': email,
+                'first_name': first_name
+            }
+            
+        except Exception as e:
+            print(f"Error validating reset token: {e}")
+            return {'valid': False, 'error': 'Invalid reset token'}
+
+    def reset_password_with_token(self, token: str, new_password: str) -> Dict[str, Any]:
+        """Reset password using a valid token"""
+        try:
+            # First validate the token
+            validation = self.validate_reset_token(token)
+            if not validation['valid']:
+                return {'success': False, 'error': validation['error']}
+            
+            user_id = validation['user_id']
+            
+            conn = sqlite3.connect('users.db')
+            cursor = conn.cursor()
+            
+            # Update password
+            password_hash = generate_password_hash(new_password)
+            cursor.execute('UPDATE users SET password_hash = ? WHERE id = ?', (password_hash, user_id))
+            
+            # Mark token as used
+            cursor.execute('UPDATE password_reset_tokens SET used = 1 WHERE token = ?', (token,))
+            
+            conn.commit()
+            conn.close()
+            
+            return {'success': True, 'message': 'Password reset successfully'}
+            
+        except Exception as e:
+            print(f"Error resetting password: {e}")
+            return {'success': False, 'error': 'Failed to reset password'}
+
+    def cleanup_expired_tokens(self):
+        """Clean up expired password reset tokens (call this periodically)"""
+        try:
+            conn = sqlite3.connect('users.db')
+            cursor = conn.cursor()
+            
+            cursor.execute('DELETE FROM password_reset_tokens WHERE expires_at < ?', (datetime.now(),))
+            deleted_count = cursor.rowcount
+            
+            conn.commit()
+            conn.close()
+            
+            if deleted_count > 0:
+                print(f"✓ Cleaned up {deleted_count} expired password reset tokens")
+            
+        except Exception as e:
+            print(f"Error cleaning up expired tokens: {e}")
+
 
 # ============================================================================
 # EMAIL FOLLOW-UP SYSTEM
@@ -1767,7 +1989,9 @@ def user_login():
                 Login
             </button>
         </form>
-        
+        <div style="text-align: center; margin-top: 20px; font-size: 14px;">
+            <a href="/forgot-password" style="color: #6c5ce7; text-decoration: none;">Forgot your password?</a>
+        </div>
         <div style="text-align: center; margin-top: 20px; font-size: 14px;">
             Don't have an account? <a href="/register" style="color: #6c5ce7; text-decoration: none;">Create one here</a>
         </div>
@@ -1782,6 +2006,159 @@ def logout():
     session.clear()
     flash('You have been logged out successfully', 'success')
     return redirect('/')
+
+@app.route('/forgot-password', methods=['GET', 'POST'])
+def forgot_password():
+    """Forgot password form and processing"""
+    if request.method == 'POST':
+        email = request.form.get('email', '').strip().lower()
+        
+        if not email:
+            flash('Email address is required', 'error')
+        else:
+            result = user_auth.create_password_reset_token(email)
+            # Always show success message for security (don't reveal if email exists)
+            flash('If this email address exists in our system, you will receive a password reset link shortly.', 'success')
+            return redirect('/forgot-password')
+    
+    # Show forgot password form
+    content = '''
+    <div class="container" style="max-width: 400px;">
+        <h1 style="font-size: 28px; text-align: center; margin-bottom: 32px;">Reset Your Password</h1>
+        
+        <div style="background: #e8f4fd; border-radius: 6px; padding: 16px; margin: 24px 0; font-size: 14px; color: #333;">
+            <strong>Forgot your password?</strong><br>
+            Enter your email address and we'll send you a link to reset your password.
+        </div>
+        
+        <form method="POST">
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 8px; font-weight: 500;">Email Address</label>
+                <input type="email" name="email" required style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px;" placeholder="Enter your email address">
+            </div>
+            
+            <button type="submit" class="btn btn-primary" style="width: 100%; padding: 16px; font-size: 16px; margin-top: 10px;">
+                Send Reset Link
+            </button>
+        </form>
+        
+        <div style="text-align: center; margin-top: 20px; font-size: 14px;">
+            Remember your password? <a href="/login" style="color: #6c5ce7; text-decoration: none;">Login here</a>
+        </div>
+        
+        <div style="text-align: center; margin-top: 10px; font-size: 14px;">
+            Don't have an account? <a href="/register" style="color: #6c5ce7; text-decoration: none;">Create one here</a>
+        </div>
+    </div>
+    '''
+    
+    return render_template_with_header("Reset Password", content)
+
+@app.route('/reset-password/<token>', methods=['GET', 'POST'])
+def reset_password(token):
+    """Password reset form and processing"""
+    # Validate token first
+    validation = user_auth.validate_reset_token(token)
+    
+    if not validation['valid']:
+        content = f'''
+        <div class="container" style="max-width: 400px; text-align: center;">
+            <div style="font-size: 64px; margin-bottom: 20px;">❌</div>
+            <h1 style="color: #dc3545; font-size: 24px; margin-bottom: 16px;">Invalid Reset Link</h1>
+            <div style="font-size: 16px; color: #666; margin-bottom: 30px;">{validation['error']}</div>
+            
+            <div style="background: #f8d7da; border: 1px solid #f5c6cb; padding: 15px; border-radius: 6px; margin: 20px 0; color: #721c24;">
+                <strong>What can you do?</strong><br>
+                • Request a new password reset link<br>
+                • Check that you're using the latest email<br>
+                • Make sure you haven't already used this link
+            </div>
+            
+            <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 30px;">
+                <a href="/forgot-password" class="btn btn-primary">Request New Reset Link</a>
+                <a href="/login" class="btn btn-secondary">Back to Login</a>
+            </div>
+        </div>
+        '''
+        return render_template_with_header("Invalid Reset Link", content)
+    
+    if request.method == 'POST':
+        new_password = request.form.get('new_password', '')
+        confirm_password = request.form.get('confirm_password', '')
+        
+        # Validation
+        if not new_password or not confirm_password:
+            flash('Both password fields are required', 'error')
+        elif new_password != confirm_password:
+            flash('Passwords do not match', 'error')
+        elif len(new_password) < 6:
+            flash('Password must be at least 6 characters long', 'error')
+        else:
+            result = user_auth.reset_password_with_token(token, new_password)
+            
+            if result['success']:
+                content = '''
+                <div class="container" style="max-width: 400px; text-align: center;">
+                    <div style="font-size: 64px; margin-bottom: 20px;">✅</div>
+                    <h1 style="color: #28a745; font-size: 24px; margin-bottom: 16px;">Password Reset Successful!</h1>
+                    <div style="font-size: 16px; color: #666; margin-bottom: 30px;">Your password has been successfully updated.</div>
+                    
+                    <div style="background: #d4edda; border: 1px solid #c3e6cb; padding: 15px; border-radius: 6px; margin: 20px 0; color: #155724;">
+                        <strong>Security Note:</strong> Your password has been changed. If you didn't make this change, please contact support immediately.
+                    </div>
+                    
+                    <a href="/login" class="btn btn-primary" style="padding: 16px 32px; font-size: 16px;">
+                        Login with New Password
+                    </a>
+                </div>
+                '''
+                return render_template_with_header("Password Reset Complete", content)
+            else:
+                flash(result['error'], 'error')
+    
+    # Show password reset form
+    content = f'''
+    <div class="container" style="max-width: 400px;">
+        <h1 style="font-size: 28px; text-align: center; margin-bottom: 32px;">Set New Password</h1>
+        
+        <div style="background: #d4edda; border: 1px solid #c3e6cb; padding: 15px; border-radius: 6px; margin: 20px 0; color: #155724; text-align: center;">
+            <strong>Reset password for:</strong><br>
+            {validation['first_name']} ({validation['email']})
+        </div>
+        
+        <form method="POST">
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 8px; font-weight: 500;">New Password</label>
+                <input type="password" name="new_password" required minlength="6" 
+                       style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px;" 
+                       placeholder="Enter your new password">
+            </div>
+            
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 8px; font-weight: 500;">Confirm New Password</label>
+                <input type="password" name="confirm_password" required minlength="6" 
+                       style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px;" 
+                       placeholder="Confirm your new password">
+            </div>
+            
+            <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 12px; border-radius: 6px; margin: 20px 0; color: #856404; font-size: 14px;">
+                <strong>Password Requirements:</strong><br>
+                • At least 6 characters long<br>
+                • Choose something secure and unique
+            </div>
+            
+            <button type="submit" class="btn btn-primary" style="width: 100%; padding: 16px; font-size: 16px; margin-top: 10px;">
+                Update Password
+            </button>
+        </form>
+        
+        <div style="text-align: center; margin-top: 20px; font-size: 14px;">
+            <a href="/login" style="color: #6c5ce7; text-decoration: none;">Back to Login</a>
+        </div>
+    </div>
+    '''
+    
+    return render_template_with_header("Set New Password", content)
 
 # ============================================================================
 # ROUTES - DASHBOARD & MATCHING
@@ -2243,38 +2620,6 @@ def edit_profile():
                 </div>
             </div>
             
-            <!-- Privacy Settings Section -->
-            <div style="background: #f8f9fa; border-radius: 8px; padding: 25px; margin-bottom: 30px; border-left: 4px solid #dc3545;">
-                <h3 style="margin-top: 0; color: #dc3545;">Privacy & Sharing Settings</h3>
-                <p style="margin-bottom: 20px; font-size: 14px; color: #666;">
-                    Control what information is visible to your matches. Unchecked items will be hidden from other users.
-                </p>
-                
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-                    <div style="background: white; padding: 15px; border-radius: 6px; border: 1px solid #ddd;">
-                        <h4 style="margin-top: 0; margin-bottom: 15px; color: #333; font-size: 16px;">Profile Information</h4>
-                        {render_privacy_checkbox('share_bio', 'Share bio/description', privacy_settings)}
-                        {render_privacy_checkbox('share_photo', 'Share profile photo', privacy_settings)}
-                        {render_privacy_checkbox('share_age', 'Share exact age', privacy_settings)}
-                        {render_privacy_checkbox('share_exact_location', 'Share exact location/postcode', privacy_settings)}
-                        {render_privacy_checkbox('share_contact_info', 'Allow contact info sharing', privacy_settings)}
-                    </div>
-                    
-                    <div style="background: white; padding: 15px; border-radius: 6px; border: 1px solid #ddd;">
-                        <h4 style="margin-top: 0; margin-bottom: 15px; color: #333; font-size: 16px;">Compatibility Details</h4>
-                        {render_privacy_checkbox('share_personality_scores', 'Share personality compatibility scores', privacy_settings)}
-                        {render_privacy_checkbox('share_values_scores', 'Share values alignment scores', privacy_settings)}
-                        {render_privacy_checkbox('share_lifestyle_info', 'Share lifestyle preferences', privacy_settings)}
-                        {render_privacy_checkbox('share_social_preferences', 'Share social preferences', privacy_settings)}
-                        {render_privacy_checkbox('share_detailed_analysis', 'Share detailed AI analysis', privacy_settings)}
-                    </div>
-                </div>
-                
-                <div style="background: #fff3cd; padding: 15px; border-radius: 6px; margin-top: 20px; border: 1px solid #ffeaa7;">
-                    <strong>Privacy Note:</strong> Your overall compatibility score and basic matching will always work regardless of these settings. 
-                    These controls only affect what additional details matches can see about you.
-                </div>
-            </div>
             
             <!-- Action Buttons -->
             <div style="display: flex; gap: 15px; justify-content: center; margin-top: 40px;">
