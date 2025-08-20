@@ -20,6 +20,8 @@ python-dotenv==1.0.0
 # HTTP Requests
 requests==2.31.0
 
+#gunicorn
+gunicorn==21.2.0
 # Email Support (built-in libraries, no requirements needed for smtplib, email)
 
 # Database (SQLite3 is built-in to Python)
