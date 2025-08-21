@@ -4238,7 +4238,7 @@ if __name__ == '__main__':
     print("\n" + "="*60)
     print("💜 USER MATCHING PLATFORM")
     print("="*60)
-    print("🌐 URL: http://localhost:8080")
+    print("🌐 URL: http://localhost:8050")
     print("📝 Features: User profiles + AI matching + Block lists")
     print("🔒 Security: Full authentication + privacy controls")
     print("📊 Database: users.db")
@@ -4246,5 +4246,5 @@ if __name__ == '__main__':
     print("="*60 + "\n")
     
     # Run the app
-    port = int(os.environ.get('PORT', 8080))
+    port = int(os.environ.get('PORT', 8050))
     app.run(host='0.0.0.0', port=port, debug=True)
