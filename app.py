@@ -1834,35 +1834,135 @@ def home():
     if 'user_id' in session:
         return redirect('/dashboard')
     
-    content = '''
-    <div style="display: flex; align-items: center; justify-content: center; min-height: 80vh;">
-        <div style="background: white; border-radius: 8px; padding: 60px 40px; max-width: 500px; text-align: center; box-shadow: 0 2px 20px rgba(0,0,0,0.05);">
-            <h1 style="font-size: 32px; font-weight: 600; margin-bottom: 8px;"> Connect</h1>
-            <div style="font-size: 16px; color: black; margin-bottom: 40px;">Find Your Perfect Match</div>
+    return render_template_string('''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Find Your Perfect Match - Connect</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+            body {
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+                background: #f4f2eb;
+                color: black;
+                line-height: 1.6;
+                min-height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 20px;
+            }
+            .container {
+                background: white;
+                border-radius: 8px;
+                padding: 60px 40px;
+                max-width: 500px;
+                width: 100%;
+                text-align: center;
+                box-shadow: 0 2px 20px rgba(0,0,0,0.05);
+            }
+            .logo {
+                font-size: 32px;
+                font-weight: 600;
+                color: black;
+                margin-bottom: 8px;
+                letter-spacing: -0.5px;
+            }
+            .subtitle {
+                font-size: 16px;
+                color: black;
+                margin-bottom: 40px;
+                font-weight: 400;
+            }
+            .description {
+                font-size: 16px;
+                color: #666;
+                margin-bottom: 40px;
+                text-align: left;
+                line-height: 1.6;
+            }
+            .action-buttons {
+                display: flex;
+                flex-direction: column;
+                gap: 15px;
+                margin-bottom: 30px;
+            }
+            .btn {
+                padding: 16px 32px;
+                border-radius: 6px;
+                font-size: 16px;
+                font-weight: 500;
+                cursor: pointer;
+                text-decoration: none;
+                display: inline-block;
+                transition: all 0.2s ease;
+                border: none;
+            }
+            .btn-primary {
+                background: #6c5ce7;
+                color: white;
+            }
+            .btn-primary:hover {
+                background: #5a4fcf;
+                transform: translateY(-2px);
+            }
+            .btn-secondary {
+                background: white;
+                color: #6c5ce7;
+                border: 2px solid #6c5ce7;
+            }
+            .btn-secondary:hover {
+                background: #6c5ce7;
+                color: white;
+            }
+            .privacy-note {
+                background: #f8f9fa;
+                border-radius: 6px;
+                padding: 16px;
+                margin: 24px 0;
+                font-size: 14px;
+                color: #666;
+                text-align: left;
+            }
+            @media (max-width: 600px) {
+                .container {
+                    padding: 40px 24px;
+                    margin: 16px;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1 class="logo">Connect</h1>
+            <div class="subtitle">Find Your Perfect Match</div>
             
-            <div style="font-size: 16px; color: #666; margin-bottom: 40px; text-align: left;">
+            <div class="description">
                 Discover meaningful connections based on personality compatibility, shared interests, and values. Our AI-powered matching system helps you find people who truly understand you.
             </div>
             
-            <div style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 30px;">
-                <a href="/register" class="btn btn-primary" style="padding: 16px 32px; font-size: 16px;">
+            <div class="action-buttons">
+                <a href="/register" class="btn btn-primary">
                     Create Account & Start Matching
                 </a>
-                <a href="/login" class="btn btn-secondary" style="padding: 16px 32px; font-size: 16px;">
+                <a href="/login" class="btn btn-secondary">
                     Login to Existing Account
                 </a>
             </div>
             
-            <div style="background: #f8f9fa; border-radius: 6px; padding: 16px; font-size: 14px; color: #666; text-align: left;">
+            <div class="privacy-note">
                 <strong>Your Privacy Matters</strong><br>
                 We use secure authentication and advanced filtering to protect your data while helping you find compatible matches.
             </div>
         </div>
-    </div>
-    '''
-    
-    return render_template_with_header("Home", content)
-
+    </body>
+    </html>
+    ''')
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     """User registration"""
