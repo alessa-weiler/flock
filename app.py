@@ -1771,11 +1771,17 @@ def render_template_with_header(title: str, content: str, user_info: Dict = None
     
     if user_info and 'user_id' in session:
         user_id = session['user_id']
-        pending_requests = user_auth.get_contact_requests(user_id, 'received')
-        pending_count = len([r for r in pending_requests if r['status'] == 'pending'])
-        if pending_count > 0:
-            notification_badge = f'<span style="background: #dc3545; color: white; border-radius: 50%; padding: 4px 8px; font-size: 12px; margin-left: 8px;">{pending_count}</span>'
-        
+
+        notification_badge = ""
+        try:
+            pending_requests = user_auth.get_contact_requests(user_id, 'received')
+            pending_count = len([r for r in pending_requests if r['status'] == 'pending'])
+            if pending_count > 0:
+                notification_badge = f'<span style="background: #dc3545; color: white; border-radius: 50%; padding: 4px 8px; font-size: 12px; margin-left: 8px;">{pending_count}</span>'
+        except Exception as e:
+            print(f"Error getting contact requests: {e}")
+            notification_badge = ""
+            
         # Logged in user navigation
         user_nav = f'''
             <div class="user-info">
