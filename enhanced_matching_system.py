@@ -423,6 +423,8 @@ class SocialSimulation:
         
     def add_agent(self, user_id: int, profile: Dict[str, Any]):
         """Add a user as an agent to the simulation"""
+        
+        # Helper function to safely convert to float
         def safe_float(value, default=5.0):
             try:
                 if isinstance(value, str):
@@ -433,12 +435,15 @@ class SocialSimulation:
                     return default
             except (ValueError, TypeError):
                 return default
+        
+        # Position based on personality characteristics - with safe conversion
         social_energy = safe_float(profile.get('social_energy', 5))
         personal_growth = safe_float(profile.get('personal_growth', 5))
-        # Position based on personality characteristics
+        social_satisfaction = safe_float(profile.get('social_satisfaction', 5))
+        
         social_x = (social_energy / 10.0) * self.width
         values_y = (personal_growth / 10.0) * self.height
-    
+        
         # Add some randomness
         x = max(0, min(self.width - 1, int(social_x + random.uniform(-10, 10))))
         y = max(0, min(self.height - 1, int(values_y + random.uniform(-10, 10))))
@@ -448,8 +453,8 @@ class SocialSimulation:
             profile=profile,
             position=(x, y),
             connections=[],
-            satisfaction=profile.get('social_satisfaction', 5) / 10.0,
-            social_energy=profile.get('social_energy', 5) / 10.0,
+            satisfaction=social_satisfaction / 10.0,
+            social_energy=social_energy / 10.0,
             compatibility_threshold=0.6  # Adjust based on user preferences
         )
         
@@ -898,39 +903,59 @@ class EnhancedMatchingSystem:
         return matches
     
     def _calculate_detailed_scores(self, user1_profile: Dict, user2_profile: Dict, 
-                                 neural_score: float) -> Dict[str, float]:
+                             neural_score: float) -> Dict[str, float]:
         """Calculate detailed compatibility scores (traditional method for backup)"""
+        
+        # Helper function to safely convert to float
+        def safe_float(value, default=5.0):
+            try:
+                if isinstance(value, str):
+                    return float(value)
+                elif isinstance(value, (int, float)):
+                    return float(value)
+                else:
+                    return default
+            except (ValueError, TypeError):
+                return default
+        
         scores = {}
         
         # Personality compatibility
         personality_scores = []
-        decision_diff = abs(user1_profile.get('decision_making', 5) - user2_profile.get('decision_making', 5))
+        decision_diff = abs(safe_float(user1_profile.get('decision_making', 5)) - 
+                        safe_float(user2_profile.get('decision_making', 5)))
         personality_scores.append(max(0, 100 - (decision_diff * 8)))
         
-        social_diff = abs(user1_profile.get('social_energy', 5) - user2_profile.get('social_energy', 5))
+        social_diff = abs(safe_float(user1_profile.get('social_energy', 5)) - 
+                        safe_float(user2_profile.get('social_energy', 5)))
         personality_scores.append(max(0, 100 - (social_diff * 12)))
         
-        comm_diff = abs(user1_profile.get('communication_depth', 5) - user2_profile.get('communication_depth', 5))
+        comm_diff = abs(safe_float(user1_profile.get('communication_depth', 5)) - 
+                    safe_float(user2_profile.get('communication_depth', 5)))
         personality_scores.append(max(0, 100 - (comm_diff * 15)))
         
         scores['personality_score'] = sum(personality_scores) / len(personality_scores)
         
         # Values compatibility
         values_scores = []
-        growth_diff = abs(user1_profile.get('personal_growth', 5) - user2_profile.get('personal_growth', 5))
+        growth_diff = abs(safe_float(user1_profile.get('personal_growth', 5)) - 
+                        safe_float(user2_profile.get('personal_growth', 5)))
         values_scores.append(max(0, 100 - (growth_diff * 10)))
         
-        success_diff = abs(user1_profile.get('success_definition', 5) - user2_profile.get('success_definition', 5))
+        success_diff = abs(safe_float(user1_profile.get('success_definition', 5)) - 
+                        safe_float(user2_profile.get('success_definition', 5)))
         values_scores.append(max(0, 100 - (success_diff * 12)))
         
         scores['values_score'] = sum(values_scores) / len(values_scores)
         
         # Lifestyle compatibility
         lifestyle_scores = []
-        energy_diff = abs(user1_profile.get('energy_patterns', 5) - user2_profile.get('energy_patterns', 5))
+        energy_diff = abs(safe_float(user1_profile.get('energy_patterns', 5)) - 
+                        safe_float(user2_profile.get('energy_patterns', 5)))
         lifestyle_scores.append(max(0, 100 - (energy_diff * 15)))
         
-        activity_diff = abs(user1_profile.get('activity_investment', 5) - user2_profile.get('activity_investment', 5))
+        activity_diff = abs(safe_float(user1_profile.get('activity_investment', 5)) - 
+                        safe_float(user2_profile.get('activity_investment', 5)))
         lifestyle_scores.append(max(0, 100 - (activity_diff * 7)))
         
         scores['lifestyle_score'] = sum(lifestyle_scores) / len(lifestyle_scores)
