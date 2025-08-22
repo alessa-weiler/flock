@@ -25,6 +25,18 @@ except ImportError:
 # DATA COLLECTION & STORAGE
 # ============================================================================
 
+def safe_numeric(value, default=5.0):
+    """Safely convert any value to numeric with fallback"""
+    try:
+        if isinstance(value, str):
+            return float(value)
+        elif isinstance(value, (int, float)):
+            return float(value)
+        else:
+            return default
+    except (ValueError, TypeError):
+        return default
+    
 class MatchingDataCollector:
     """Collects and stores user interaction data for neural network training"""
     
@@ -362,18 +374,30 @@ class SocialPredictionNetwork:
     
     def _fallback_prediction(self, user1_profile: Dict, user2_profile: Dict) -> float:
         """Fallback prediction when neural network is not available"""
-        # Simple compatibility calculation
-        age_diff = abs(user1_profile.get('age', 25) - user2_profile.get('age', 25))
+        
+        # Helper function to safely convert to numeric
+        def safe_numeric(value, default=25):
+            try:
+                if isinstance(value, str):
+                    return float(value)
+                elif isinstance(value, (int, float)):
+                    return float(value)
+                else:
+                    return default
+            except (ValueError, TypeError):
+                return default
+        
+        # Simple compatibility calculation with safe conversion
+        age_diff = abs(safe_numeric(user1_profile.get('age', 25)) - safe_numeric(user2_profile.get('age', 25)))
         age_score = max(0, 1 - age_diff / 20)
         
-        social_diff = abs(user1_profile.get('social_energy', 5) - user2_profile.get('social_energy', 5))
+        social_diff = abs(safe_numeric(user1_profile.get('social_energy', 5)) - safe_numeric(user2_profile.get('social_energy', 5)))
         social_score = max(0, 1 - social_diff / 10)
         
-        values_diff = abs(user1_profile.get('personal_growth', 5) - user2_profile.get('personal_growth', 5))
+        values_diff = abs(safe_numeric(user1_profile.get('personal_growth', 5)) - safe_numeric(user2_profile.get('personal_growth', 5)))
         values_score = max(0, 1 - values_diff / 10)
         
         return (age_score + social_score + values_score) / 3
-    
     def _save_performance_metrics(self, accuracy: float, precision: float, 
                                  recall: float, data_size: int):
         """Save model performance metrics"""
@@ -828,7 +852,15 @@ class EnhancedMatchingSystem:
             )
             
             # Calculate overall score (neural network weighted by data availability)
-            data_weight = min(1.0, len(self.data_collector.get_training_data(10)[0] or []) / 1000)
+            try:
+                training_data = self.data_collector.get_training_data(10)
+                if training_data[0] is not None and len(training_data[0]) > 0:
+                    data_weight = min(1.0, len(training_data[0]) / 1000)
+                else:
+                    data_weight = 0.0
+            except Exception as e:
+                print(f"Error getting training data weight: {e}")
+                data_weight = 0.0
             
             overall_score = (
                 neural_compatibility * data_weight +
@@ -978,12 +1010,20 @@ class EnhancedMatchingSystem:
         return scores
     
     def _generate_match_analysis(self, user1_profile: Dict, user2_profile: Dict, 
-                               neural_score: float, detailed_scores: Dict, 
-                               simulation_results: Dict) -> str:
+                           neural_score: float, detailed_scores: Dict, 
+                           simulation_results: Dict) -> str:
         """Generate comprehensive match analysis"""
         
         # Determine analysis style based on neural network confidence
-        data_weight = min(1.0, len(self.data_collector.get_training_data(10)[0] or []) / 1000)
+        try:
+            training_data = self.data_collector.get_training_data(10)
+            if training_data[0] is not None and len(training_data[0]) > 0:
+                data_weight = min(1.0, len(training_data[0]) / 1000)
+            else:
+                data_weight = 0.0
+        except Exception as e:
+            print(f"Error getting training data weight: {e}")
+            data_weight = 0.0
         
         if data_weight > 0.7:
             # High confidence neural analysis
@@ -994,8 +1034,9 @@ class EnhancedMatchingSystem:
                 f"Advanced pattern recognition indicates you both have compatible approaches to friendship building. The social simulation shows you'd likely enjoy similar environments and interaction styles."
             ]
         else:
-            # Traditional analysis with some AI insights
-            personality_desc = "complementary" if abs(user1_profile.get('social_energy', 5) - user2_profile.get('social_energy', 5)) <= 3 else "different but potentially enriching"
+            # Traditional analysis with some AI insights - FIX: Use safe_numeric here too
+            social_energy_diff = abs(safe_numeric(user1_profile.get('social_energy', 5)) - safe_numeric(user2_profile.get('social_energy', 5)))
+            personality_desc = "complementary" if social_energy_diff <= 3 else "different but potentially enriching"
             
             analyses = [
                 f"Your {personality_desc} personality traits and shared values around personal growth suggest great potential for meaningful friendship. Social simulation indicates natural compatibility.",
@@ -1005,7 +1046,6 @@ class EnhancedMatchingSystem:
             ]
         
         return random.choice(analyses)
-    
     def _save_cluster_data(self, user_id: int, cluster_user_ids: List[int], 
                           simulation_results: Dict):
         """Save clustering results for analysis"""
