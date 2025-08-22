@@ -423,10 +423,22 @@ class SocialSimulation:
         
     def add_agent(self, user_id: int, profile: Dict[str, Any]):
         """Add a user as an agent to the simulation"""
+        def safe_float(value, default=5.0):
+            try:
+                if isinstance(value, str):
+                    return float(value)
+                elif isinstance(value, (int, float)):
+                    return float(value)
+                else:
+                    return default
+            except (ValueError, TypeError):
+                return default
+        social_energy = safe_float(profile.get('social_energy', 5))
+        personal_growth = safe_float(profile.get('personal_growth', 5))
         # Position based on personality characteristics
-        social_x = (profile.get('social_energy', 5) / 10.0) * self.width
-        values_y = (profile.get('personal_growth', 5) / 10.0) * self.height
-        
+        social_x = (social_energy / 10.0) * self.width
+        values_y = (personal_growth / 10.0) * self.height
+    
         # Add some randomness
         x = max(0, min(self.width - 1, int(social_x + random.uniform(-10, 10))))
         y = max(0, min(self.height - 1, int(values_y + random.uniform(-10, 10))))
