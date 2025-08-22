@@ -1346,100 +1346,150 @@ class MatchingSystem:
         return scores
     
     def _calculate_personality_score(self, user1: Dict, user2: Dict) -> float:
-        """Calculate personality compatibility score"""
+        """Calculate personality compatibility score with safe numeric conversion"""
+        
+        # Helper function to safely convert to numeric
+        def safe_numeric(value, default=5):
+            try:
+                if isinstance(value, str):
+                    return float(value)
+                elif isinstance(value, (int, float)):
+                    return float(value)
+                else:
+                    return default
+            except (ValueError, TypeError):
+                return default
+        
         personality_scores = []
         
         # Decision-making compatibility (moderate differences are okay)
-        decision_diff = abs(user1.get('decision_making', 5) - user2.get('decision_making', 5))
+        decision_diff = abs(safe_numeric(user1.get('decision_making', 5)) - safe_numeric(user2.get('decision_making', 5)))
         decision_score = max(0, 100 - (decision_diff * 8))
         personality_scores.append(decision_score * 1.2)
         
         # Social energy alignment (should be similar)
-        social_diff = abs(user1.get('social_energy', 5) - user2.get('social_energy', 5))
+        social_diff = abs(safe_numeric(user1.get('social_energy', 5)) - safe_numeric(user2.get('social_energy', 5)))
         social_score = max(0, 100 - (social_diff * 12))
         personality_scores.append(social_score * 1.5)
         
         # Communication depth (should align)
-        comm_diff = abs(user1.get('communication_depth', 5) - user2.get('communication_depth', 5))
+        comm_diff = abs(safe_numeric(user1.get('communication_depth', 5)) - safe_numeric(user2.get('communication_depth', 5)))
         comm_score = max(0, 100 - (comm_diff * 15))
         personality_scores.append(comm_score * 1.8)
         
         # Conflict approach
-        conflict_diff = abs(user1.get('conflict_approach', 5) - user2.get('conflict_approach', 5))
+        conflict_diff = abs(safe_numeric(user1.get('conflict_approach', 5)) - safe_numeric(user2.get('conflict_approach', 5)))
         conflict_score = max(0, 100 - (conflict_diff * 10))
         personality_scores.append(conflict_score * 1.0)
         
         # Life pace
-        pace_diff = abs(user1.get('life_pace', 5) - user2.get('life_pace', 5))
+        pace_diff = abs(safe_numeric(user1.get('life_pace', 5)) - safe_numeric(user2.get('life_pace', 5)))
         pace_score = max(0, 100 - (pace_diff * 12))
         personality_scores.append(pace_score * 1.3)
         
         return sum(personality_scores) / len(personality_scores)
+
     
     def _calculate_values_score(self, user1: Dict, user2: Dict) -> float:
-        """Calculate values alignment score"""
+        """Calculate values alignment score with safe numeric conversion"""
+        
+        def safe_numeric(value, default=5):
+            try:
+                if isinstance(value, str):
+                    return float(value)
+                elif isinstance(value, (int, float)):
+                    return float(value)
+                else:
+                    return default
+            except (ValueError, TypeError):
+                return default
+        
         values_scores = []
         
         # Personal growth alignment
-        growth_diff = abs(user1.get('personal_growth', 5) - user2.get('personal_growth', 5))
+        growth_diff = abs(safe_numeric(user1.get('personal_growth', 5)) - safe_numeric(user2.get('personal_growth', 5)))
         growth_score = max(0, 100 - (growth_diff * 10))
         values_scores.append(growth_score)
         
         # Success definition alignment
-        success_diff = abs(user1.get('success_definition', 5) - user2.get('success_definition', 5))
+        success_diff = abs(safe_numeric(user1.get('success_definition', 5)) - safe_numeric(user2.get('success_definition', 5)))
         success_score = max(0, 100 - (success_diff * 12))
         values_scores.append(success_score)
         
         # Community involvement
-        community_diff = abs(user1.get('community_involvement', 5) - user2.get('community_involvement', 5))
+        community_diff = abs(safe_numeric(user1.get('community_involvement', 5)) - safe_numeric(user2.get('community_involvement', 5)))
         community_score = max(0, 100 - (community_diff * 8))
         values_scores.append(community_score)
         
         # Work-life philosophy
-        worklife_diff = abs(user1.get('work_life_philosophy', 5) - user2.get('work_life_philosophy', 5))
+        worklife_diff = abs(safe_numeric(user1.get('work_life_philosophy', 5)) - safe_numeric(user2.get('work_life_philosophy', 5)))
         worklife_score = max(0, 100 - (worklife_diff * 11))
         values_scores.append(worklife_score)
         
         # Future orientation
-        future_diff = abs(user1.get('future_orientation', 5) - user2.get('future_orientation', 5))
+        future_diff = abs(safe_numeric(user1.get('future_orientation', 5)) - safe_numeric(user2.get('future_orientation', 5)))
         future_score = max(0, 100 - (future_diff * 9))
         values_scores.append(future_score)
         
         return sum(values_scores) / len(values_scores)
-    
+
     def _calculate_lifestyle_score(self, user1: Dict, user2: Dict) -> float:
-        """Calculate lifestyle compatibility score"""
+        """Calculate lifestyle compatibility score with safe numeric conversion"""
+        
+        def safe_numeric(value, default=5):
+            try:
+                if isinstance(value, str):
+                    return float(value)
+                elif isinstance(value, (int, float)):
+                    return float(value)
+                else:
+                    return default
+            except (ValueError, TypeError):
+                return default
+        
         lifestyle_scores = []
         
         # Energy patterns (important for scheduling)
-        energy_diff = abs(user1.get('energy_patterns', 5) - user2.get('energy_patterns', 5))
+        energy_diff = abs(safe_numeric(user1.get('energy_patterns', 5)) - safe_numeric(user2.get('energy_patterns', 5)))
         energy_score = max(0, 100 - (energy_diff * 15))
         lifestyle_scores.append(energy_score * 1.4)
         
         # Social setting preference
-        setting_diff = abs(user1.get('social_setting', 5) - user2.get('social_setting', 5))
+        setting_diff = abs(safe_numeric(user1.get('social_setting', 5)) - safe_numeric(user2.get('social_setting', 5)))
         setting_score = max(0, 100 - (setting_diff * 8))
         lifestyle_scores.append(setting_score)
         
         # Activity investment
-        activity_diff = abs(user1.get('activity_investment', 5) - user2.get('activity_investment', 5))
+        activity_diff = abs(safe_numeric(user1.get('activity_investment', 5)) - safe_numeric(user2.get('activity_investment', 5)))
         activity_score = max(0, 100 - (activity_diff * 7))
         lifestyle_scores.append(activity_score)
         
         # Physical activity level
-        physical_diff = abs(user1.get('physical_activity', 5) - user2.get('physical_activity', 5))
+        physical_diff = abs(safe_numeric(user1.get('physical_activity', 5)) - safe_numeric(user2.get('physical_activity', 5)))
         physical_score = max(0, 100 - (physical_diff * 10))
         lifestyle_scores.append(physical_score * 1.2)
         
         # Cultural consumption
-        cultural_diff = abs(user1.get('cultural_consumption', 5) - user2.get('cultural_consumption', 5))
+        cultural_diff = abs(safe_numeric(user1.get('cultural_consumption', 5)) - safe_numeric(user2.get('cultural_consumption', 5)))
         cultural_score = max(0, 100 - (cultural_diff * 6))
         lifestyle_scores.append(cultural_score)
         
         return sum(lifestyle_scores) / len(lifestyle_scores)
-    
+
     def _calculate_emotional_score(self, user1: Dict, user2: Dict) -> float:
-        """Calculate emotional compatibility score"""
+        """Calculate emotional compatibility score with safe numeric conversion"""
+        
+        def safe_numeric(value, default=5):
+            try:
+                if isinstance(value, str):
+                    return float(value)
+                elif isinstance(value, (int, float)):
+                    return float(value)
+                else:
+                    return default
+            except (ValueError, TypeError):
+                return default
+        
         emotional_scores = []
         
         # Stress preference compatibility
@@ -1455,33 +1505,45 @@ class MatchingSystem:
         emotional_scores.append(process_score * 1.3)
         
         # Celebration preference
-        celeb_diff = abs(user1.get('celebration_preference', 5) - user2.get('celebration_preference', 5))
+        celeb_diff = abs(safe_numeric(user1.get('celebration_preference', 5)) - safe_numeric(user2.get('celebration_preference', 5)))
         celeb_score = max(0, 100 - (celeb_diff * 12))
         emotional_scores.append(celeb_score)
         
         return sum(emotional_scores) / len(emotional_scores)
-    
+
     def _calculate_social_score(self, user1: Dict, user2: Dict) -> float:
-        """Calculate social boundaries compatibility score"""
+        """Calculate social boundaries compatibility score with safe numeric conversion"""
+        
+        def safe_numeric(value, default=5):
+            try:
+                if isinstance(value, str):
+                    return float(value)
+                elif isinstance(value, (int, float)):
+                    return float(value)
+                else:
+                    return default
+            except (ValueError, TypeError):
+                return default
+        
         boundary_scores = []
         
         # Personal sharing alignment
-        sharing_diff = abs(user1.get('personal_sharing', 5) - user2.get('personal_sharing', 5))
+        sharing_diff = abs(safe_numeric(user1.get('personal_sharing', 5)) - safe_numeric(user2.get('personal_sharing', 5)))
         sharing_score = max(0, 100 - (sharing_diff * 14))
         boundary_scores.append(sharing_score * 1.4)
         
         # Social overlap tolerance
-        overlap_diff = abs(user1.get('social_overlap', 5) - user2.get('social_overlap', 5))
+        overlap_diff = abs(safe_numeric(user1.get('social_overlap', 5)) - safe_numeric(user2.get('social_overlap', 5)))
         overlap_score = max(0, 100 - (overlap_diff * 8))
         boundary_scores.append(overlap_score)
         
         # Advice-giving style
-        advice_diff = abs(user1.get('advice_giving', 5) - user2.get('advice_giving', 5))
+        advice_diff = abs(safe_numeric(user1.get('advice_giving', 5)) - safe_numeric(user2.get('advice_giving', 5)))
         advice_score = max(0, 100 - (advice_diff * 9))
         boundary_scores.append(advice_score)
         
         # Social commitment level
-        commitment_diff = abs(user1.get('social_commitment', 5) - user2.get('social_commitment', 5))
+        commitment_diff = abs(safe_numeric(user1.get('social_commitment', 5)) - safe_numeric(user2.get('social_commitment', 5)))
         commitment_score = max(0, 100 - (commitment_diff * 13))
         boundary_scores.append(commitment_score * 1.3)
         
@@ -3388,21 +3450,78 @@ def render_step_10_content(profile: Dict) -> str:
 @app.route('/onboarding/save-step', methods=['POST'])
 @login_required
 def save_onboarding_step():
-    """Save current step data and redirect to next step"""
+    """Save current step data and redirect to next step with proper numeric conversion"""
     user_id = session['user_id']
     current_step = session.get('onboarding_step', 1)
     
     # Get existing profile data or create new
     profile_data = user_auth.get_user_profile(user_id) or {}
     
-    # Update profile with form data from current step
+    # Define which fields should be converted to integers
+    INTEGER_FIELDS = {
+        'age', 'social_energy', 'decision_making', 'communication_depth',
+        'personal_growth', 'social_satisfaction', 'success_definition',
+        'energy_patterns', 'activity_investment', 'time_allocation',
+        'relationship_priorities', 'conflict_resolution', 'emotional_support',
+        'friend_maintenance', 'community_involvement', 'work_life_philosophy',
+        'future_orientation', 'social_setting', 'physical_activity',
+        'cultural_consumption', 'celebration_preference', 'personal_sharing',
+        'social_overlap', 'advice_giving', 'social_commitment',
+        'friendship_development', 'social_risk_tolerance',
+        'conflict_approach', 'life_pace',
+        # Ranking fields
+        'rank_shared_values', 'rank_lifestyle_rhythms', 'rank_complementary_strengths',
+        'rank_emotional_compatibility', 'rank_activity_overlap'
+    }
+    
+    # Define which fields should be converted to floats (if any)
+    FLOAT_FIELDS = {
+        'latitude', 'longitude'  # example location fields if you add them
+    }
+    
+    def convert_form_data(form_data):
+        """Convert form data to appropriate numeric types"""
+        converted_data = {}
+        
+        for key, value in form_data.items():
+            if key.startswith('csrf_') or key in ['action']:
+                continue
+            elif key in INTEGER_FIELDS:
+                try:
+                    converted_data[key] = int(value) if value else 5  # default to 5
+                except (ValueError, TypeError):
+                    converted_data[key] = 5  # fallback default
+            elif key in FLOAT_FIELDS:
+                try:
+                    converted_data[key] = float(value) if value else 0.0
+                except (ValueError, TypeError):
+                    converted_data[key] = 0.0
+            else:
+                # Keep as string for text fields
+                converted_data[key] = value
+        
+        return converted_data
+    
+    # Update profile with converted form data from current step
     for key, value in request.form.items():
         if key.startswith('csrf_') or key in ['action']:
             continue
         if key in ['interests', 'personality_traits', 'red_flags', 'transportation']:
             profile_data[key] = request.form.getlist(key)
         else:
-            profile_data[key] = value
+            # Convert to appropriate type
+            if key in INTEGER_FIELDS:
+                try:
+                    profile_data[key] = int(value) if value else 5
+                except (ValueError, TypeError):
+                    profile_data[key] = 5
+            elif key in FLOAT_FIELDS:
+                try:
+                    profile_data[key] = float(value) if value else 0.0
+                except (ValueError, TypeError):
+                    profile_data[key] = 0.0
+            else:
+                profile_data[key] = value
     
     # Save updated profile
     user_auth.save_user_profile(user_id, profile_data)
