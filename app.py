@@ -2394,12 +2394,12 @@ def dashboard():
     return render_template_with_header("Dashboard", content, user_info)
 
 def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
-    """Render dashboard with enhanced neural network insights"""
+    """Render dashboard with designer styling and beautiful typography"""
     user_id = session['user_id']
     matches_html = ""
     
     for i, match in enumerate(matches, 1):
-        # Enhanced compatibility badges
+        # Enhanced compatibility badges with new colors
         compatibility_badges = ""
         
         # Neural network confidence badge
@@ -2407,145 +2407,626 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
         data_confidence = match.get('data_confidence', 0)
         
         if data_confidence >= 70:
-            compatibility_badges += f'<span style="background: #9c27b0; color: white; padding: 6px 12px; border-radius: 20px; font-size: 12px; margin: 2px;">🧠 AI Confidence: {data_confidence}%</span>'
+            compatibility_badges += f'<span class="badge badge-ai"> Compatibility: {data_confidence}%</span>'
         
         if neural_score >= 85:
-            compatibility_badges += '<span style="background: #673ab7; color: white; padding: 6px 12px; border-radius: 20px; font-size: 12px; margin: 2px;">🤖 AI High Match</span>'
+            compatibility_badges += '<span class="badge badge-neural"> High Match</span>'
         
         # Simulation insights
         sim_satisfaction = match.get('simulation_satisfaction', 0)
         if sim_satisfaction >= 80:
-            compatibility_badges += '<span style="background: #3f51b5; color: white; padding: 6px 12px; border-radius: 20px; font-size: 12px; margin: 2px;">🎯 Simulation Verified</span>'
+            compatibility_badges += '<span class="badge badge-simulation"> Simulation Verified</span>'
         
         # Traditional badges
         if match['personality_score'] >= 85:
-            compatibility_badges += '<span style="background: #28a745; color: white; padding: 6px 12px; border-radius: 20px; font-size: 12px; margin: 2px;">Excellent Personality Match</span>'
+            compatibility_badges += '<span class="badge badge-personality">Excellent Personality Match</span>'
         if match['values_score'] >= 85:
-            compatibility_badges += '<span style="background: #28a745; color: white; padding: 6px 12px; border-radius: 20px; font-size: 12px; margin: 2px;">Strong Values Alignment</span>'
+            compatibility_badges += '<span class="badge badge-values">Strong Values Alignment</span>'
         
         # Get initials for avatar
         name_parts = match['matched_user_name'].split()
         initials = name_parts[0][0] + (name_parts[-1][0] if len(name_parts) > 1 else '')
         
-        # Enhanced contact button logic
+        # Enhanced contact button logic with new styling
         request_status = user_auth.get_request_status(user_id, match['matched_user_id'])
         if request_status == 'pending':
-            contact_button = '<span style="background: #ffc107; color: black; padding: 12px 24px; border-radius: 6px; display: inline-block; font-weight: 500;">📞 Request Pending</span>'
+            contact_button = '<span class="btn btn-pending">📞 Request Pending</span>'
         elif request_status == 'accepted':
-            contact_button = f'<a href="tel:{match["matched_user_phone"]}" style="background: #28a745; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; display: inline-block; font-weight: 500;">📞 Call {match["matched_user_phone"]}</a>'
+            contact_button = f'<a href="tel:{match["matched_user_phone"]}" class="btn btn-success">📞 Call {match["matched_user_phone"]}</a>'
         elif request_status == 'denied':
-            contact_button = '<span style="background: #dc3545; color: white; padding: 12px 24px; border-radius: 6px; display: inline-block; font-weight: 500;">❌ Request Declined</span>'
+            contact_button = '<span class="btn btn-declined"> Request Declined</span>'
         else:
-            # Track intention to contact
             contact_button = f'''
                 <a href="/send-contact-request/{match["matched_user_id"]}" 
                    onclick="trackContactIntention({match['matched_user_id']}, {match['overall_score']})"
-                   style="background: #6c5ce7; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; display: inline-block; font-weight: 500;">
-                   📞 Request Phone Number
+                   class="btn btn-primary">
+                   Connect with {match['matched_user_name']}
                 </a>
             '''
         
-        # Enhanced scoring display
+        # Enhanced scoring display with designer styling
         enhanced_scores_html = ""
         if data_confidence >= 50:
             enhanced_scores_html = f'''
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin: 15px 0; padding: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px;">
-                <div style="text-align: center; color: white;">
-                    <div style="font-size: 10px; text-transform: uppercase; margin-bottom: 5px; opacity: 0.9;">Neural AI</div>
-                    <div style="font-size: 18px; font-weight: bold;">{neural_score}</div>
-                    <div style="width: 100%; height: 3px; background: rgba(255,255,255,0.3); border-radius: 2px; margin-top: 4px;">
-                        <div style="height: 100%; background: white; border-radius: 2px; width: {neural_score}%;"></div>
+            <div class="ai-scores-grid">
+                <div class="ai-score-card">
+                    <div class="score-label">Neural AI</div>
+                    <div class="score-value">{neural_score}</div>
+                    <div class="score-bar">
+                        <div class="score-fill" style="width: {neural_score}%;"></div>
                     </div>
                 </div>
-                <div style="text-align: center; color: white;">
-                    <div style="font-size: 10px; text-transform: uppercase; margin-bottom: 5px; opacity: 0.9;">Simulation</div>
-                    <div style="font-size: 18px; font-weight: bold;">{sim_satisfaction}</div>
-                    <div style="width: 100%; height: 3px; background: rgba(255,255,255,0.3); border-radius: 2px; margin-top: 4px;">
-                        <div style="height: 100%; background: white; border-radius: 2px; width: {sim_satisfaction}%;"></div>
+                <div class="ai-score-card">
+                    <div class="score-label">Simulation</div>
+                    <div class="score-value">{sim_satisfaction}</div>
+                    <div class="score-bar">
+                        <div class="score-fill" style="width: {sim_satisfaction}%;"></div>
                     </div>
                 </div>
-                <div style="text-align: center; color: white;">
-                    <div style="font-size: 10px; text-transform: uppercase; margin-bottom: 5px; opacity: 0.9;">Confidence</div>
-                    <div style="font-size: 18px; font-weight: bold;">{data_confidence}</div>
-                    <div style="width: 100%; height: 3px; background: rgba(255,255,255,0.3); border-radius: 2px; margin-top: 4px;">
-                        <div style="height: 100%; background: white; border-radius: 2px; width: {data_confidence}%;"></div>
+                <div class="ai-score-card">
+                    <div class="score-label">Confidence</div>
+                    <div class="score-value">{data_confidence}</div>
+                    <div class="score-bar">
+                        <div class="score-fill" style="width: {data_confidence}%;"></div>
                     </div>
                 </div>
             </div>
             '''
         
         match_html = f'''
-        <div style="background: #f8f9fa; border-radius: 15px; padding: 30px; margin: 25px 0; border-left: 5px solid #6c5ce7; position: relative;"
-             onmouseover="trackMatchView({match['matched_user_id']})"
-             data-match-id="{match['matched_user_id']}">
-            <div style="position: absolute; top: -15px; left: 30px; background: #6c5ce7; color: white; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 18px;">{i}</div>
+        <div class="match-card" data-match-id="{match['matched_user_id']}" onmouseenter="trackMatchView({match['matched_user_id']})">
+            <div class="match-number">{i}</div>
             
-            <div style="display: flex; align-items: center; margin: 20px 0 20px 30px; gap: 20px;">
-                <div style="width: 80px; height: 80px; border-radius: 50%; background: linear-gradient(135deg, #6c5ce7, #a29bfe); display: flex; align-items: center; justify-content: center; color: white; font-size: 32px; font-weight: 600;">{initials}</div>
-                <div>
-                    <div style="font-size: 24px; font-weight: bold; margin-bottom: 5px;">{match['matched_user_name']}</div>
-                    <div style="font-size: 14px; color: #666;">Enhanced AI-Powered Match</div>
+            <div class="match-header">
+                <div class="avatar">{initials}</div>
+                <div class="match-info">
+                    <div class="match-name">{match['matched_user_name']}</div>
+                    
                 </div>
             </div>
             
-            <div style="text-align: center; margin: 20px 0; padding: 20px; background: linear-gradient(135deg, #6c5ce7, #a29bfe); border-radius: 12px; color: white;">
-                <div style="font-size: 48px; font-weight: bold; margin-bottom: 5px;">{match['overall_score']}%</div>
-                <div style="font-size: 16px;">Overall Compatibility</div>
+            <div class="compatibility-score">
+                <div class="score-circle">
+                    <div class="score-number">{match['overall_score']}%</div>
+                    <div class="score-text">Overall Compatibility</div>
+                </div>
             </div>
             
             {enhanced_scores_html}
             
-            <div style="margin: 20px 0;">{compatibility_badges}</div>
+            <div class="compatibility-badges">
+                {compatibility_badges}
+            </div>
             
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 15px; margin: 20px 0; padding: 20px; background: white; border-radius: 12px; border: 1px solid #e9ecef;">
-                <div style="text-align: center; padding: 15px; border-radius: 8px; background: #f8f9fa;">
-                    <div style="font-size: 11px; color: black; text-transform: uppercase; margin-bottom: 8px; font-weight: 600;">Personality</div>
-                    <div style="font-size: 20px; font-weight: bold; color: black;">{match['personality_score']}</div>
-                    <div style="width: 100%; height: 4px; background: #e9ecef; border-radius: 2px; margin-top: 6px;">
-                        <div style="height: 100%; background: linear-gradient(90deg, #6c5ce7, #a29bfe); border-radius: 2px; width: {match['emotional_score']}%;"></div>
+            <div class="detailed-scores">
+                <div class="score-item">
+                    <div class="score-category">Personality</div>
+                    <div class="score-value-small">{match['personality_score']}</div>
+                    <div class="score-bar-small">
+                        <div class="score-fill-small" style="width: {match['personality_score']}%;"></div>
+                    </div>
+                </div>
+                <div class="score-item">
+                    <div class="score-category">Values</div>
+                    <div class="score-value-small">{match.get('values_score', 75)}</div>
+                    <div class="score-bar-small">
+                        <div class="score-fill-small" style="width: {match.get('values_score', 75)}%;"></div>
+                    </div>
+                </div>
+                <div class="score-item">
+                    <div class="score-category">Lifestyle</div>
+                    <div class="score-value-small">{match.get('lifestyle_score', 75)}</div>
+                    <div class="score-bar-small">
+                        <div class="score-fill-small" style="width: {match.get('lifestyle_score', 75)}%;"></div>
                     </div>
                 </div>
             </div>
             
-            <div style="background: white; padding: 20px; border-radius: 12px; margin: 20px 0; border-left: 4px solid #6c5ce7;">
-                <div style="color: #333; font-size: 16px; line-height: 1.6; padding: 15px; background: #f8f9fa; border-radius: 8px;">{match['compatibility_analysis']}</div>
+            <div class="compatibility-analysis">
+                {match['compatibility_analysis']}
             </div>
             
-            <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eee; text-align: center;">
-             {contact_button}
+            <div class="match-actions">
+                {contact_button}
             </div>
         </div>
         '''
         matches_html += match_html
     
-    # Enhanced system info
-    system_info = f"""
-    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 12px; margin-bottom: 30px;">
-        <h3 style="margin: 0 0 10px 0; color: white;">🤖 Enhanced AI Matching System</h3>
-        <p style="margin: 0; opacity: 0.9;">Using neural networks and agent-based social simulation to find your most compatible matches.</p>
-        <div style="display: flex; gap: 20px; margin-top: 15px; flex-wrap: wrap;">
-            <div style="background: rgba(255,255,255,0.2); padding: 8px 12px; border-radius: 6px; font-size: 14px;">
-                🧠 Neural Network Analysis
-            </div>
-            <div style="background: rgba(255,255,255,0.2); padding: 8px 12px; border-radius: 6px; font-size: 14px;">
-                🎯 Social Simulation Clustering
-            </div>
-            <div style="background: rgba(255,255,255,0.2); padding: 8px 12px; border-radius: 6px; font-size: 14px;">
-                📊 Continuous Learning
+    # Enhanced system info with new styling
+    system_info = f'''
+    <div class="system-info-card">
+        <div class="system-info-content">
+            <h3>🤖 Enhanced AI Matching System</h3>
+            <p>Using neural networks and agent-based social simulation to find your most compatible matches.</p>
+            <div class="feature-tags">
+                <span class="feature-tag">🧠 Neural Network Analysis</span>
+                <span class="feature-tag">🎯 Social Simulation Clustering</span>
+                <span class="feature-tag">📊 Continuous Learning</span>
             </div>
         </div>
     </div>
-    """
+    '''
+    
+    matches_count_section = f'''
+    <div class="matches-header">
+        <h1 class="matches-title">Your AI-Powered Matches</h1>
+        <p class="matches-subtitle">Here are your {len(matches)} most compatible matches based on advanced neural network analysis and social simulation.</p>
+        <div class="profile-updated">Profile updated: {user_info['profile_date'][:10] if user_info['profile_date'] else 'Recently'}</div>
+    </div>
+    '''
     
     return f'''
-    <div style="max-width: 1000px; margin: 0 auto; padding: 40px;">
-        {system_info}
+    <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=clash-display@400,500,600,700&display=swap" rel="stylesheet">
+    <style>
+        :root {{
+            --color-cream: #f1ece0;
+            --color-emerald: #167a60;
+            --color-sage: #c6e19b;
+            --color-lavender: #c2b7ef;
+            --color-charcoal: #2d2d2d;
+            --color-white: #ffffff;
+            --color-gray-50: #fafafa;
+            --color-gray-100: #f5f5f5;
+            --color-gray-200: #eeeeee;
+            --color-gray-600: #757575;
+            --color-gray-800: #424242;
+        }}
         
-        <div style="text-align: center; margin-bottom: 40px; padding: 30px; background: #f4f2eb; border-radius: 15px; border: 2px solid #6c5ce7;">
-            <div style="font-size: 28px; font-weight: bold; margin-bottom: 15px;">Your Enhanced AI Matches</div>
-            <p style="font-size: 18px; margin: 0;">Here are your {len(matches)} most compatible matches based on advanced neural network analysis and social simulation.</p>
-            <p style="font-size: 14px; margin: 10px 0 0 0;">Profile updated: {user_info['profile_date'][:10] if user_info['profile_date'] else 'Recently'}</p>
-        </div>
+        .dashboard-container {{
+            font-family: 'Satoshi', -apple-system, BlinkMacSystemFont, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 2rem;
+            background: linear-gradient(135deg, var(--color-cream) 0%, var(--color-gray-50) 100%);
+            min-height: 100vh;
+        }}
+        
+        .system-info-card {{
+            background: linear-gradient(135deg, var(--color-emerald), var(--color-sage));
+            color: white;
+            padding: 2rem;
+            border-radius: 20px;
+            margin-bottom: 3rem;
+            position: relative;
+            overflow: hidden;
+        }}
+        
+        .system-info-card::before {{
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+            animation: shimmer 3s ease-in-out infinite;
+        }}
+        
+        @keyframes shimmer {{
+            0% {{ left: -100%; }}
+            50% {{ left: 100%; }}
+            100% {{ left: 100%; }}
+        }}
+        
+        .system-info-content h3 {{
+            font-family: 'Clash Display', 'Satoshi', sans-serif;
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin: 0 0 0.75rem 0;
+            color: white;
+        }}
+        
+        .system-info-content p {{
+            margin: 0 0 1.5rem 0;
+            opacity: 0.9;
+            font-size: 1rem;
+            line-height: 1.6;
+        }}
+        
+        .feature-tags {{
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }}
+        
+        .feature-tag {{
+            background: rgba(255,255,255,0.2);
+            padding: 0.5rem 1rem;
+            border-radius: 50px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            backdrop-filter: blur(10px);
+        }}
+        
+        .matches-header {{
+            text-align: center;
+            margin-bottom: 3rem;
+            padding: 2.5rem 2rem;
+            background: var(--color-white);
+            border-radius: 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+            position: relative;
+        }}
+        
+        .matches-header::before {{
+            content: '';
+            position: absolute;
+            top: -0.5rem;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 60px;
+            height: 4px;
+            background: linear-gradient(90deg, var(--color-emerald), var(--color-sage));
+            border-radius: 2px;
+        }}
+        
+        .matches-title {{
+            font-family: 'Clash Display', 'Satoshi', sans-serif;
+            font-size: clamp(2rem, 4vw, 3rem);
+            font-weight: 600;
+            margin: 0 0 1rem 0;
+            color: var(--color-charcoal);
+            letter-spacing: -0.02em;
+            line-height: 1.1;
+        }}
+        
+        .matches-subtitle {{
+            font-size: 1.125rem;
+            line-height: 1.6;
+            color: var(--color-gray-600);
+            margin: 0 0 1rem 0;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }}
+        
+        .profile-updated {{
+            font-size: 0.875rem;
+            color: var(--color-gray-600);
+            font-weight: 500;
+        }}
+        
+        .match-card {{
+            background: var(--color-white);
+            border-radius: 24px;
+            padding: 2.5rem;
+            margin: 2rem 0;
+            box-shadow: 
+                0 1px 3px rgba(0,0,0,0.04),
+                0 8px 24px rgba(0,0,0,0.08);
+            position: relative;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border-left: 4px solid var(--color-sage);
+        }}
+        
+        .match-card:hover {{
+            transform: translateY(-4px);
+            box-shadow: 
+                0 4px 12px rgba(0,0,0,0.08),
+                0 16px 48px rgba(0,0,0,0.12);
+        }}
+        
+        .match-number {{
+            position: absolute;
+            top: -1rem;
+            left: 2rem;
+            background: linear-gradient(135deg, var(--color-emerald), var(--color-sage));
+            color: white;
+            border-radius: 50%;
+            width: 48px;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 1.25rem;
+            font-family: 'Clash Display', 'Satoshi', sans-serif;
+        }}
+        
+        .match-header {{
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+            margin: 1rem 0 2rem 1rem;
+        }}
+        
+        .avatar {{
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--color-lavender), var(--color-sage));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--color-charcoal);
+            font-size: 2rem;
+            font-weight: 700;
+            font-family: 'Clash Display', 'Satoshi', sans-serif;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+        }}
+        
+        .match-info {{
+            flex: 1;
+        }}
+        
+        .match-name {{
+            font-family: 'Clash Display', 'Satoshi', sans-serif;
+            font-size: 1.75rem;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+            color: var(--color-charcoal);
+        }}
+        
+        .match-subtitle {{
+            font-size: 0.875rem;
+            color: var(--color-gray-600);
+            font-weight: 500;
+        }}
+        
+        .compatibility-score {{
+            text-align: center;
+            margin: 2rem 0;
+        }}
+        
+        .score-circle {{
+            display: inline-block;
+            padding: 2rem;
+            background: linear-gradient(135deg, var(--color-emerald), var(--color-sage));
+            border-radius: 20px;
+            color: white;
+            min-width: 200px;
+        }}
+        
+        .score-number {{
+            font-family: 'Clash Display', 'Satoshi', sans-serif;
+            font-size: 3rem;
+            font-weight: 700;
+            line-height: 1;
+            margin-bottom: 0.5rem;
+        }}
+        
+        .score-text {{
+            font-size: 1rem;
+            font-weight: 500;
+            opacity: 0.9;
+        }}
+        
+        .ai-scores-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1.5rem;
+            margin: 2rem 0;
+            padding: 2rem;
+            background: linear-gradient(135deg, var(--color-charcoal), var(--color-gray-800));
+            border-radius: 16px;
+        }}
+        
+        .ai-score-card {{
+            text-align: center;
+            color: white;
+        }}
+        
+        .score-label {{
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 0.75rem;
+            opacity: 0.8;
+            font-weight: 600;
+        }}
+        
+        .score-value {{
+            font-family: 'Clash Display', 'Satoshi', sans-serif;
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 0.75rem;
+        }}
+        
+        .score-bar {{
+            width: 100%;
+            height: 4px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 2px;
+            overflow: hidden;
+        }}
+        
+        .score-fill {{
+            height: 100%;
+            background: linear-gradient(90deg, var(--color-sage), var(--color-lavender));
+            border-radius: 2px;
+            transition: width 1s ease;
+        }}
+        
+        .compatibility-badges {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            margin: 2rem 0;
+            justify-content: center;
+        }}
+        
+        .badge {{
+            padding: 0.5rem 1rem;
+            border-radius: 50px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }}
+        
+        .badge-ai {{
+            background: var(--color-lavender);
+            color: var(--color-charcoal);
+        }}
+        
+        .badge-neural {{
+            background: var(--color-emerald);
+            color: white;
+        }}
+        
+        .badge-simulation {{
+            background: var(--color-sage);
+            color: var(--color-charcoal);
+        }}
+        
+        .badge-personality {{
+            background: var(--color-cream);
+            color: var(--color-charcoal);
+            border: 1px solid var(--color-gray-200);
+        }}
+        
+        .badge-values {{
+            background: var(--color-cream);
+            color: var(--color-charcoal);
+            border: 1px solid var(--color-gray-200);
+        }}
+        
+        .detailed-scores {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin: 2rem 0;
+            padding: 2rem;
+            background: var(--color-gray-50);
+            border-radius: 16px;
+        }}
+        
+        .score-item {{
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }}
+        
+        .score-category {{
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--color-charcoal);
+            min-width: 80px;
+        }}
+        
+        .score-value-small {{
+            font-family: 'Clash Display', 'Satoshi', sans-serif;
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--color-charcoal);
+            min-width: 40px;
+        }}
+        
+        .score-bar-small {{
+            flex: 1;
+            height: 6px;
+            background: var(--color-gray-200);
+            border-radius: 3px;
+            overflow: hidden;
+        }}
+        
+        .score-fill-small {{
+            height: 100%;
+            background: linear-gradient(90deg, var(--color-emerald), var(--color-sage));
+            border-radius: 3px;
+            transition: width 1s ease;
+        }}
+        
+        .compatibility-analysis {{
+            background: var(--color-white);
+            padding: 2rem;
+            border-radius: 16px;
+            margin: 2rem 0;
+            border-left: 4px solid var(--color-emerald);
+            font-size: 1rem;
+            line-height: 1.6;
+            color: var(--color-gray-800);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        }}
+        
+        .match-actions {{
+            text-align: center;
+            margin-top: 2rem;
+            padding-top: 2rem;
+            border-top: 1px solid var(--color-gray-200);
+        }}
+        
+        .btn {{
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 1rem 2rem;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 0.875rem;
+            text-decoration: none;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border: none;
+            cursor: pointer;
+            font-family: 'Satoshi', sans-serif;
+        }}
+        
+        .btn-primary {{
+            background: var(--color-emerald);
+            color: white;
+            box-shadow: 0 4px 16px rgba(22, 122, 96, 0.2);
+        }}
+        
+        .btn-primary:hover {{
+            background: #0f5942;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(22, 122, 96, 0.3);
+        }}
+        
+        .btn-pending {{
+            background: var(--color-lavender);
+            color: var(--color-charcoal);
+        }}
+        
+        .btn-success {{
+            background: var(--color-sage);
+            color: var(--color-charcoal);
+            text-decoration: none;
+        }}
+        
+        .btn-success:hover {{
+            background: #9ac463;
+            transform: translateY(-2px);
+        }}
+        
+        .btn-declined {{
+            background: var(--color-gray-200);
+            color: var(--color-gray-600);
+        }}
+        
+        @media (max-width: 768px) {{
+            .dashboard-container {{
+                padding: 1rem;
+            }}
+            
+            .match-card {{
+                padding: 2rem 1.5rem;
+            }}
+            
+            .match-header {{
+                flex-direction: column;
+                text-align: center;
+                gap: 1rem;
+            }}
+            
+            .ai-scores-grid {{
+                grid-template-columns: 1fr;
+            }}
+            
+            .detailed-scores {{
+                grid-template-columns: 1fr;
+            }}
+            
+            .compatibility-badges {{
+                justify-content: center;
+            }}
+        }}
+    </style>
+    
+    <div class="dashboard-container">
+        {system_info}
+        {matches_count_section}
         {matches_html}
         
         <script>
@@ -2589,20 +3070,139 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
     '''
 
 def render_no_matches_dashboard() -> str:
-    """Render dashboard when no matches found"""
+    """Render no matches dashboard with designer styling"""
     return '''
-    <div class="container" style="text-align: center;">
-        <h3 style="color: #6c5ce7; font-size: 24px; margin-bottom: 20px;">No Matches Found Yet</h3>
-        <div style="font-size: 16px; margin-bottom: 32px;">
-            We couldn't find compatible matches based on your current profile. This might be because:
-            <br><br>
-            • There aren't many users in your area yet<br>
-            • Your specific preferences are very particular<br>
-            • More users need to join the platform
-            <br><br>
-            Try updating your profile or check back later as more people join!
+    <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=clash-display@400,500,600,700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --color-cream: #f1ece0;
+            --color-emerald: #167a60;
+            --color-sage: #c6e19b;
+            --color-lavender: #c2b7ef;
+            --color-charcoal: #2d2d2d;
+            --color-white: #ffffff;
+            --color-gray-50: #fafafa;
+            --color-gray-600: #757575;
+        }
+        
+        .no-matches-container {
+            font-family: 'Satoshi', -apple-system, BlinkMacSystemFont, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 2rem;
+            text-align: center;
+            background: linear-gradient(135deg, var(--color-cream) 0%, var(--color-gray-50) 100%);
+            min-height: 80vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        
+        .no-matches-card {
+            background: var(--color-white);
+            padding: 3rem 2rem;
+            border-radius: 24px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.08);
+        }
+        
+        .no-matches-icon {
+            font-size: 4rem;
+            margin-bottom: 2rem;
+        }
+        
+        .no-matches-title {
+            font-family: 'Clash Display', 'Satoshi', sans-serif;
+            font-size: 2rem;
+            font-weight: 600;
+            color: var(--color-emerald);
+            margin-bottom: 1.5rem;
+        }
+        
+        .no-matches-text {
+            font-size: 1rem;
+            line-height: 1.6;
+            color: var(--color-gray-600);
+            margin-bottom: 2rem;
+        }
+        
+        .reasons-list {
+            text-align: left;
+            margin: 2rem 0;
+            padding: 2rem;
+            background: var(--color-gray-50);
+            border-radius: 16px;
+        }
+        
+        .reason-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin: 1rem 0;
+            font-size: 0.875rem;
+            color: var(--color-gray-600);
+        }
+        
+        .reason-bullet {
+            width: 8px;
+            height: 8px;
+            background: var(--color-sage);
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+        
+        .btn-update {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: var(--color-emerald);
+            color: white;
+            padding: 1rem 2rem;
+            border-radius: 12px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 16px rgba(22, 122, 96, 0.2);
+        }
+        
+        .btn-update:hover {
+            background: #0f5942;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(22, 122, 96, 0.3);
+        }
+    </style>
+    
+    <div class="no-matches-container">
+        <div class="no-matches-card">
+            <div class="no-matches-icon">🔍</div>
+            <h3 class="no-matches-title">No Matches Found Yet</h3>
+            <div class="no-matches-text">
+                We couldn't find compatible matches based on your current profile. This might be because:
+            </div>
+            
+            <div class="reasons-list">
+                <div class="reason-item">
+                    <div class="reason-bullet"></div>
+                    <span>There aren't many users in your area yet</span>
+                </div>
+                <div class="reason-item">
+                    <div class="reason-bullet"></div>
+                    <span>Your specific preferences are very particular</span>
+                </div>
+                <div class="reason-item">
+                    <div class="reason-bullet"></div>
+                    <span>More users need to join the platform</span>
+                </div>
+            </div>
+            
+            <div class="no-matches-text">
+                Try updating your profile or check back later as more people join!
+            </div>
+            
+            <a href="/profile-setup" class="btn-update">
+                 Update Your Profile
+            </a>
         </div>
-        <a href="/profile-setup" class="btn btn-primary" style="padding: 16px 32px; font-size: 16px;">Update Your Profile</a>
     </div>
     '''
 
@@ -3632,11 +4232,11 @@ def complete_onboarding_enhanced():
         
         <div style="font-size: 16px; color: #333; margin-bottom: 40px; text-align: left; background: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #28a745;">
             <strong>What happens next:</strong><br>
-            • 🧠 Neural network analyzes your personality patterns<br>
-            • 🎯 Social simulation finds your natural cluster<br>
-            • 📊 AI learns from community interactions<br>
-            • 🤝 You get scientifically-backed compatibility matches<br>
-            • 📈 System improves with every interaction
+            •  Neural network analyzes your personality patterns<br>
+            •  Social simulation finds your natural cluster<br>
+            •  AI learns from community interactions<br>
+            •  You get scientifically-backed compatibility matches<br>
+            •  System improves with every interaction
         </div>
         
         <form method="POST">
@@ -3699,7 +4299,7 @@ def processing():
 @app.route('/live-matching/<int:user_id>')
 @login_required
 def live_matching(user_id):
-    """Live agent-based matching visualization - embedded template"""
+    """Designer-quality live matching with real data"""
     if session.get('user_id') != user_id:
         return redirect('/login')
     
@@ -3713,299 +4313,553 @@ def live_matching(user_id):
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Live Agent Simulation - Connect</title>
+        <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=clash-display@400,500,600,700&display=swap" rel="stylesheet">
         <style>
-            body {{
+            * {{
                 margin: 0;
-                padding: 20px;
-                font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
-                min-height: 100vh;
+                padding: 0;
+                box-sizing: border-box;
             }}
             
+            :root {{
+                --color-cream: #f1ece0;
+                --color-emerald: #167a60;
+                --color-sage: #c6e19b;
+                --color-lavender: #c2b7ef;
+                --color-charcoal: #2d2d2d;
+                --color-white: #ffffff;
+                --color-gray-50: #fafafa;
+                --color-gray-100: #f5f5f5;
+                --color-gray-200: #eeeeee;
+                --color-gray-600: #757575;
+                --color-gray-800: #424242;
+            }}
+            
+            body {{
+                font-family: 'Satoshi', -apple-system, BlinkMacSystemFont, sans-serif;
+                background: linear-gradient(135deg, var(--color-cream) 0%, var(--color-gray-50) 100%);
+                color: var(--color-charcoal);
+                min-height: 100vh;
+                overflow-x: hidden;
+            }}
+            
+            /* Typography Scale */
+            .text-display {{
+                font-family: 'Clash Display', 'Satoshi', sans-serif;
+                font-size: clamp(2.5rem, 5vw, 4rem);
+                font-weight: 600;
+                line-height: 1.1;
+                letter-spacing: -0.02em;
+            }}
+            
+            .text-title {{
+                font-family: 'Clash Display', 'Satoshi', sans-serif;
+                font-size: clamp(1.5rem, 3vw, 2.25rem);
+                font-weight: 500;
+                line-height: 1.2;
+                letter-spacing: -0.01em;
+            }}
+            
+            .text-body-lg {{
+                font-size: 1.125rem;
+                line-height: 1.6;
+                font-weight: 400;
+            }}
+            
+            /* Layout */
             .container {{
                 max-width: 1200px;
                 margin: 0 auto;
+                padding: 2rem;
             }}
             
             .header {{
                 text-align: center;
-                margin-bottom: 30px;
-            }}
-            
-            .header h1 {{
-                margin: 0 0 10px 0;
-                font-size: 28px;
-                font-weight: 600;
-            }}
-            
-            .simulation-container {{
-                background: rgba(255, 255, 255, 0.1);
-                backdrop-filter: blur(20px);
-                border-radius: 20px;
-                padding: 30px;
+                margin-bottom: 3rem;
                 position: relative;
             }}
             
-            .simulation-area {{
-                width: 100%;
-                height: 500px;
-                background: rgba(0, 0, 0, 0.2);
-                border-radius: 15px;
+            .header::before {{
+                content: '';
+                position: absolute;
+                top: -1rem;
+                left: 50%;
+                transform: translateX(-50%);
+                width: 60px;
+                height: 4px;
+                background: linear-gradient(90deg, var(--color-emerald), var(--color-sage));
+                border-radius: 2px;
+            }}
+            
+            .live-badge {{
+                display: inline-flex;
+                align-items: center;
+                gap: 0.5rem;
+                background: var(--color-emerald);
+                color: var(--color-white);
+                padding: 0.5rem 1rem;
+                border-radius: 50px;
+                font-weight: 600;
+                margin-top: 1rem;
+                font-size: 0.875rem;
+            }}
+            
+            .live-badge::before {{
+                content: '●';
+                animation: pulse 2s ease-in-out infinite;
+            }}
+            
+            @keyframes pulse {{
+                0%, 100% {{
+                    opacity: 1;
+                }}
+                50% {{
+                    opacity: 0.3;
+                }}
+            }}
+            
+            /* Simulation Container */
+            .simulation-container {{
+                background: var(--color-white);
+                border-radius: 24px;
+                padding: 2rem;
+                box-shadow: 
+                    0 1px 3px rgba(0,0,0,0.04),
+                    0 8px 24px rgba(0,0,0,0.08),
+                    0 24px 48px rgba(0,0,0,0.04);
+                backdrop-filter: blur(20px);
                 position: relative;
                 overflow: hidden;
-                border: 2px solid rgba(255, 255, 255, 0.2);
             }}
             
-            .agent {{
+            .simulation-container::before {{
+                content: '';
                 position: absolute;
-                width: 16px;
-                height: 16px;
-                border-radius: 50%;
-                transition: all 0.8s cubic-bezier(0.4, 0.0, 0.2, 1);
-                box-shadow: 0 2px 10px rgba(0,0,0,0.4);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 8px;
-                font-weight: bold;
+                top: 0;
+                left: 0;
+                right: 0;
+                height: 1px;
+                background: linear-gradient(90deg, transparent, var(--color-sage), transparent);
+            }}
+            
+            /* Phase Indicator */
+            .phase {{
+                text-align: center;
+                padding: 1.5rem 2rem;
+                background: linear-gradient(135deg, var(--color-emerald), var(--color-sage));
                 color: white;
-                cursor: pointer;
-                z-index: 10;
+                border-radius: 16px;
+                margin-bottom: 2rem;
+                font-weight: 500;
+                font-size: 1.125rem;
+                position: relative;
+                overflow: hidden;
             }}
             
-            .agent.user {{
-                background: radial-gradient(circle, #ff6b6b, #ee5a52);
-                width: 20px;
-                height: 20px;
-                border: 3px solid #ffffff;
-                box-shadow: 0 4px 15px rgba(255, 107, 107, 0.8);
-                z-index: 20;
-            }}
-            
-            .agent.high-compat {{
-                background: radial-gradient(circle, #4ecdc4, #44a08d);
-                border: 2px solid rgba(255,255,255,0.6);
-            }}
-            
-            .agent.medium-compat {{
-                background: radial-gradient(circle, #ffd93d, #f39c12);
-                border: 2px solid rgba(255,255,255,0.4);
-            }}
-            
-            .agent.low-compat {{
-                background: radial-gradient(circle, #a8a8a8, #7f8c8d);
-                border: 2px solid rgba(255,255,255,0.3);
-            }}
-            
-            .agent:hover {{
-                transform: scale(1.3);
-                z-index: 25;
-            }}
-            
-            .satisfaction-indicator {{
+            .phase::before {{
+                content: '';
                 position: absolute;
-                border-radius: 50%;
-                border: 2px solid rgba(78, 205, 196, 0.4);
-                pointer-events: none;
-                transition: all 0.5s ease;
+                top: 0;
+                left: -100%;
+                width: 100%;
+                height: 100%;
+                background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+                animation: shimmer 3s ease-in-out infinite;
             }}
             
-            .stats-panel {{
-                display: flex;
-                justify-content: space-between;
-                margin: 20px 0;
-                gap: 20px;
+            @keyframes shimmer {{
+                0% {{ left: -100%; }}
+                50% {{ left: 100%; }}
+                100% {{ left: 100%; }}
             }}
             
-            .stat-card {{
-                flex: 1;
-                background: rgba(255, 255, 255, 0.1);
-                padding: 20px;
-                border-radius: 12px;
-                text-align: center;
-            }}
-            
-            .stat-value {{
-                font-size: 24px;
-                font-weight: bold;
-                margin-bottom: 5px;
-            }}
-            
-            .phase-indicator {{
-                text-align: center;
-                font-size: 16px;
-                margin-bottom: 15px;
-                padding: 10px;
-                background: rgba(255, 255, 255, 0.1);
-                border-radius: 8px;
-            }}
-            
+            /* Legend */
             .legend {{
                 display: flex;
                 justify-content: center;
-                gap: 20px;
-                margin-bottom: 20px;
+                gap: 2rem;
+                margin: 2rem 0;
                 flex-wrap: wrap;
             }}
             
             .legend-item {{
                 display: flex;
                 align-items: center;
-                gap: 8px;
-                background: rgba(255, 255, 255, 0.1);
-                padding: 8px 12px;
-                border-radius: 20px;
-                font-size: 12px;
+                gap: 0.75rem;
+                padding: 0.75rem 1.25rem;
+                background: var(--color-gray-50);
+                border-radius: 50px;
+                font-weight: 500;
+                font-size: 0.875rem;
+                color: var(--color-gray-800);
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            }}
+            
+            .legend-item:hover {{
+                background: var(--color-gray-100);
+                transform: translateY(-2px);
             }}
             
             .legend-dot {{
-                width: 12px;
-                height: 12px;
+                width: 14px;
+                height: 14px;
                 border-radius: 50%;
+                border: 2px solid rgba(255,255,255,0.8);
+                box-shadow: 0 2px 8px rgba(0,0,0,0.15);
             }}
             
-            .completion-overlay {{
-                position: fixed;
-                top: 0;
-                left: 0;
+            /* Simulation Area */
+            .simulation-area {{
                 width: 100%;
-                height: 100%;
-                background: rgba(0, 0, 0, 0.8);
+                height: 600px;
+                background: var(--color-cream);
+                border-radius: 16px;
+                position: relative;
+                overflow: hidden;
+                border: 1px solid rgba(0,0,0,0.06);
+                box-shadow: inset 0 2px 8px rgba(0,0,0,0.04);
+            }}
+            
+            /* Enhanced Dots */
+            .dot {{
+                position: absolute;
+                border-radius: 50%;
+                transition: all 1.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+                cursor: pointer;
+                z-index: 10;
+            }}
+            
+            .dot.you {{
+                width: 16px;
+                height: 16px;
+                background: radial-gradient(circle at 30% 30%, var(--color-charcoal), #1a1a1a);
+                border: 3px solid var(--color-white);
+                box-shadow: 
+                    0 0 0 2px var(--color-charcoal),
+                    0 4px 12px rgba(45, 45, 45, 0.4),
+                    0 0 24px rgba(45, 45, 45, 0.2);
+                z-index: 20;
+            }}
+            
+            .dot.other {{
+                width: 10px;
+                height: 10px;
+                background: radial-gradient(circle at 30% 30%, var(--color-emerald), #0f5942);
+                border: 2px solid rgba(255, 255, 255, 0.6);
+                box-shadow: 
+                    0 2px 8px rgba(22, 122, 96, 0.3),
+                    0 0 16px rgba(22, 122, 96, 0.1);
+            }}
+            
+            .dot:hover {{
+                transform: scale(1.4);
+                z-index: 30;
+            }}
+            
+            .dot.you:hover {{
+                box-shadow: 
+                    0 0 0 2px var(--color-charcoal),
+                    0 6px 20px rgba(45, 45, 45, 0.5),
+                    0 0 32px rgba(45, 45, 45, 0.3);
+            }}
+            
+            /* Final Results Section */
+            .final-results {{
+                margin-top: 2rem;
                 display: none;
+            }}
+            
+            .final-results.visible {{
+                display: block;
+                animation: slideUp 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+            }}
+            
+            .final-arrangement {{
+                width: 100%;
+                height: 200px;
+                background: linear-gradient(135deg, var(--color-lavender), var(--color-sage));
+                border-radius: 16px;
+                position: relative;
+                overflow: hidden;
+                border: 1px solid rgba(0,0,0,0.06);
+                margin-bottom: 2rem;
+            }}
+            
+            .final-arrangement::before {{
+                content: 'Final Match Arrangement';
+                position: absolute;
+                top: 1rem;
+                left: 1.5rem;
+                font-weight: 600;
+                font-size: 0.875rem;
+                color: var(--color-charcoal);
+                opacity: 0.8;
+            }}
+            
+            .final-arrangement .dot.match {{
+                background: radial-gradient(circle at 30% 30%, var(--color-sage), #9ac463);
+                border: 2px solid var(--color-white);
+                box-shadow: 0 2px 8px rgba(198, 225, 155, 0.4);
+                cursor: pointer;
+            }}
+            
+            .final-arrangement .dot.non-match {{
+                background: radial-gradient(circle at 30% 30%, #999, #666);
+                border: 2px solid rgba(255,255,255,0.4);
+                opacity: 0.6;
+            }}
+            
+            .match-buttons {{
+                display: grid;
+                gap: 1rem;
+                max-height: 300px;
+                overflow-y: auto;
+            }}
+            
+            .match-button {{
+                display: flex;
                 align-items: center;
-                justify-content: center;
-                z-index: 1000;
+                justify-content: space-between;
+                padding: 1.5rem;
+                background: var(--color-white);
+                border: 1px solid var(--color-gray-200);
+                border-radius: 12px;
+                text-decoration: none;
+                color: var(--color-charcoal);
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                font-weight: 500;
             }}
             
-            .completion-message {{
-                background: linear-gradient(135deg, #28a745, #20c997);
-                padding: 40px;
-                border-radius: 20px;
+            .match-button:hover {{
+                transform: translateY(-2px);
+                box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+                border-color: var(--color-sage);
+            }}
+            
+            .match-info {{
+                display: flex;
+                flex-direction: column;
+                gap: 0.25rem;
+            }}
+            
+            .match-name {{
+                font-size: 1.125rem;
+                font-weight: 600;
+            }}
+            
+            .match-score {{
+                font-size: 0.875rem;
+                color: var(--color-gray-600);
+            }}
+            
+            .match-arrow {{
+                font-size: 1.5rem;
+                color: var(--color-sage);
+                transition: transform 0.3s ease;
+            }}
+            
+            .match-button:hover .match-arrow {{
+                transform: translateX(4px);
+            }}
+            
+            /* Stats Panel */
+            .stats {{
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+                gap: 1.5rem;
+                margin: 2rem 0;
+            }}
+            
+            .stat {{
                 text-align: center;
-                max-width: 400px;
+                padding: 1.5rem 1rem;
+                background: linear-gradient(135deg, var(--color-gray-50), var(--color-white));
+                border-radius: 16px;
+                border: 1px solid rgba(0,0,0,0.04);
+                position: relative;
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             }}
             
+            .stat:hover {{
+                transform: translateY(-4px);
+                box-shadow: 0 8px 32px rgba(0,0,0,0.08);
+            }}
+            
+            .stat-value {{
+                font-family: 'Clash Display', 'Satoshi', sans-serif;
+                font-size: 2rem;
+                font-weight: 600;
+                color: var(--color-charcoal);
+                margin-bottom: 0.25rem;
+                line-height: 1;
+            }}
+            
+            .stat-label {{
+                font-size: 0.75rem;
+                font-weight: 600;
+                color: var(--color-gray-600);
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+            }}
+            
+            /* Navigation */
             .back-nav {{
                 position: fixed;
-                top: 20px;
-                left: 20px;
+                top: 2rem;
+                left: 2rem;
                 z-index: 1000;
             }}
             
             .back-btn {{
-                background: rgba(255, 255, 255, 0.2);
-                backdrop-filter: blur(10px);
-                border: none;
-                color: white;
-                padding: 10px 15px;
-                border-radius: 20px;
-                text-decoration: none;
                 display: flex;
                 align-items: center;
-                gap: 8px;
+                gap: 0.5rem;
+                background: var(--color-white);
+                color: var(--color-charcoal);
+                padding: 0.75rem 1.25rem;
+                border-radius: 50px;
+                text-decoration: none;
                 font-weight: 500;
-                transition: all 0.3s ease;
+                font-size: 0.875rem;
+                box-shadow: 
+                    0 1px 3px rgba(0,0,0,0.04),
+                    0 4px 16px rgba(0,0,0,0.08);
+                backdrop-filter: blur(20px);
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                border: 1px solid rgba(0,0,0,0.06);
             }}
             
             .back-btn:hover {{
-                background: rgba(255, 255, 255, 0.3);
+                transform: translateY(-2px);
+                box-shadow: 
+                    0 2px 8px rgba(0,0,0,0.08),
+                    0 8px 24px rgba(0,0,0,0.12);
             }}
             
+            /* Responsive Design */
             @media (max-width: 768px) {{
-                .stats-panel {{
-                    flex-direction: column;
+                .container {{
+                    padding: 1rem;
                 }}
+                
+                .simulation-container {{
+                    padding: 1.5rem;
+                }}
+                
                 .simulation-area {{
                     height: 400px;
+                }}
+                
+                .final-arrangement {{
+                    height: 150px;
+                }}
+                
+                .stats {{
+                    grid-template-columns: repeat(2, 1fr);
+                    gap: 1rem;
+                }}
+            }}
+            
+            @keyframes slideUp {{
+                from {{
+                    opacity: 0;
+                    transform: translateY(20px);
+                }}
+                to {{
+                    opacity: 1;
+                    transform: translateY(0);
                 }}
             }}
         </style>
     </head>
     <body>
         <div class="back-nav">
-            <a href="/dashboard" class="back-btn">← Back to Dashboard</a>
+            <a href="/dashboard" class="back-btn">
+                ← Back to Dashboard
+            </a>
         </div>
         
         <div class="container">
-            <div class="header">
-                <h1>🧠 Live Agent-Based Matching</h1>
-                <p>Watch your AI agent discover its perfect social cluster in real-time</p>
-            </div>
+            <header class="header">
+                <h1 class="text-display">Simulating Conversations</h1>
+                <p class="text-body-lg" style="color: var(--color-gray-600); margin-top: 1rem;">
+                    Agents are mingling to find out who they like best
+                </p>
+                <div class="live-badge">
+                    Dinner party in process
+                </div>
+            </header>
             
             <div class="simulation-container">
-                <div class="phase-indicator" id="phaseIndicator">Initializing simulation...</div>
+                <div class="phase" id="phaseIndicator">
+                    Initializing neural network analysis...
+                </div>
                 
                 <div class="legend">
                     <div class="legend-item">
-                        <div class="legend-dot" style="background: radial-gradient(circle, #ff6b6b, #ee5a52); border: 2px solid white;"></div>
-                        <span>You</span>
+                        <div class="legend-dot" style="background: radial-gradient(circle at 30% 30%, var(--color-charcoal), #1a1a1a);"></div>
+                        <span>Your Agent</span>
                     </div>
                     <div class="legend-item">
-                        <div class="legend-dot" style="background: radial-gradient(circle, #4ecdc4, #44a08d);"></div>
-                        <span>High Compatibility</span>
-                    </div>
-                    <div class="legend-item">
-                        <div class="legend-dot" style="background: radial-gradient(circle, #ffd93d, #f39c12);"></div>
-                        <span>Medium Compatibility</span>
-                    </div>
-                    <div class="legend-item">
-                        <div class="legend-dot" style="background: radial-gradient(circle, #a8a8a8, #7f8c8d);"></div>
-                        <span>Low Compatibility</span>
+                        <div class="legend-dot" style="background: radial-gradient(circle at 30% 30%, var(--color-emerald), #0f5942);"></div>
+                        <span>Other Agents</span>
                     </div>
                 </div>
                 
                 <div class="simulation-area" id="simulationArea">
-                    <!-- Real agents from your algorithm will appear here -->
+                    <!-- Real agents will appear here -->
                 </div>
                 
-                <div class="stats-panel">
-                    <div class="stat-card">
-                        <div class="stat-value" id="simulationStep">0</div>
-                        <div>Simulation Step</div>
+                <div class="final-results" id="finalResults">
+                    <div class="final-arrangement" id="finalArrangement">
+                        <!-- Final arrangement will show here -->
                     </div>
-                    <div class="stat-card">
-                        <div class="stat-value" id="agentsMoved">0</div>
-                        <div>Agents Moved</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value" id="avgSatisfaction">0%</div>
-                        <div>Cluster Satisfaction</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value" id="totalAgents">0</div>
-                        <div>Total Agents</div>
+                    
+                    <div class="match-buttons" id="matchButtons">
+                        <!-- Match buttons will appear here -->
                     </div>
                 </div>
-            </div>
-            
-            <div class="completion-overlay" id="completionOverlay">
-                <div class="completion-message">
-                    <h2>🎉 Perfect Cluster Found!</h2>
-                    <p>Your AI agent has discovered its ideal social group.</p>
-                    <button onclick="viewMatches()" style="background: white; color: #28a745; border: none; padding: 15px 30px; border-radius: 8px; font-weight: 600; cursor: pointer; margin-top: 20px;">
-                        View Your Matches
-                    </button>
+                
+                <div class="stats">
+                    <div class="stat">
+                        <div class="stat-value" id="simulationStep">0</div>
+                        <div class="stat-label">Simulation Step</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value" id="agentsMoved">0</div>
+                        <div class="stat-label">Conversations had</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value" id="avgSatisfaction">0%</div>
+                        <div class="stat-label">Satisfaction</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value" id="totalAgents">0</div>
+                        <div class="stat-label">Total Agents</div>
+                    </div>
                 </div>
             </div>
         </div>
 
         <script>
             const USER_ID = {user_id};
-            let agents = new Map();
+            let dots = new Map();
+            let finalDots = new Map();
             let updateInterval;
             let agentsMetadata = {{}};
+            let matchesData = [];
+            let simulationCompleted = false;
             
             const phaseMessages = {{
-                'data_collection': 'Collecting user profiles...',
-                'filtering_users': 'Filtering compatible users...',
-                'initializing_simulation': 'Creating your AI agent...',
-                'running_simulation': 'Agents finding their clusters...',
-                'generating_matches': 'Calculating final compatibility scores...'
+                'data_collection': '📊 Analyzing user personality profiles...',
+                'filtering_users': '🎯 Identifying compatible candidates...',
+                'initializing_simulation': '🤖 Spawning intelligent agents...',
+                'running_simulation': '✨ Agents discovering optimal clusters...',
+                'generating_matches': '🔬 Calculating compatibility matrices...'
             }};
             
             function startRealTimeUpdates() {{
-                updateInterval = setInterval(fetchLiveStatus, 200); // 200ms updates for smooth animation
+                updateInterval = setInterval(fetchLiveStatus, 1000);
                 fetchLiveStatus();
             }}
             
@@ -4016,121 +4870,207 @@ def live_matching(user_id):
                         updateVisualization(data);
                     }})
                     .catch(error => {{
-                        console.error('Error fetching live status:', error);
+                        console.error('Real simulation error:', error);
                     }});
             }}
             
             function updateVisualization(data) {{
-                // Update phase
+                // Update phase with smooth transitions
                 const phase = data.phase || 'initializing';
-                document.getElementById('phaseIndicator').textContent = 
-                    phaseMessages[phase] || 'Processing...';
+                const phaseEl = document.getElementById('phaseIndicator');
+                phaseEl.textContent = phaseMessages[phase] || 'Processing real matching...';
                 
-                // Update stats
-                document.getElementById('simulationStep').textContent = data.simulation_step || 0;
-                document.getElementById('agentsMoved').textContent = data.agents_moved || 0;
-                document.getElementById('avgSatisfaction').textContent = `${{data.avg_satisfaction || 0}}%`;
+                // Update stats with smooth counting
+                animateValue('simulationStep', data.simulation_step || 0);
+                animateValue('agentsMoved', data.agents_moved || 0);
+                animateValue('avgSatisfaction', data.avg_satisfaction || 0, '%');
                 
-                // Initialize agents when metadata is available
+                // Initialize real dots
                 if (data.agents_metadata && Object.keys(agentsMetadata).length === 0) {{
+                    console.log('🎨 Creating real agent visualization...');
                     agentsMetadata = data.agents_metadata;
-                    initializeAgents();
+                    initializeRealDots();
                     document.getElementById('totalAgents').textContent = Object.keys(agentsMetadata).length;
                 }}
                 
-                // Update agent positions in real-time
+                // Update dot positions
                 if (data.agents_positions) {{
-                    updateAgentPositions(data.agents_positions);
+                    updateDotPositions(data.agents_positions);
                 }}
                 
-                // Check if completed
-                if (data.status === 'completed') {{
-                    showCompletion();
-                }} else if (data.status === 'error') {{
-                    alert('Error in matching process. Redirecting to dashboard...');
-                    window.location.href = '/dashboard';
+                // Store matches data
+                if (data.matches) {{
+                    matchesData = data.matches;
+                }}
+                
+                // Handle completion
+                if (data.status === 'completed' && !simulationCompleted) {{
+                    simulationCompleted = true;
+                    setTimeout(showFinalResults, 1000);
                 }}
             }}
             
-            function initializeAgents() {{
-                const simulationArea = document.getElementById('simulationArea');
-                simulationArea.innerHTML = '';
+            function animateValue(elementId, targetValue, suffix = '') {{
+                const element = document.getElementById(elementId);
+                const currentValue = parseInt(element.textContent) || 0;
+                
+                if (currentValue !== targetValue) {{
+                    const increment = (targetValue - currentValue) / 8;
+                    let current = currentValue;
+                    
+                    const timer = setInterval(() => {{
+                        current += increment;
+                        if ((increment > 0 && current >= targetValue) || 
+                            (increment < 0 && current <= targetValue)) {{
+                            current = targetValue;
+                            clearInterval(timer);
+                        }}
+                        element.textContent = Math.round(current) + suffix;
+                    }}, 50);
+                }}
+            }}
+            
+            function initializeRealDots() {{
+                const area = document.getElementById('simulationArea');
+                area.innerHTML = '';
+                dots.clear();
                 
                 Object.entries(agentsMetadata).forEach(([agentId, metadata]) => {{
-                    const agentEl = document.createElement('div');
-                    agentEl.className = `agent ${{metadata.type}}`;
-                    agentEl.id = `agent-${{agentId}}`;
-                    agentEl.title = `${{metadata.name}} (${{metadata.compatibility_level}})`;
+                    const dot = document.createElement('div');
+                    dot.className = `dot ${{metadata.type === 'user' ? 'you' : 'other'}}`;
+                    dot.id = `dot-${{agentId}}`;
+                    dot.title = metadata.type === 'user' ? 'Your Intelligent Agent' : `Agent: ${{metadata.name}}`;
                     
-                    // Initial position (will be updated by real algorithm)
-                    agentEl.style.left = '50%';
-                    agentEl.style.top = '50%';
-                    agentEl.style.transform = 'translate(-50%, -50%)';
+                    // Start in center
+                    dot.style.left = '400px';
+                    dot.style.top = '300px';
                     
-                    simulationArea.appendChild(agentEl);
-                    agents.set(parseInt(agentId), agentEl);
+                    area.appendChild(dot);
+                    dots.set(parseInt(agentId), dot);
                 }});
                 
-                console.log(`Initialized ${{agents.size}} real agents from algorithm`);
+                console.log('✨ Created', dots.size, 'real agent dots');
             }}
             
-            function updateAgentPositions(positions) {{
+            function updateDotPositions(positions) {{
                 Object.entries(positions).forEach(([agentId, posData]) => {{
-                    const agentEl = agents.get(parseInt(agentId));
-                    if (agentEl) {{
-                        // Update position from real algorithm
-                        agentEl.style.left = `${{posData.x}}px`;
-                        agentEl.style.top = `${{posData.y}}px`;
-                        agentEl.style.transform = 'none';
+                    const dot = dots.get(parseInt(agentId));
+                    if (dot) {{
+                        const x = Math.max(8, Math.min(792, posData.x));
+                        const y = Math.max(8, Math.min(592, posData.y));
                         
-                        // Update satisfaction indicator
-                        updateSatisfactionIndicator(agentEl, posData.satisfaction);
+                        dot.style.left = x + 'px';
+                        dot.style.top = y + 'px';
                     }}
                 }});
             }}
             
-            function updateSatisfactionIndicator(agentEl, satisfaction) {{
-                // Remove existing indicator
-                const existingIndicator = agentEl.nextElementSibling;
-                if (existingIndicator && existingIndicator.classList.contains('satisfaction-indicator')) {{
-                    existingIndicator.remove();
+            function showFinalResults() {{
+                document.getElementById('phaseIndicator').textContent = '🎉 Perfect clusters discovered! Here are your matches.';
+                
+                // Create final arrangement
+                createFinalArrangement();
+                createMatchButtons();
+                
+                // Show final results section
+                document.getElementById('finalResults').classList.add('visible');
+                
+                console.log('🎊 Real matching completed with beautiful results!');
+            }}
+            
+            function createFinalArrangement() {{
+                const finalArrangement = document.getElementById('finalArrangement');
+                finalArrangement.innerHTML = '';
+                
+                Object.entries(agentsMetadata).forEach(([agentId, metadata]) => {{
+                    const originalDot = dots.get(parseInt(agentId));
+                    if (originalDot) {{
+                        const finalDot = document.createElement('div');
+                        
+                        const isMatch = matchesData.some(match => match.matched_user_id == agentId);
+                        const isUser = metadata.type === 'user';
+                        
+                        if (isUser) {{
+                            finalDot.className = 'dot you';
+                        }} else if (isMatch) {{
+                            finalDot.className = 'dot match';
+                        }} else {{
+                            finalDot.className = 'dot non-match';
+                        }}
+                        
+                        finalDot.title = isUser ? 'Your Agent' : metadata.name;
+                        
+                        // Scale and position for final arrangement
+                        const scaleX = 0.8;
+                        const scaleY = 0.4;
+                        const offsetY = 50;
+                        
+                        const relativeX = parseFloat(originalDot.style.left) || 0;
+                        const relativeY = parseFloat(originalDot.style.top) || 0;
+                        
+                        finalDot.style.left = `${{relativeX * scaleX}}px`;
+                        finalDot.style.top = `${{(relativeY * scaleY) + offsetY}}px`;
+                        
+                        finalArrangement.appendChild(finalDot);
+                        finalDots.set(parseInt(agentId), finalDot);
+                    }}
+                }});
+            }}
+            
+            function createMatchButtons() {{
+                const matchButtons = document.getElementById('matchButtons');
+                matchButtons.innerHTML = '';
+                
+                if (matchesData && matchesData.length > 0) {{
+                    matchesData.forEach(match => {{
+                        const button = document.createElement('a');
+                        button.className = 'match-button';
+                        button.href = `/send-contact-request/${{match.matched_user_id}}`;
+                        
+                        button.innerHTML = `
+                            <div class="match-info">
+                                <div class="match-name">${{match.matched_user_name}}</div>
+                                <div class="match-score">${{match.overall_score}}% compatibility • Neural Network Verified</div>
+                            </div>
+                            <div class="match-arrow">→</div>
+                        `;
+                        
+                        // Add hover effect for final dot
+                        button.addEventListener('mouseenter', () => {{
+                            const finalDot = finalDots.get(match.matched_user_id);
+                            if (finalDot) {{
+                                finalDot.style.transform = 'scale(1.6)';
+                                finalDot.style.zIndex = '30';
+                            }}
+                        }});
+                        
+                        button.addEventListener('mouseleave', () => {{
+                            const finalDot = finalDots.get(match.matched_user_id);
+                            if (finalDot) {{
+                                finalDot.style.transform = 'none';
+                                finalDot.style.zIndex = '10';
+                            }}
+                        }});
+                        
+                        matchButtons.appendChild(button);
+                    }});
+                }} else {{
+                    matchButtons.innerHTML = `
+                        <div style="text-align: center; padding: 2rem; color: var(--color-gray-600);">
+                            <h3>No matches found in this simulation</h3>
+                            <p>Try running the matching again or updating your profile.</p>
+                        </div>
+                    `;
                 }}
-                
-                // Create new indicator
-                const indicator = document.createElement('div');
-                indicator.className = 'satisfaction-indicator';
-                
-                const size = 30 + (satisfaction * 40); // 30-70px based on satisfaction
-                indicator.style.width = `${{size}}px`;
-                indicator.style.height = `${{size}}px`;
-                indicator.style.left = `${{parseFloat(agentEl.style.left) - size/2}}px`;
-                indicator.style.top = `${{parseFloat(agentEl.style.top) - size/2}}px`;
-                
-                // Color based on satisfaction
-                let color;
-                if (satisfaction > 0.7) color = 'rgba(78, 205, 196, 0.6)';
-                else if (satisfaction > 0.4) color = 'rgba(255, 217, 61, 0.6)';
-                else color = 'rgba(231, 76, 60, 0.6)';
-                
-                indicator.style.borderColor = color;
-                
-                agentEl.parentNode.appendChild(indicator);
             }}
             
-            function showCompletion() {{
-                clearInterval(updateInterval);
-                document.getElementById('phaseIndicator').textContent = '✨ Perfect matches discovered!';
-                document.getElementById('completionOverlay').style.display = 'flex';
-            }}
+            // Initialize when page loads
+            document.addEventListener('DOMContentLoaded', () => {{
+                console.log('🚀 Starting real designer matching...');
+                startRealTimeUpdates();
+            }});
             
-            function viewMatches() {{
-                window.location.href = '/dashboard';
-            }}
-            
-            // Start when page loads
-            document.addEventListener('DOMContentLoaded', startRealTimeUpdates);
-            
-            // Cleanup on page leave
+            // Cleanup
             window.addEventListener('beforeunload', () => {{
                 if (updateInterval) clearInterval(updateInterval);
             }});
@@ -4143,7 +5083,7 @@ def live_matching(user_id):
 
 @app.route('/api/processing-status/<int:user_id>')
 def processing_status_api(user_id):
-    """Check processing status for authenticated user"""
+    """Enhanced API endpoint for real processing status"""
     # Verify this is the logged-in user
     if session.get('user_id') != user_id:
         return jsonify({'error': 'Unauthorized'}), 401
@@ -4158,8 +5098,15 @@ def processing_status_api(user_id):
     if not final_status:
         final_status = {'status': 'processing', 'progress': 0}
     
+    # Ensure we always have the required fields for the frontend
+    final_status.setdefault('phase', 'initializing')
+    final_status.setdefault('simulation_step', 0)
+    final_status.setdefault('agents_moved', 0)
+    final_status.setdefault('avg_satisfaction', 0)
+    final_status.setdefault('agents_positions', {})
+    final_status.setdefault('agents_metadata', {})
+    
     return jsonify(final_status)
-
 # ============================================================================
 # ROUTES - PROFILE UPDATES
 # ============================================================================
@@ -4688,6 +5635,708 @@ def init_database():
 # ============================================================================
 # MAIN APPLICATION
 # ============================================================================
+
+@app.route('/test-live-matching/<int:user_id>')
+@login_required  
+def test_live_matching(user_id):
+    """Designer-quality live matching with beautiful typography and colors"""
+    if session.get('user_id') != user_id:
+        return redirect('/login')
+    
+    live_matching_html = f'''
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Live Agent Simulation</title>
+        <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=clash-display@400,500,600,700&display=swap" rel="stylesheet">
+        <style>
+            * {{
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }}
+            
+            :root {{
+                --color-cream: #f1ece0;
+                --color-emerald: #167a60;
+                --color-sage: #c6e19b;
+                --color-lavender: #c2b7ef;
+                --color-charcoal: #2d2d2d;
+                --color-white: #ffffff;
+                --color-gray-50: #fafafa;
+                --color-gray-100: #f5f5f5;
+                --color-gray-200: #eeeeee;
+                --color-gray-600: #757575;
+                --color-gray-800: #424242;
+            }}
+            
+            body {{
+                font-family: 'Satoshi', -apple-system, BlinkMacSystemFont, sans-serif;
+                background: linear-gradient(135deg, var(--color-cream) 0%, var(--color-gray-50) 100%);
+                color: var(--color-charcoal);
+                min-height: 100vh;
+                overflow-x: hidden;
+            }}
+            
+            /* Typography Scale */
+            .text-display {{
+                font-family: 'Clash Display', 'Satoshi', sans-serif;
+                font-size: clamp(2.5rem, 5vw, 4rem);
+                font-weight: 600;
+                line-height: 1.1;
+                letter-spacing: -0.02em;
+            }}
+            
+            .text-title {{
+                font-family: 'Clash Display', 'Satoshi', sans-serif;
+                font-size: clamp(1.5rem, 3vw, 2.25rem);
+                font-weight: 500;
+                line-height: 1.2;
+                letter-spacing: -0.01em;
+            }}
+            
+            .text-body-lg {{
+                font-size: 1.125rem;
+                line-height: 1.6;
+                font-weight: 400;
+            }}
+            
+            .text-body {{
+                font-size: 1rem;
+                line-height: 1.5;
+                font-weight: 400;
+            }}
+            
+            .text-small {{
+                font-size: 0.875rem;
+                line-height: 1.4;
+                font-weight: 400;
+            }}
+            
+            .text-micro {{
+                font-size: 0.75rem;
+                line-height: 1.3;
+                font-weight: 500;
+                letter-spacing: 0.05em;
+                text-transform: uppercase;
+            }}
+            
+            /* Layout */
+            .container {{
+                max-width: 1200px;
+                margin: 0 auto;
+                padding: 2rem;
+            }}
+            
+            .header {{
+                text-align: center;
+                margin-bottom: 3rem;
+                position: relative;
+            }}
+            
+            .header::before {{
+                content: '';
+                position: absolute;
+                top: -1rem;
+                left: 50%;
+                transform: translateX(-50%);
+                width: 60px;
+                height: 4px;
+                background: linear-gradient(90deg, var(--color-emerald), var(--color-sage));
+                border-radius: 2px;
+            }}
+            
+            .test-badge {{
+                display: inline-flex;
+                align-items: center;
+                gap: 0.5rem;
+                background: var(--color-lavender);
+                color: var(--color-charcoal);
+                padding: 0.5rem 1rem;
+                border-radius: 50px;
+                font-weight: 600;
+                margin-top: 1rem;
+                font-size: 0.875rem;
+            }}
+            
+            .test-badge::before {{
+                content: '✦';
+                font-size: 1rem;
+            }}
+            
+            /* Simulation Container */
+            .simulation-container {{
+                background: var(--color-white);
+                border-radius: 24px;
+                padding: 2rem;
+                box-shadow: 
+                    0 1px 3px rgba(0,0,0,0.04),
+                    0 8px 24px rgba(0,0,0,0.08),
+                    0 24px 48px rgba(0,0,0,0.04);
+                backdrop-filter: blur(20px);
+                position: relative;
+                overflow: hidden;
+            }}
+            
+            .simulation-container::before {{
+                content: '';
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                height: 1px;
+                background: linear-gradient(90deg, transparent, var(--color-sage), transparent);
+            }}
+            
+            /* Phase Indicator */
+            .phase {{
+                text-align: center;
+                padding: 1.5rem 2rem;
+                background: linear-gradient(135deg, var(--color-emerald), var(--color-sage));
+                color: white;
+                border-radius: 16px;
+                margin-bottom: 2rem;
+                font-weight: 500;
+                font-size: 1.125rem;
+                position: relative;
+                overflow: hidden;
+            }}
+            
+            .phase::before {{
+                content: '';
+                position: absolute;
+                top: 0;
+                left: -100%;
+                width: 100%;
+                height: 100%;
+                background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+                animation: shimmer 3s ease-in-out infinite;
+            }}
+            
+            @keyframes shimmer {{
+                0% {{ left: -100%; }}
+                50% {{ left: 100%; }}
+                100% {{ left: 100%; }}
+            }}
+            
+            /* Legend */
+            .legend {{
+                display: flex;
+                justify-content: center;
+                gap: 2rem;
+                margin: 2rem 0;
+                flex-wrap: wrap;
+            }}
+            
+            .legend-item {{
+                display: flex;
+                align-items: center;
+                gap: 0.75rem;
+                padding: 0.75rem 1.25rem;
+                background: var(--color-gray-50);
+                border-radius: 50px;
+                font-weight: 500;
+                font-size: 0.875rem;
+                color: var(--color-gray-800);
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            }}
+            
+            .legend-item:hover {{
+                background: var(--color-gray-100);
+                transform: translateY(-2px);
+            }}
+            
+            .legend-dot {{
+                width: 14px;
+                height: 14px;
+                border-radius: 50%;
+                border: 2px solid rgba(255,255,255,0.8);
+                box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            }}
+            
+            /* Simulation Area */
+            .simulation-area {{
+                width: 100%;
+                height: 600px;
+                background: var(--color-cream);
+                border-radius: 16px;
+                position: relative;
+                overflow: hidden;
+                border: 1px solid rgba(0,0,0,0.06);
+                box-shadow: inset 0 2px 8px rgba(0,0,0,0.04);
+            }}
+            
+            /* Enhanced Dots */
+            .dot {{
+                position: absolute;
+                border-radius: 50%;
+                transition: all 1.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+                cursor: pointer;
+                z-index: 10;
+            }}
+            
+            .dot.you {{
+                width: 16px;
+                height: 16px;
+                background: radial-gradient(circle at 30% 30%, var(--color-charcoal), #1a1a1a);
+                border: 3px solid var(--color-white);
+                box-shadow: 
+                    0 0 0 2px var(--color-charcoal),
+                    0 4px 12px rgba(45, 45, 45, 0.4),
+                    0 0 24px rgba(45, 45, 45, 0.2);
+                z-index: 20;
+            }}
+            
+            .dot.other {{
+                width: 10px;
+                height: 10px;
+                background: radial-gradient(circle at 30% 30%, var(--color-emerald), #0f5942);
+                border: 2px solid rgba(255, 255, 255, 0.6);
+                box-shadow: 
+                    0 2px 8px rgba(22, 122, 96, 0.3),
+                    0 0 16px rgba(22, 122, 96, 0.1);
+            }}
+            
+            .dot:hover {{
+                transform: scale(1.4);
+                z-index: 30;
+            }}
+            
+            .dot.you:hover {{
+                box-shadow: 
+                    0 0 0 2px var(--color-charcoal),
+                    0 6px 20px rgba(45, 45, 45, 0.5),
+                    0 0 32px rgba(45, 45, 45, 0.3);
+            }}
+            
+            /* Stats Panel */
+            .stats {{
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+                gap: 1.5rem;
+                margin: 2rem 0;
+            }}
+            
+            .stat {{
+                text-align: center;
+                padding: 1.5rem 1rem;
+                background: linear-gradient(135deg, var(--color-gray-50), var(--color-white));
+                border-radius: 16px;
+                border: 1px solid rgba(0,0,0,0.04);
+                position: relative;
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            }}
+            
+            .stat:hover {{
+                transform: translateY(-4px);
+                box-shadow: 0 8px 32px rgba(0,0,0,0.08);
+            }}
+            
+            .stat-value {{
+                font-family: 'Clash Display', 'Satoshi', sans-serif;
+                font-size: 2rem;
+                font-weight: 600;
+                color: var(--color-charcoal);
+                margin-bottom: 0.25rem;
+                line-height: 1;
+            }}
+            
+            .stat-label {{
+                font-size: 0.75rem;
+                font-weight: 600;
+                color: var(--color-gray-600);
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+            }}
+            
+            /* Navigation */
+            .back-nav {{
+                position: fixed;
+                top: 2rem;
+                left: 2rem;
+                z-index: 1000;
+            }}
+            
+            .back-btn {{
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                background: var(--color-white);
+                color: var(--color-charcoal);
+                padding: 0.75rem 1.25rem;
+                border-radius: 50px;
+                text-decoration: none;
+                font-weight: 500;
+                font-size: 0.875rem;
+                box-shadow: 
+                    0 1px 3px rgba(0,0,0,0.04),
+                    0 4px 16px rgba(0,0,0,0.08);
+                backdrop-filter: blur(20px);
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                border: 1px solid rgba(0,0,0,0.06);
+            }}
+            
+            .back-btn:hover {{
+                transform: translateY(-2px);
+                box-shadow: 
+                    0 2px 8px rgba(0,0,0,0.08),
+                    0 8px 24px rgba(0,0,0,0.12);
+            }}
+            
+            /* Completion Message */
+            .completion-message {{
+                background: linear-gradient(135deg, var(--color-sage), var(--color-lavender));
+                color: var(--color-charcoal);
+                padding: 2.5rem 2rem;
+                border-radius: 20px;
+                text-align: center;
+                margin-top: 2rem;
+                display: none;
+                position: relative;
+                overflow: hidden;
+            }}
+            
+            .completion-message.visible {{
+                display: block;
+                animation: slideUp 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+            }}
+            
+            @keyframes slideUp {{
+                from {{
+                    opacity: 0;
+                    transform: translateY(20px);
+                }}
+                to {{
+                    opacity: 1;
+                    transform: translateY(0);
+                }}
+            }}
+            
+            .completion-message h3 {{
+                font-family: 'Clash Display', 'Satoshi', sans-serif;
+                font-size: 1.5rem;
+                font-weight: 600;
+                margin-bottom: 0.75rem;
+            }}
+            
+            .completion-message p {{
+                font-size: 1rem;
+                line-height: 1.6;
+                margin-bottom: 2rem;
+                opacity: 0.9;
+            }}
+            
+            .completion-buttons {{
+                display: flex;
+                gap: 1rem;
+                justify-content: center;
+                flex-wrap: wrap;
+            }}
+            
+            .btn {{
+                display: inline-flex;
+                align-items: center;
+                gap: 0.5rem;
+                padding: 0.875rem 1.5rem;
+                border: none;
+                border-radius: 12px;
+                font-weight: 600;
+                font-size: 0.875rem;
+                text-decoration: none;
+                cursor: pointer;
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                white-space: nowrap;
+            }}
+            
+            .btn-primary {{
+                background: var(--color-charcoal);
+                color: var(--color-white);
+                box-shadow: 0 4px 16px rgba(45, 45, 45, 0.2);
+            }}
+            
+            .btn-primary:hover {{
+                transform: translateY(-2px);
+                box-shadow: 0 6px 24px rgba(45, 45, 45, 0.3);
+            }}
+            
+            .btn-secondary {{
+                background: var(--color-white);
+                color: var(--color-charcoal);
+                box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+            }}
+            
+            .btn-secondary:hover {{
+                transform: translateY(-2px);
+                box-shadow: 0 6px 24px rgba(0, 0, 0, 0.15);
+            }}
+            
+            /* Responsive Design */
+            @media (max-width: 768px) {{
+                .container {{
+                    padding: 1rem;
+                }}
+                
+                .simulation-container {{
+                    padding: 1.5rem;
+                }}
+                
+                .simulation-area {{
+                    height: 400px;
+                }}
+                
+                .legend {{
+                    gap: 1rem;
+                }}
+                
+                .stats {{
+                    grid-template-columns: repeat(2, 1fr);
+                    gap: 1rem;
+                }}
+                
+                .completion-buttons {{
+                    flex-direction: column;
+                    align-items: center;
+                }}
+            }}
+            
+            /* Loading States */
+            .loading-pulse {{
+                animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+            }}
+            
+            @keyframes pulse {{
+                0%, 100% {{
+                    opacity: 1;
+                }}
+                50% {{
+                    opacity: 0.7;
+                }}
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="back-nav">
+            <a href="/dashboard" class="back-btn">
+                ← Back to Dashboard
+            </a>
+        </div>
+        
+        <div class="container">
+            <header class="header">
+                <h1 class="text-display">Live Agent Matching</h1>
+                <p class="text-body-lg" style="color: var(--color-gray-600); margin-top: 1rem;">
+                    Watch intelligent agents discover perfect compatibility clusters
+                </p>
+                <div class="test-badge">
+                    Test Simulation Mode
+                </div>
+            </header>
+            
+            <div class="simulation-container">
+                <div class="phase loading-pulse" id="phaseIndicator">
+                    Initializing intelligent agents...
+                </div>
+                
+                <div class="legend">
+                    <div class="legend-item">
+                        <div class="legend-dot" style="background: radial-gradient(circle at 30% 30%, var(--color-charcoal), #1a1a1a);"></div>
+                        <span>Your Agent</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-dot" style="background: radial-gradient(circle at 30% 30%, var(--color-emerald), #0f5942);"></div>
+                        <span>Other Agents</span>
+                    </div>
+                </div>
+                
+                <div class="simulation-area" id="simulationArea">
+                    <!-- Beautiful dots will appear here -->
+                </div>
+                
+                <div class="stats">
+                    <div class="stat">
+                        <div class="stat-value" id="simulationStep">0</div>
+                        <div class="stat-label">Simulation Step</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value" id="agentsMoved">0</div>
+                        <div class="stat-label">Agents Moved</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value" id="avgSatisfaction">0%</div>
+                        <div class="stat-label">Cluster Satisfaction</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value" id="totalAgents">0</div>
+                        <div class="stat-label">Total Agents</div>
+                    </div>
+                </div>
+                
+                <div class="completion-message" id="completionMessage">
+                    <h3>🎉 Perfect Clusters Discovered!</h3>
+                    <p>Your intelligent agent has successfully identified its ideal compatibility cluster through advanced social simulation.</p>
+                    <div class="completion-buttons">
+                        <a href="/test-matching" class="btn btn-primary">
+                            ↻ Run Simulation Again
+                        </a>
+                        <a href="/dashboard" class="btn btn-secondary">
+                            → View Dashboard
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            const USER_ID = {user_id};
+            let dots = new Map();
+            let updateInterval;
+            let agentsMetadata = {{}};
+            
+            const phaseMessages = {{
+                'data_collection': '📊 Analyzing user personality profiles...',
+                'filtering_users': '🎯 Identifying compatible candidates...',
+                'initializing_simulation': '🤖 Spawning intelligent agents...',
+                'running_simulation': '✨ Agents discovering optimal clusters...',
+                'generating_matches': '🔬 Calculating compatibility matrices...'
+            }};
+            
+            function startRealTimeUpdates() {{
+                updateInterval = setInterval(fetchLiveStatus, 1000);
+                fetchLiveStatus();
+            }}
+            
+            function fetchLiveStatus() {{
+                fetch(`/api/test-processing-status/${{USER_ID}}`)
+                    .then(response => response.json())
+                    .then(data => {{
+                        updateVisualization(data);
+                    }})
+                    .catch(error => {{
+                        console.error('Simulation error:', error);
+                    }});
+            }}
+            
+            function updateVisualization(data) {{
+                // Update phase with smooth transitions
+                const phase = data.phase || 'initializing';
+                const phaseEl = document.getElementById('phaseIndicator');
+                phaseEl.textContent = phaseMessages[phase] || 'Processing simulation...';
+                
+                // Remove loading pulse when simulation starts
+                if (phase === 'running_simulation') {{
+                    phaseEl.classList.remove('loading-pulse');
+                }}
+                
+                // Update stats with smooth counting animation
+                animateValue('simulationStep', data.simulation_step || 0);
+                animateValue('agentsMoved', data.agents_moved || 0);
+                animateValue('avgSatisfaction', data.avg_satisfaction || 0, '%');
+                
+                // Initialize beautiful dots
+                if (data.agents_metadata && Object.keys(agentsMetadata).length === 0) {{
+                    console.log('🎨 Creating beautiful agent visualization...');
+                    agentsMetadata = data.agents_metadata;
+                    initializeDesignerDots();
+                    document.getElementById('totalAgents').textContent = Object.keys(agentsMetadata).length;
+                }}
+                
+                // Smooth dot position updates
+                if (data.agents_positions) {{
+                    updateDotPositions(data.agents_positions);
+                }}
+                
+                // Elegant completion
+                if (data.status === 'completed') {{
+                    showCompletion();
+                }}
+            }}
+            
+            function animateValue(elementId, targetValue, suffix = '') {{
+                const element = document.getElementById(elementId);
+                const currentValue = parseInt(element.textContent) || 0;
+                
+                if (currentValue !== targetValue) {{
+                    const increment = (targetValue - currentValue) / 10;
+                    let current = currentValue;
+                    
+                    const timer = setInterval(() => {{
+                        current += increment;
+                        if ((increment > 0 && current >= targetValue) || 
+                            (increment < 0 && current <= targetValue)) {{
+                            current = targetValue;
+                            clearInterval(timer);
+                        }}
+                        element.textContent = Math.round(current) + suffix;
+                    }}, 50);
+                }}
+            }}
+            
+            function initializeDesignerDots() {{
+                const area = document.getElementById('simulationArea');
+                area.innerHTML = '';
+                dots.clear();
+                
+                Object.entries(agentsMetadata).forEach(([agentId, metadata]) => {{
+                    const dot = document.createElement('div');
+                    dot.className = `dot ${{metadata.type === 'user' ? 'you' : 'other'}}`;
+                    dot.id = `dot-${{agentId}}`;
+                    dot.title = metadata.type === 'user' ? 'Your Intelligent Agent' : `Agent: ${{metadata.name}}`;
+                    
+                    // Start in center with stagger effect
+                    const delay = Math.random() * 200;
+                    dot.style.transitionDelay = delay + 'ms';
+                    dot.style.left = '400px';
+                    dot.style.top = '300px';
+                    
+                    area.appendChild(dot);
+                    dots.set(parseInt(agentId), dot);
+                }});
+                
+                console.log('✨ Created', dots.size, 'beautiful agent dots');
+            }}
+            
+            function updateDotPositions(positions) {{
+                Object.entries(positions).forEach(([agentId, posData]) => {{
+                    const dot = dots.get(parseInt(agentId));
+                    if (dot) {{
+                        const x = Math.max(8, Math.min(792, posData.x));
+                        const y = Math.max(8, Math.min(592, posData.y));
+                        
+                        dot.style.left = x + 'px';
+                        dot.style.top = y + 'px';
+                    }}
+                }});
+            }}
+            
+            function showCompletion() {{
+                clearInterval(updateInterval);
+                document.getElementById('phaseIndicator').textContent = '🎉 Simulation complete! Perfect clusters discovered.';
+                document.getElementById('phaseIndicator').classList.remove('loading-pulse');
+                document.getElementById('completionMessage').classList.add('visible');
+                
+                console.log('🎊 Beautiful simulation completed!');
+            }}
+            
+            // Initialize when page loads
+            document.addEventListener('DOMContentLoaded', () => {{
+                console.log('🚀 Starting designer simulation...');
+                startRealTimeUpdates();
+            }});
+            
+            // Cleanup
+            window.addEventListener('beforeunload', () => {{
+                if (updateInterval) clearInterval(updateInterval);
+            }});
+        </script>
+    </body>
+    </html>
+    '''
+    
+    return render_template_string(live_matching_html, user_id=user_id)
+
+
 
 if __name__ == '__main__':
     # Initialize database

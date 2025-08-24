@@ -601,7 +601,7 @@ class SocialSimulation:
         return False
     
     def run_simulation(self, steps: int = 50) -> Dict[str, Any]:
-        """Run simulation with real-time updates"""
+        """Run simulation with real-time updates and proper time lag"""
         moves_per_step = []
         satisfaction_history = []
         
@@ -643,8 +643,8 @@ class SocialSimulation:
             
             print(f"Step {step + 1}: {moves_this_step} moves, {avg_satisfaction:.3f} satisfaction")
             
-            # Sleep to make visualization visible
-            time.sleep(0.3)  # 300ms between steps
+            # Enhanced time delay for better visualization
+            time.sleep(10.0)  # Increased from 0.3s to 1.0s for better visibility
             
             # Early stopping if converged
             if moves_this_step == 0:
