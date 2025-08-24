@@ -365,7 +365,34 @@ class UserAuthSystem:
         except Exception as e:
             print(f"Error getting user info: {e}")
             return None
-    
+    def get_user_by_email(self, email: str):
+        """Get user by email"""
+        try:
+            conn = sqlite3.connect('users.db')
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                SELECT id, email, first_name, last_name 
+                FROM users 
+                WHERE LOWER(email) = LOWER(?)
+            ''', (email,))
+            
+            user = cursor.fetchone()
+            conn.close()
+            
+            if user:
+                return {
+                    'id': user[0],
+                    'email': user[1],
+                    'first_name': user[2],
+                    'last_name': user[3]
+                }
+            return None
+            
+        except Exception as e:
+            print(f"Error getting user by email: {e}")
+            return None
+
     def save_user_profile(self, user_id: int, profile_data: Dict[str, Any]) -> bool:
         """Save user profile data"""
         try:
@@ -1708,6 +1735,10 @@ Keep it positive and specific."""
 
 def process_matching_background(user_id: int):
     """Background task to process user matching"""
+    # Prevent multiple matching processes for same user
+    if user_id in processing_status and processing_status[user_id].get('status') == 'processing':
+        print(f"Matching already in progress for user {user_id}")
+        return
     try:
         processing_status[user_id] = {'status': 'processing', 'progress': 0}
         
@@ -1878,12 +1909,14 @@ user_auth = UserAuthSystem()
 #matching_system = MatchingSystem(API_KEY)
 try:
     enhanced_matching_system, interaction_tracker = integrate_enhanced_matching(app, user_auth, API_KEY)
+    enhanced_matching_system.processing_status = processing_status
     print("✓ Enhanced matching system initialized")
 except Exception as e:
-    print(f"Error with enhanced matching: {e}")
-    # Fall back to your original matching system
-    enhanced_matching_system = MatchingSystem(API_KEY)  # Your original system
-    interaction_tracker = None
+    from enhanced_matching_system import EnhancedMatchingSystem, InteractionTracker
+    enhanced_matching_system = EnhancedMatchingSystem(API_KEY)
+    enhanced_matching_system.set_user_auth(user_auth)
+    interaction_tracker = InteractionTracker(enhanced_matching_system)
+    print("✓ Enhanced matching system created directly")
     
 email_followup = EmailFollowupSystem(user_auth)
 # ============================================================================
@@ -2029,7 +2062,7 @@ def home():
 def register():
     """User registration"""
     if request.method == 'POST':
-        email = request.form.get('email', '').strip()
+        email = request.form.get('email', '').strip().lower()
         password = request.form.get('password', '')
         confirm_password = request.form.get('confirm_password', '')
         first_name = request.form.get('first_name', '').strip()
@@ -2037,6 +2070,10 @@ def register():
         phone = request.form.get('phone', '').strip()
         
         # Validation
+        existing_user = user_auth.get_user_by_email(email)  # You'll need to add this method
+        if existing_user:
+            flash('Email already registered. Please login instead.', 'error')
+            return redirect('/login')
         if not email or not password:
             flash('Email and password are required', 'error')
         elif not phone:
@@ -3647,166 +3684,462 @@ def complete_onboarding_enhanced():
 @app.route('/processing')
 @login_required
 def processing():
-    """Loading screen while matching runs"""
+    """Start matching and redirect to live visualization"""
     user_id = session.get('user_id')
     if not user_id:
         return redirect('/login')
     
-    content = f'''
-    <div style="background: white; border-radius: 8px; padding: 60px 40px; max-width: 500px; margin: 0 auto; text-align: center; box-shadow: 0 2px 20px rgba(0,0,0,0.05);">
-        <h1 style="font-size: 28px; margin-bottom: 10px;">Finding Your Matches</h1>
-        <div style="margin-bottom: 30px;">Analyzing your profile and matching with compatible users</div>
-        
-        <div style="width: 60px; height: 60px; border: 4px solid #f0f0f0; border-top: 4px solid #6c5ce7; border-radius: 50%; animation: spin 1s linear infinite; margin: 20px auto;"></div>
-        
-        <div id="loadingText" style="font-size: 18px; color: black; margin: 20px 0; font-weight: 500;">Processing your profile...</div>
-        
-        <div style="width: 100%; height: 8px; background: #f0f0f0; border-radius: 4px; margin: 20px 0; overflow: hidden;">
-            <div id="progressFill" style="height: 100%; background: linear-gradient(90deg, #6c5ce7, #a29bfe); border-radius: 4px; width: 0%; transition: width 0.5s ease;"></div>
-        </div>
-        
-        <div style="font-size: 16px; color: #6c5ce7; margin: 20px 0; font-weight: 500;">
-            Your results should be ready in about 30 seconds
-        </div>
-        
-        <div style="text-align: left; margin: 30px 0; padding: 20px; background: #f9f9f9; border-radius: 6px;">
-            <div style="display: flex; align-items: center; margin: 10px 0; font-size: 14px;">
-                <div style="width: 20px; height: 20px; border-radius: 50%; margin-right: 12px; background: #28a745; color: white; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold;">✓</div>
-                <span>Profile completed</span>
-            </div>
-            <div style="display: flex; align-items: center; margin: 10px 0; font-size: 14px;">
-                <div id="step2" style="width: 20px; height: 20px; border-radius: 50%; margin-right: 12px; background: #6c5ce7; color: white; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold;">2</div>
-                <span id="step2Text">Processing your preferences</span>
-            </div>
-            <div style="display: flex; align-items: center; margin: 10px 0; font-size: 14px;">
-                <div id="step3" style="width: 20px; height: 20px; border-radius: 50%; margin-right: 12px; background: #e9ecef; color: #6c757d; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold;">3</div>
-                <span>Finding compatible users</span>
-            </div>
-            <div style="display: flex; align-items: center; margin: 10px 0; font-size: 14px;">
-                <div id="step4" style="width: 20px; height: 20px; border-radius: 50%; margin-right: 12px; background: #e9ecef; color: #6c757d; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold;">4</div>
-                <span>Calculating compatibility scores</span>
-            </div>
-            <div style="display: flex; align-items: center; margin: 10px 0; font-size: 14px;">
-                <div id="step5" style="width: 20px; height: 20px; border-radius: 50%; margin-right: 12px; background: #e9ecef; color: #6c757d; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold;">5</div>
-                <span>Saving to your account</span>
-            </div>
-        </div>
-        
-        <div id="statusText" style="font-size: 14px; color: #666;">
-            Our AI is carefully analyzing your profile to find the most compatible matches for you.
-        </div>
-    </div>
+    # Start background matching with real-time updates
+    thread = threading.Thread(target=process_matching_background, args=(user_id,))
+    thread.daemon = True
+    thread.start()
     
-    <style>
-        @keyframes spin {{
-            0% {{ transform: rotate(0deg); }}
-            100% {{ transform: rotate(360deg); }}
-        }}
-    </style>
+    return redirect(f'/live-matching/{user_id}')
+
+@app.route('/live-matching/<int:user_id>')
+@login_required
+def live_matching(user_id):
+    """Live agent-based matching visualization - embedded template"""
+    if session.get('user_id') != user_id:
+        return redirect('/login')
     
-    <script>
-        let progress = 0;
-        let currentStep = 2;
-        let startTime = Date.now();
-        
-        const steps = [
-            {{ text: "Processing your preferences", duration: 3000 }},
-            {{ text: "Finding compatible users", duration: 8000 }},
-            {{ text: "Calculating compatibility scores", duration: 12000 }},
-            {{ text: "Saving to your account", duration: 5000 }}
-        ];
-        
-        const statusMessages = [
-            "Our AI is carefully analyzing your profile to find the most compatible matches for you.",
-            "Comparing your interests, values, and personality with other users...",
-            "Running compatibility analysis using advanced matching algorithms...",
-            "Generating personalized compatibility scores and recommendations...",
-            "Almost ready! Saving your matches to your secure account..."
-        ];
-        
-        function updateProgress() {{
-            const elapsed = Date.now() - startTime;
-            const totalDuration = 28000; // 28 seconds total
-            progress = Math.min((elapsed / totalDuration) * 100, 95);
+    # Get user info for header
+    user_info = user_auth.get_user_info(user_id)
+    
+    live_matching_html = f'''
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Live Agent Simulation - Connect</title>
+        <style>
+            body {{
+                margin: 0;
+                padding: 20px;
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                min-height: 100vh;
+            }}
             
-            document.getElementById('progressFill').style.width = progress + '%';
+            .container {{
+                max-width: 1200px;
+                margin: 0 auto;
+            }}
             
-            // Update steps
-            let stepIndex = Math.floor(progress / 20); // 5 steps, so every 20%
-            if (stepIndex >= 4) stepIndex = 3; // Don't advance past step 4 until complete
+            .header {{
+                text-align: center;
+                margin-bottom: 30px;
+            }}
             
-            if (stepIndex + 2 !== currentStep && stepIndex + 2 <= 5) {{
-                // Mark previous step complete
-                if (currentStep <= 5) {{
-                    document.getElementById('step' + currentStep).style.background = '#28a745';
-                    document.getElementById('step' + currentStep).innerHTML = '✓';
+            .header h1 {{
+                margin: 0 0 10px 0;
+                font-size: 28px;
+                font-weight: 600;
+            }}
+            
+            .simulation-container {{
+                background: rgba(255, 255, 255, 0.1);
+                backdrop-filter: blur(20px);
+                border-radius: 20px;
+                padding: 30px;
+                position: relative;
+            }}
+            
+            .simulation-area {{
+                width: 100%;
+                height: 500px;
+                background: rgba(0, 0, 0, 0.2);
+                border-radius: 15px;
+                position: relative;
+                overflow: hidden;
+                border: 2px solid rgba(255, 255, 255, 0.2);
+            }}
+            
+            .agent {{
+                position: absolute;
+                width: 16px;
+                height: 16px;
+                border-radius: 50%;
+                transition: all 0.8s cubic-bezier(0.4, 0.0, 0.2, 1);
+                box-shadow: 0 2px 10px rgba(0,0,0,0.4);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 8px;
+                font-weight: bold;
+                color: white;
+                cursor: pointer;
+                z-index: 10;
+            }}
+            
+            .agent.user {{
+                background: radial-gradient(circle, #ff6b6b, #ee5a52);
+                width: 20px;
+                height: 20px;
+                border: 3px solid #ffffff;
+                box-shadow: 0 4px 15px rgba(255, 107, 107, 0.8);
+                z-index: 20;
+            }}
+            
+            .agent.high-compat {{
+                background: radial-gradient(circle, #4ecdc4, #44a08d);
+                border: 2px solid rgba(255,255,255,0.6);
+            }}
+            
+            .agent.medium-compat {{
+                background: radial-gradient(circle, #ffd93d, #f39c12);
+                border: 2px solid rgba(255,255,255,0.4);
+            }}
+            
+            .agent.low-compat {{
+                background: radial-gradient(circle, #a8a8a8, #7f8c8d);
+                border: 2px solid rgba(255,255,255,0.3);
+            }}
+            
+            .agent:hover {{
+                transform: scale(1.3);
+                z-index: 25;
+            }}
+            
+            .satisfaction-indicator {{
+                position: absolute;
+                border-radius: 50%;
+                border: 2px solid rgba(78, 205, 196, 0.4);
+                pointer-events: none;
+                transition: all 0.5s ease;
+            }}
+            
+            .stats-panel {{
+                display: flex;
+                justify-content: space-between;
+                margin: 20px 0;
+                gap: 20px;
+            }}
+            
+            .stat-card {{
+                flex: 1;
+                background: rgba(255, 255, 255, 0.1);
+                padding: 20px;
+                border-radius: 12px;
+                text-align: center;
+            }}
+            
+            .stat-value {{
+                font-size: 24px;
+                font-weight: bold;
+                margin-bottom: 5px;
+            }}
+            
+            .phase-indicator {{
+                text-align: center;
+                font-size: 16px;
+                margin-bottom: 15px;
+                padding: 10px;
+                background: rgba(255, 255, 255, 0.1);
+                border-radius: 8px;
+            }}
+            
+            .legend {{
+                display: flex;
+                justify-content: center;
+                gap: 20px;
+                margin-bottom: 20px;
+                flex-wrap: wrap;
+            }}
+            
+            .legend-item {{
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                background: rgba(255, 255, 255, 0.1);
+                padding: 8px 12px;
+                border-radius: 20px;
+                font-size: 12px;
+            }}
+            
+            .legend-dot {{
+                width: 12px;
+                height: 12px;
+                border-radius: 50%;
+            }}
+            
+            .completion-overlay {{
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0, 0, 0, 0.8);
+                display: none;
+                align-items: center;
+                justify-content: center;
+                z-index: 1000;
+            }}
+            
+            .completion-message {{
+                background: linear-gradient(135deg, #28a745, #20c997);
+                padding: 40px;
+                border-radius: 20px;
+                text-align: center;
+                max-width: 400px;
+            }}
+            
+            .back-nav {{
+                position: fixed;
+                top: 20px;
+                left: 20px;
+                z-index: 1000;
+            }}
+            
+            .back-btn {{
+                background: rgba(255, 255, 255, 0.2);
+                backdrop-filter: blur(10px);
+                border: none;
+                color: white;
+                padding: 10px 15px;
+                border-radius: 20px;
+                text-decoration: none;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                font-weight: 500;
+                transition: all 0.3s ease;
+            }}
+            
+            .back-btn:hover {{
+                background: rgba(255, 255, 255, 0.3);
+            }}
+            
+            @media (max-width: 768px) {{
+                .stats-panel {{
+                    flex-direction: column;
                 }}
-                
-                // Activate new step
-                currentStep = stepIndex + 2;
-                if (currentStep <= 5) {{
-                    document.getElementById('step' + currentStep).style.background = '#6c5ce7';
-                    document.getElementById('step' + currentStep).innerHTML = currentStep;
-                    
-                    // Update loading text
-                    if (currentStep <= 5) {{
-                        document.getElementById('loadingText').textContent = steps[currentStep - 2].text;
-                    }}
-                    
-                    // Update status message
-                    document.getElementById('statusText').textContent = statusMessages[currentStep - 2];
+                .simulation-area {{
+                    height: 400px;
                 }}
             }}
-        }}
+        </style>
+    </head>
+    <body>
+        <div class="back-nav">
+            <a href="/dashboard" class="back-btn">← Back to Dashboard</a>
+        </div>
         
-        // Check for completion
-        function checkCompletion() {{
-            fetch('/api/processing-status/{user_id}')
-                .then(response => response.json())
-                .then(data => {{
-                    if (data.status === 'completed') {{
-                        // Mark all steps complete
-                        for (let i = 2; i <= 5; i++) {{
-                            document.getElementById('step' + i).style.background = '#28a745';
-                            document.getElementById('step' + i).innerHTML = '✓';
-                        }}
-                        
-                        document.getElementById('progressFill').style.width = '100%';
-                        document.getElementById('loadingText').textContent = 'Complete! Redirecting to your results...';
-                        document.getElementById('statusText').textContent = 'Your personalized matches have been saved to your account!';
-                        
-                        // Redirect after short delay
-                        setTimeout(() => {{
-                            window.location.href = '/dashboard';
-                        }}, 1500);
-                    }} else if (data.status === 'error') {{
-                        document.getElementById('loadingText').textContent = 'Processing complete! Redirecting...';
-                        setTimeout(() => {{
-                            window.location.href = '/dashboard';
-                        }}, 2000);
-                    }}
-                }})
-                .catch(error => {{
-                    console.log('Status check failed, will redirect soon...');
+        <div class="container">
+            <div class="header">
+                <h1>🧠 Live Agent-Based Matching</h1>
+                <p>Watch your AI agent discover its perfect social cluster in real-time</p>
+            </div>
+            
+            <div class="simulation-container">
+                <div class="phase-indicator" id="phaseIndicator">Initializing simulation...</div>
+                
+                <div class="legend">
+                    <div class="legend-item">
+                        <div class="legend-dot" style="background: radial-gradient(circle, #ff6b6b, #ee5a52); border: 2px solid white;"></div>
+                        <span>You</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-dot" style="background: radial-gradient(circle, #4ecdc4, #44a08d);"></div>
+                        <span>High Compatibility</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-dot" style="background: radial-gradient(circle, #ffd93d, #f39c12);"></div>
+                        <span>Medium Compatibility</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-dot" style="background: radial-gradient(circle, #a8a8a8, #7f8c8d);"></div>
+                        <span>Low Compatibility</span>
+                    </div>
+                </div>
+                
+                <div class="simulation-area" id="simulationArea">
+                    <!-- Real agents from your algorithm will appear here -->
+                </div>
+                
+                <div class="stats-panel">
+                    <div class="stat-card">
+                        <div class="stat-value" id="simulationStep">0</div>
+                        <div>Simulation Step</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="agentsMoved">0</div>
+                        <div>Agents Moved</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="avgSatisfaction">0%</div>
+                        <div>Cluster Satisfaction</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="totalAgents">0</div>
+                        <div>Total Agents</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="completion-overlay" id="completionOverlay">
+                <div class="completion-message">
+                    <h2>🎉 Perfect Cluster Found!</h2>
+                    <p>Your AI agent has discovered its ideal social group.</p>
+                    <button onclick="viewMatches()" style="background: white; color: #28a745; border: none; padding: 15px 30px; border-radius: 8px; font-weight: 600; cursor: pointer; margin-top: 20px;">
+                        View Your Matches
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            const USER_ID = {user_id};
+            let agents = new Map();
+            let updateInterval;
+            let agentsMetadata = {{}};
+            
+            const phaseMessages = {{
+                'data_collection': 'Collecting user profiles...',
+                'filtering_users': 'Filtering compatible users...',
+                'initializing_simulation': 'Creating your AI agent...',
+                'running_simulation': 'Agents finding their clusters...',
+                'generating_matches': 'Calculating final compatibility scores...'
+            }};
+            
+            function startRealTimeUpdates() {{
+                updateInterval = setInterval(fetchLiveStatus, 200); // 200ms updates for smooth animation
+                fetchLiveStatus();
+            }}
+            
+            function fetchLiveStatus() {{
+                fetch(`/api/processing-status/${{USER_ID}}`)
+                    .then(response => response.json())
+                    .then(data => {{
+                        updateVisualization(data);
+                    }})
+                    .catch(error => {{
+                        console.error('Error fetching live status:', error);
+                    }});
+            }}
+            
+            function updateVisualization(data) {{
+                // Update phase
+                const phase = data.phase || 'initializing';
+                document.getElementById('phaseIndicator').textContent = 
+                    phaseMessages[phase] || 'Processing...';
+                
+                // Update stats
+                document.getElementById('simulationStep').textContent = data.simulation_step || 0;
+                document.getElementById('agentsMoved').textContent = data.agents_moved || 0;
+                document.getElementById('avgSatisfaction').textContent = `${{data.avg_satisfaction || 0}}%`;
+                
+                // Initialize agents when metadata is available
+                if (data.agents_metadata && Object.keys(agentsMetadata).length === 0) {{
+                    agentsMetadata = data.agents_metadata;
+                    initializeAgents();
+                    document.getElementById('totalAgents').textContent = Object.keys(agentsMetadata).length;
+                }}
+                
+                // Update agent positions in real-time
+                if (data.agents_positions) {{
+                    updateAgentPositions(data.agents_positions);
+                }}
+                
+                // Check if completed
+                if (data.status === 'completed') {{
+                    showCompletion();
+                }} else if (data.status === 'error') {{
+                    alert('Error in matching process. Redirecting to dashboard...');
+                    window.location.href = '/dashboard';
+                }}
+            }}
+            
+            function initializeAgents() {{
+                const simulationArea = document.getElementById('simulationArea');
+                simulationArea.innerHTML = '';
+                
+                Object.entries(agentsMetadata).forEach(([agentId, metadata]) => {{
+                    const agentEl = document.createElement('div');
+                    agentEl.className = `agent ${{metadata.type}}`;
+                    agentEl.id = `agent-${{agentId}}`;
+                    agentEl.title = `${{metadata.name}} (${{metadata.compatibility_level}})`;
+                    
+                    // Initial position (will be updated by real algorithm)
+                    agentEl.style.left = '50%';
+                    agentEl.style.top = '50%';
+                    agentEl.style.transform = 'translate(-50%, -50%)';
+                    
+                    simulationArea.appendChild(agentEl);
+                    agents.set(parseInt(agentId), agentEl);
                 }});
-        }}
-        
-        // Update progress every 200ms
-        const progressInterval = setInterval(updateProgress, 200);
-        
-        // Check completion every 2 seconds
-        const completionInterval = setInterval(checkCompletion, 2000);
-        
-        // Fallback redirect after 35 seconds
-        setTimeout(() => {{
-            clearInterval(progressInterval);
-            clearInterval(completionInterval);
-            window.location.href = '/dashboard';
-        }}, 35000);
-    </script>
+                
+                console.log(`Initialized ${{agents.size}} real agents from algorithm`);
+            }}
+            
+            function updateAgentPositions(positions) {{
+                Object.entries(positions).forEach(([agentId, posData]) => {{
+                    const agentEl = agents.get(parseInt(agentId));
+                    if (agentEl) {{
+                        // Update position from real algorithm
+                        agentEl.style.left = `${{posData.x}}px`;
+                        agentEl.style.top = `${{posData.y}}px`;
+                        agentEl.style.transform = 'none';
+                        
+                        // Update satisfaction indicator
+                        updateSatisfactionIndicator(agentEl, posData.satisfaction);
+                    }}
+                }});
+            }}
+            
+            function updateSatisfactionIndicator(agentEl, satisfaction) {{
+                // Remove existing indicator
+                const existingIndicator = agentEl.nextElementSibling;
+                if (existingIndicator && existingIndicator.classList.contains('satisfaction-indicator')) {{
+                    existingIndicator.remove();
+                }}
+                
+                // Create new indicator
+                const indicator = document.createElement('div');
+                indicator.className = 'satisfaction-indicator';
+                
+                const size = 30 + (satisfaction * 40); // 30-70px based on satisfaction
+                indicator.style.width = `${{size}}px`;
+                indicator.style.height = `${{size}}px`;
+                indicator.style.left = `${{parseFloat(agentEl.style.left) - size/2}}px`;
+                indicator.style.top = `${{parseFloat(agentEl.style.top) - size/2}}px`;
+                
+                // Color based on satisfaction
+                let color;
+                if (satisfaction > 0.7) color = 'rgba(78, 205, 196, 0.6)';
+                else if (satisfaction > 0.4) color = 'rgba(255, 217, 61, 0.6)';
+                else color = 'rgba(231, 76, 60, 0.6)';
+                
+                indicator.style.borderColor = color;
+                
+                agentEl.parentNode.appendChild(indicator);
+            }}
+            
+            function showCompletion() {{
+                clearInterval(updateInterval);
+                document.getElementById('phaseIndicator').textContent = '✨ Perfect matches discovered!';
+                document.getElementById('completionOverlay').style.display = 'flex';
+            }}
+            
+            function viewMatches() {{
+                window.location.href = '/dashboard';
+            }}
+            
+            // Start when page loads
+            document.addEventListener('DOMContentLoaded', startRealTimeUpdates);
+            
+            // Cleanup on page leave
+            window.addEventListener('beforeunload', () => {{
+                if (updateInterval) clearInterval(updateInterval);
+            }});
+        </script>
+    </body>
+    </html>
     '''
     
-    return render_template_with_header("Finding Your Matches", content)
+    return render_template_string(live_matching_html, user_id=user_id, user_info=user_info)
 
 @app.route('/api/processing-status/<int:user_id>')
 def processing_status_api(user_id):
@@ -3815,8 +4148,17 @@ def processing_status_api(user_id):
     if session.get('user_id') != user_id:
         return jsonify({'error': 'Unauthorized'}), 401
     
-    status = processing_status.get(user_id, {'status': 'processing', 'progress': 0})
-    return jsonify(status)
+    # Check both local and enhanced matching system status
+    local_status = processing_status.get(user_id, {})
+    enhanced_status = enhanced_matching_system.processing_status.get(user_id, {})
+    
+    # Merge statuses (enhanced takes priority)
+    final_status = {**local_status, **enhanced_status}
+    
+    if not final_status:
+        final_status = {'status': 'processing', 'progress': 0}
+    
+    return jsonify(final_status)
 
 # ============================================================================
 # ROUTES - PROFILE UPDATES

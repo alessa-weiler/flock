@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from collections import defaultdict
 import threading
 import time
-
+processing_status = {}
 # Neural network imports (you'll need to install these)
 try:
     import tensorflow as tf
@@ -176,7 +176,7 @@ class MatchingDataCollector:
             return None, None
     
     def _extract_features(self, interaction: Tuple) -> Optional[List[float]]:
-        """Extract feature vector from interaction data"""
+        """Extract feature vector from interaction data - FIXED to 21 features"""
         try:
             user_id, target_user_id, interaction_type, context_data, outcome, profile1, profile2 = interaction
             
@@ -188,7 +188,7 @@ class MatchingDataCollector:
             # Create feature vector (standardized format)
             features = []
             
-            # User 1 features (normalized 0-1)
+            # User 1 features (6 features)
             features.extend([
                 float(profile1_data.get('age', 25)) / 100.0,
                 float(profile1_data.get('social_energy', 5)) / 10.0,
@@ -198,7 +198,7 @@ class MatchingDataCollector:
                 float(profile1_data.get('social_satisfaction', 5)) / 10.0,
             ])
             
-            # User 2 features (if available)
+            # User 2 features (6 features)
             if profile2_data:
                 features.extend([
                     float(profile2_data.get('age', 25)) / 100.0,
@@ -209,16 +209,20 @@ class MatchingDataCollector:
                     float(profile2_data.get('social_satisfaction', 5)) / 10.0,
                 ])
                 
-                # Compatibility differences
+                # Compatibility differences (4 features) 
                 features.append(abs(float(profile1_data.get('social_energy', 5)) - 
-                                  float(profile2_data.get('social_energy', 5))) / 10.0)
+                                float(profile2_data.get('social_energy', 5))) / 10.0)
                 features.append(abs(float(profile1_data.get('decision_making', 5)) - 
-                                  float(profile2_data.get('decision_making', 5))) / 10.0)
+                                float(profile2_data.get('decision_making', 5))) / 10.0)
+                features.append(abs(float(profile1_data.get('communication_depth', 5)) - 
+                                float(profile2_data.get('communication_depth', 5))) / 10.0)
+                features.append(abs(float(profile1_data.get('personal_growth', 5)) - 
+                                float(profile2_data.get('personal_growth', 5))) / 10.0)
             else:
-                # Pad with zeros if no target user
-                features.extend([0.0] * 8)
+                # Pad with zeros if no target user (10 features: 6 + 4)
+                features.extend([0.0] * 10)
             
-            # Interaction context features
+            # Interaction context features (5 features)
             features.extend([
                 1.0 if interaction_type == 'profile_view' else 0.0,
                 1.0 if interaction_type == 'contact_request' else 0.0,
@@ -227,6 +231,8 @@ class MatchingDataCollector:
                 float(context.get('compatibility_score', 0)) / 100.0,
             ])
             
+            # Total: 6 + 6 + 4 + 5 = 21 features
+            assert len(features) == 21, f"Expected 21 features, got {len(features)}"
             return features
             
         except Exception as e:
@@ -437,13 +443,16 @@ class SocialAgent:
 class SocialSimulation:
     """Agent-based social simulation inspired by Schelling's model"""
     
-    def __init__(self, width: int = 100, height: int = 100):
+    def __init__(self, width: int = 100, height: int = 100, user_id: int = None):
         self.width = width
         self.height = height
+        self.user_id = user_id  # Add this line
         self.agents: Dict[int, SocialAgent] = {}
         self.grid = np.zeros((height, width))
         self.neural_predictor = SocialPredictionNetwork()
         self.simulation_steps = 0
+        # Add real-time update storage
+        self.simulation_updates = []
         
     def add_agent(self, user_id: int, profile: Dict[str, Any]):
         """Add a user as an agent to the simulation"""
@@ -484,6 +493,8 @@ class SocialSimulation:
         
         self.agents[user_id] = agent
         self.grid[y, x] = user_id
+        # Store initial position for visualization
+        self.broadcast_agent_update(user_id, x, y, agent.satisfaction)
     
     def find_neighbors(self, agent: SocialAgent, radius: int = 15) -> List[SocialAgent]:
         """Find neighboring agents within radius"""
@@ -529,6 +540,19 @@ class SocialSimulation:
         
         return min(1.0, satisfaction)
     
+    def broadcast_agent_update(self, agent_id: int, x: float, y: float, satisfaction: float):
+        """Store agent update for real-time visualization"""
+        if self.user_id and self.user_id in processing_status:  # Use self.user_id
+            if 'agents_positions' not in processing_status[self.user_id]:
+                processing_status[self.user_id]['agents_positions'] = {}
+            
+            processing_status[self.user_id]['agents_positions'][agent_id] = {
+                'x': float(x),
+                'y': float(y),
+                'satisfaction': float(satisfaction),
+                'timestamp': time.time()
+            }
+    
     def move_agent(self, agent: SocialAgent):
         """Move agent to improve satisfaction (Schelling-style)"""
         current_satisfaction = self.calculate_agent_satisfaction(agent)
@@ -570,20 +594,32 @@ class SocialSimulation:
             
             new_x, new_y = best_position
             self.grid[new_y, new_x] = agent.user_id
+            # Broadcast the move in real-time
+            self.broadcast_agent_update(agent.user_id, new_x, new_y, best_satisfaction)
             return True
         
         return False
     
     def run_simulation(self, steps: int = 50) -> Dict[str, Any]:
-        """Run the social simulation for specified steps"""
+        """Run simulation with real-time updates"""
         moves_per_step = []
         satisfaction_history = []
+        
+        print(f"Starting real-time simulation with {len(self.agents)} agents")
         
         for step in range(steps):
             moves_this_step = 0
             total_satisfaction = 0
             
-            # Randomly shuffle agents for fairness
+            # Update global status
+            if self.user_id and self.user_id in processing_status:
+                processing_status[self.user_id].update({
+                    'simulation_step': step + 1,
+                    'total_steps': steps,
+                    'status': 'simulating'
+                })
+            
+            # Randomly shuffle agents
             agent_ids = list(self.agents.keys())
             random.shuffle(agent_ids)
             
@@ -593,12 +629,26 @@ class SocialSimulation:
                     moves_this_step += 1
                 total_satisfaction += agent.satisfaction
             
+            avg_satisfaction = total_satisfaction / len(self.agents)
             moves_per_step.append(moves_this_step)
-            satisfaction_history.append(total_satisfaction / len(self.agents))
+            satisfaction_history.append(avg_satisfaction)
             
-            # Early stopping if system is stable
+            # Broadcast step completion
+            if self.user_id:
+                processing_status[self.user_id].update({
+                    'agents_moved': moves_this_step,
+                    'avg_satisfaction': int(avg_satisfaction * 100),
+                    'simulation_progress': ((step + 1) / steps) * 100
+                })
+            
+            print(f"Step {step + 1}: {moves_this_step} moves, {avg_satisfaction:.3f} satisfaction")
+            
+            # Sleep to make visualization visible
+            time.sleep(0.3)  # 300ms between steps
+            
+            # Early stopping if converged
             if moves_this_step == 0:
-                print(f"Simulation converged at step {step}")
+                print(f"Simulation converged at step {step + 1}")
                 break
         
         self.simulation_steps = step + 1
@@ -647,8 +697,8 @@ class EnhancedMatchingSystem:
         self.data_collector = MatchingDataCollector()
         self.neural_predictor = SocialPredictionNetwork()
         self.simulation = SocialSimulation()
-        self.min_neural_data = 100  # Minimum interactions for neural network
-        
+        self.min_neural_data = 10  # Minimum interactions for neural network
+        self.processing_status = {} 
         # Try to load existing model
         self._initialize_neural_network()
     
@@ -760,14 +810,21 @@ class EnhancedMatchingSystem:
         return user1_compatible and user2_compatible
     
     def run_matching(self, user_id: int) -> List[Dict[str, Any]]:
-        """Run enhanced matching using agent-based simulation + neural networks"""
-        print(f"\n=== Running Enhanced Agent-Based Matching for {user_id} ===")
+        """Run enhanced matching with real-time agent visualization"""
+        print(f"\n=== Running Real-Time Enhanced Matching for {user_id} ===")
         
-        # Get current user's profile and info
-        if not self.user_auth:
-            print("ERROR: User auth system not initialized!")
-            return []
-            
+        # Initialize processing status for real-time updates
+        processing_status[user_id] = {
+            'status': 'initializing',
+            'progress': 0,
+            'simulation_step': 0,
+            'agents_moved': 0,
+            'avg_satisfaction': 30,
+            'agents_positions': {},
+            'phase': 'data_collection'
+        }
+        
+        # Get user data
         current_user_profile = self.user_auth.get_user_profile(user_id)
         current_user_info = self.user_auth.get_user_info(user_id)
         
@@ -775,114 +832,120 @@ class EnhancedMatchingSystem:
             print("ERROR: Current user profile not found!")
             return []
         
-        # Record matching session start
-        self.record_user_interaction(
-            user_id, 'matching_session_start', 
-            context={'timestamp': datetime.now().isoformat()}
-        )
+        # Update status
+        processing_status[user_id].update({
+            'phase': 'filtering_users',
+            'progress': 10
+        })
         
-        # Get all other users for matching
+        # Get and filter users
         all_users = self.user_auth.get_all_users_for_matching(user_id)
-        print(f"Found {len(all_users)} potential matches")
-        
-        if not all_users:
-            print("No other users found for matching")
-            return []
-        
-        # Filter users and prepare simulation
         valid_users = []
+        
         for potential_match in all_users:
-            # Apply filters
             if self.is_user_blocked(user_id, potential_match):
-                print(f"Skipping blocked user: {potential_match['first_name']} {potential_match['last_name']}")
                 continue
-            
             if not self.check_gender_compatibility(current_user_profile, potential_match['profile']):
-                print(f"Skipping due to gender preference: {potential_match['first_name']} {potential_match['last_name']}")
                 continue
-            
             valid_users.append(potential_match)
         
-        if not valid_users:
-            print("No valid users after filtering")
-            return []
+        print(f"Found {len(valid_users)} valid users after filtering")
         
-        print(f"Running simulation with {len(valid_users)} valid users...")
+        # Update status
+        processing_status[user_id].update({
+            'phase': 'initializing_simulation',
+            'progress': 20
+        })
         
-        # Initialize fresh simulation
-        self.simulation = SocialSimulation()
+        # Initialize simulation with user_id for real-time updates
+        self.simulation = SocialSimulation(width=800, height=500, user_id=user_id)
         
-        # Add current user to simulation
+        # Add current user
         self.simulation.add_agent(user_id, current_user_profile)
         
-        # Add all valid users to simulation
-        for user in valid_users:
+        # Add other users
+        for user in valid_users[:20]:  # Limit for performance
             self.simulation.add_agent(user['user_id'], user['profile'])
         
-        # Run the social simulation
-        print("Running agent-based social simulation...")
-        simulation_results = self.simulation.run_simulation(steps=100)
+        # Store agent metadata for frontend
+        agents_metadata = {}
         
-        print(f"✓ Simulation completed in {simulation_results['total_steps']} steps")
-        print(f"✓ Final satisfaction: {simulation_results['final_avg_satisfaction']:.3f}")
+        # User agent metadata
+        agents_metadata[user_id] = {
+            'id': user_id,
+            'type': 'user',
+            'name': 'You',
+            'email': current_user_info['email'],
+            'compatibility_level': 'user'
+        }
         
-        # Get clustered matches for the user
-        clustered_user_ids = self.simulation.get_clusters_for_user(user_id, cluster_size=20)
+        # Other agents metadata
+        for user in valid_users[:20]:
+            # Calculate compatibility for visualization
+            compatibility = self.simulation.neural_predictor.predict_compatibility(
+                current_user_profile, user['profile']
+            )
+            
+            if compatibility > 0.75:
+                compat_level = 'high-compat'
+            elif compatibility > 0.45:
+                compat_level = 'medium-compat'
+            else:
+                compat_level = 'low-compat'
+            
+            agents_metadata[user['user_id']] = {
+                'id': user['user_id'],
+                'type': compat_level,
+                'name': user['first_name'],
+                'email': user['email'],
+                'compatibility_score': compatibility,
+                'compatibility_level': compat_level
+            }
         
-        print(f"Found {len(clustered_user_ids)} users in cluster")
+        processing_status[user_id]['agents_metadata'] = agents_metadata
         
-        # Generate detailed match results
+        # Update status
+        processing_status[user_id].update({
+            'phase': 'running_simulation',
+            'progress': 30
+        })
+        
+        # Run the real simulation with real-time updates
+        print("Running agent-based social simulation with real-time updates...")
+        simulation_results = self.simulation.run_simulation(steps=50)
+        
+        print(f"✓ Real-time simulation completed in {simulation_results['total_steps']} steps")
+        
+        # Update status
+        processing_status[user_id].update({
+            'phase': 'generating_matches',
+            'progress': 80
+        })
+        
+        # Generate matches based on final simulation state
+        clustered_user_ids = self.simulation.get_clusters_for_user(user_id, cluster_size=15)
         matches = []
+        
         for match_user_id in clustered_user_ids:
             match_user = next((u for u in valid_users if u['user_id'] == match_user_id), None)
             if not match_user:
                 continue
             
-            print(f"Analyzing compatibility with {match_user['first_name']} {match_user['last_name']}...")
-            
             # Get neural network prediction
             neural_compatibility = self.simulation.neural_predictor.predict_compatibility(
-                current_user_profile, match_user['profile'],
-                context={'simulation_step': simulation_results['total_steps']}
+                current_user_profile, match_user['profile']
             )
             
-            # Calculate detailed compatibility scores
+            # Calculate detailed scores
             detailed_scores = self._calculate_detailed_scores(
                 current_user_profile, match_user['profile'], neural_compatibility
             )
             
-            # Calculate overall score (neural network weighted by data availability)
-            try:
-                training_data = self.data_collector.get_training_data(10)
-                if training_data[0] is not None and len(training_data[0]) > 0:
-                    data_weight = min(1.0, len(training_data[0]) / 1000)
-                else:
-                    data_weight = 0.0
-            except Exception as e:
-                print(f"Error getting training data weight: {e}")
-                data_weight = 0.0
+            # Final agent position from simulation
+            final_agent = self.simulation.agents.get(match_user_id)
+            final_satisfaction = final_agent.satisfaction if final_agent else 0.5
             
-            overall_score = (
-                neural_compatibility * data_weight +
-                detailed_scores['traditional_score'] * (1 - data_weight)
-            ) * 100
-            
-            # Record the matching interaction
-            self.record_user_interaction(
-                user_id, 'match_generated', match_user_id,
-                context={
-                    'neural_compatibility': neural_compatibility,
-                    'overall_score': overall_score,
-                    'simulation_satisfaction': self.simulation.agents[match_user_id].satisfaction,
-                    'data_weight': data_weight
-                }
-            )
-            
-            # Generate AI analysis
-            analysis = self._generate_match_analysis(
-                current_user_profile, match_user['profile'], 
-                neural_compatibility, detailed_scores, simulation_results
-            )
+            overall_score = (neural_compatibility * 0.6 + final_satisfaction * 0.4) * 100
             
             match_result = {
                 'matched_user_id': match_user['user_id'],
@@ -891,47 +954,42 @@ class EnhancedMatchingSystem:
                 'matched_user_phone': match_user.get('phone', ''),
                 'compatibility_score': round(overall_score),
                 'neural_score': round(neural_compatibility * 100),
+                'simulation_satisfaction': round(final_satisfaction * 100),
                 'personality_score': round(detailed_scores['personality_score']),
                 'values_score': round(detailed_scores['values_score']),
                 'lifestyle_score': round(detailed_scores['lifestyle_score']),
                 'emotional_score': round(detailed_scores['emotional_score']),
                 'social_score': round(detailed_scores['social_score']),
                 'communication_score': round(detailed_scores['communication_score']),
-                'location_score': 85,  # Default since location not used
+                'location_score': 85,
                 'overall_score': round(overall_score),
-                'compatibility_analysis': analysis,
-                'distance_miles': 0,  # Not used in new system
-                'simulation_satisfaction': round(self.simulation.agents[match_user_id].satisfaction * 100),
-                'data_confidence': round(data_weight * 100)
+                'compatibility_analysis': self._generate_match_analysis(
+                    current_user_profile, match_user['profile'], neural_compatibility, 
+                    detailed_scores, simulation_results
+                ),
+                'distance_miles': 0,
+                'final_position': final_agent.position if final_agent else (0, 0)
             }
             
             matches.append(match_result)
         
-        # Sort by overall score
+        # Sort and save matches
         matches.sort(key=lambda x: x['overall_score'], reverse=True)
+        matches = [m for m in matches if m['overall_score'] >= 60]
         
-        # Filter to high-quality matches (threshold based on data confidence)
-        min_threshold = 60 if data_weight > 0.5 else 50
-        matches = [m for m in matches if m['overall_score'] >= min_threshold]
-        
-        # Store cluster data for future analysis
-        self._save_cluster_data(user_id, clustered_user_ids, simulation_results)
-        
-        # Save matches to database
         if self.user_auth:
             self.user_auth.save_user_matches(user_id, matches)
         
-        # Record completion
-        self.record_user_interaction(
-            user_id, 'matching_session_complete',
-            context={
-                'matches_found': len(matches),
-                'simulation_steps': simulation_results['total_steps'],
-                'neural_network_used': self.simulation.neural_predictor.is_trained
-            }
-        )
+        # Final status update
+        processing_status[user_id] = {
+            'status': 'completed',
+            'progress': 100,
+            'matches': matches,
+            'total_matches': len(matches),
+            'simulation_completed': True
+        }
         
-        print(f"✓ Found {len(matches)} high-quality matches using enhanced system")
+        print(f"✓ Real-time matching completed - found {len(matches)} matches")
         return matches
     
     def _calculate_detailed_scores(self, user1_profile: Dict, user2_profile: Dict, 
