@@ -572,6 +572,47 @@ class UserAuthSystem:
             print(f"Error getting users for matching: {e}")
             return []
     
+    def get_random_users(self, limit=15, exclude_user_id=None):
+        """Get random users for visualization"""
+        try:
+            conn = sqlite3.connect('users.db')
+            cursor = conn.cursor()
+            
+            if exclude_user_id:
+                cursor.execute('''
+                    SELECT id, first_name, last_name, email 
+                    FROM users 
+                    WHERE id != ? AND is_active = 1
+                    ORDER BY RANDOM() 
+                    LIMIT ?
+                ''', (exclude_user_id, limit))
+            else:
+                cursor.execute('''
+                    SELECT id, first_name, last_name, email 
+                    FROM users 
+                    WHERE is_active = 1
+                    ORDER BY RANDOM() 
+                    LIMIT ?
+                ''', (limit,))
+            
+            rows = cursor.fetchall()
+            users = []
+            
+            for row in rows:
+                users.append({
+                    'user_id': row[0],
+                    'first_name': row[1] or 'Anonymous',
+                    'last_name': row[2] or '',
+                    'email': row[3]
+                })
+            
+            conn.close()
+            return users
+            
+        except Exception as e:
+            print(f"Error getting random users: {e}")
+            return []
+
     # Blocking functionality
     def add_blocked_user(self, user_id: int, blocked_email: str = None, 
                         blocked_phone: str = None, blocked_name: str = None, 
@@ -2139,24 +2180,29 @@ def render_template_with_header(title: str, content: str, user_info: Dict = None
     notification_badge = ""
     user_nav = ""
     
-    if user_info and 'user_id' in session:
+    # Check if user is actually logged in (has user_id in session)
+    if 'user_id' in session:
         user_id = session['user_id']
         pending_requests = user_auth.get_contact_requests(user_id, 'received')
         pending_count = len([r for r in pending_requests if r['status'] == 'pending'])
         if pending_count > 0:
             notification_badge = f'<span style="background: #dc3545; color: white; border-radius: 50%; padding: 4px 8px; font-size: 12px; margin-left: 8px;">{pending_count}</span>'
         
+        # Get user info for display name
+        if not user_info:
+            user_info = user_auth.get_user_info(user_id) or {}
+        
         # Logged in user navigation
         user_nav = f'''
             <div class="user-info">
-                <span>{user_info.get('first_name', user_info.get('email', ''))}</span>
+                <span>{user_info.get('first_name', user_info.get('email', 'User'))}</span>
                 <a href="/edit-profile" class="btn btn-secondary" style="padding: 8px 16px; font-size: 14px;">✏️ Edit Profile</a>
                 <a href="/contact-requests" class="btn btn-secondary">Requests{notification_badge}</a>
                 <a href="/logout" class="btn btn-secondary">Logout</a>
             </div>
         '''
     else:
-        # Not logged in navigation (optional: add login/register links)
+        # Not logged in navigation
         user_nav = '''
             <div class="user-info">
                 <a href="/login" class="btn btn-secondary">Login</a>
@@ -2398,7 +2444,7 @@ def home():
     
     <div class="home-container">
         <h1 class="home-logo">Connect</h1>
-        <div class="subtitle">AI-Powered Perfect Matches</div>
+        <div class="subtitle">Skip the small talk</div>
         
         <div class="description">
             Discover meaningful connections based on deep personality compatibility, shared values, and lifestyle alignment. Our advanced neural network analyzes thousands of compatibility factors to help you find people who truly understand you.
@@ -3046,25 +3092,12 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
         '''
         matches_html += match_html
     
-    # Enhanced system info with new styling
-    system_info = f'''
-    <div class="system-info-card">
-        <div class="system-info-content">
-            <h3>🤖 Enhanced AI Matching System</h3>
-            <p>Using neural networks and agent-based social simulation to find your most compatible matches.</p>
-            <div class="feature-tags">
-                <span class="feature-tag">🧠 Neural Network Analysis</span>
-                <span class="feature-tag">🎯 Social Simulation Clustering</span>
-                <span class="feature-tag">📊 Continuous Learning</span>
-            </div>
-        </div>
-    </div>
-    '''
+    
     
     matches_count_section = f'''
     <div class="matches-header">
-        <h1 class="matches-title">Your AI-Powered Matches</h1>
-        <p class="matches-subtitle">Here are your {len(matches)} most compatible matches based on advanced neural network analysis and social simulation.</p>
+        <h1 class="matches-title">Your Matches</h1>
+        <p class="matches-subtitle">We’ve simulated the dinner party for you. Here are your {len(matches)} best fits, as chosen by your agent.</p>
         <div class="profile-updated">Profile updated: {user_info['profile_date'][:10] if user_info['profile_date'] else 'Recently'}</div>
     </div>
     '''
@@ -3538,7 +3571,6 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
     </style>
     
     <div class="dashboard-container">
-        {system_info}
         {matches_count_section}
         {matches_html}
         
@@ -3745,6 +3777,54 @@ def render_new_profile_dashboard() -> str:
     </div>
     '''
 
+def generate_agents_metadata_for_user(current_user_id):
+    """Generate agents metadata with real user data for 3D visualization"""
+    agents_metadata = {}
+    
+    try:
+        # Add the current user as the main agent (emerald)
+        user_info = user_auth.get_user_info(current_user_id)
+        agents_metadata[current_user_id] = {
+            'type': 'user',
+            'name': user_info.get('first_name', 'You') if user_info else 'You'
+        }
+        
+        # Get other real users from the database
+        other_users = user_auth.get_random_users(limit=15, exclude_user_id=current_user_id)
+        
+        # Add other users as agents (charcoal)
+        for user in other_users:
+            user_id = user.get('user_id')
+            first_name = user.get('first_name', 'Anonymous')
+            last_name = user.get('last_name', '')
+            
+            # Create a display name
+            if first_name and last_name:
+                name = f"{first_name} {last_name}"
+            elif first_name:
+                name = first_name
+            else:
+                name = f"User {user_id}"
+            
+            agents_metadata[user_id] = {
+                'type': 'other',
+                'name': name
+            }
+            
+        print(f"Generated {len(agents_metadata)} real agents for user {current_user_id}")
+        
+    except Exception as e:
+        print(f"Error generating agents metadata: {e}")
+        
+        # Fallback: create some demo agents if database query fails
+        for i in range(1, 16):
+            if i != current_user_id:
+                agents_metadata[i] = {
+                    'type': 'other',
+                    'name': f'Agent {i}'
+                }
+    
+    return agents_metadata
 # ============================================================================
 # ROUTES - PROFILE SETUP & ONBOARDING
 # ============================================================================
@@ -5429,7 +5509,10 @@ def processing_status_api(user_id):
     final_status.setdefault('agents_moved', 0)
     final_status.setdefault('avg_satisfaction', 0)
     final_status.setdefault('agents_positions', {})
-    final_status.setdefault('agents_metadata', {})
+    
+    # FIX: Generate agents_metadata with real user data
+    if 'agents_metadata' not in final_status or not final_status['agents_metadata']:
+        final_status['agents_metadata'] = generate_agents_metadata_for_user(user_id)
     
     return jsonify(final_status)
 # ============================================================================
@@ -5568,130 +5651,505 @@ def send_contact_request_with_tracking(requested_id):
 @app.route('/contact-requests')
 @login_required 
 def contact_requests_route():
-    """View and manage contact requests"""
+    """View and manage contact requests with beautiful design"""
     user_id = session['user_id']
     user_info = user_auth.get_user_info(user_id)
     
     received_requests = user_auth.get_contact_requests(user_id, 'received')
     sent_requests = user_auth.get_contact_requests(user_id, 'sent')
     
-    # Build received requests HTML
+    # Build received requests HTML with new design
     received_html = ""
     pending_received = [r for r in received_requests if r['status'] == 'pending']
     
     if pending_received:
         for req in pending_received:
+            # Get initials for avatar
+            name_parts = req['other_user_name'].split()
+            initials = name_parts[0][0] + (name_parts[-1][0] if len(name_parts) > 1 else '')
+            
             received_html += f'''
-            <div style="background: white; border-radius: 8px; padding: 20px; margin: 15px 0; border-left: 4px solid #6c5ce7; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                    <div>
-                        <div style="font-size: 18px; font-weight: bold; color: #333;">{req['other_user_name']}</div>
-                        <div style="font-size: 14px; color: #666;">Requested on {req['created_at'][:10]}</div>
+            <div class="request-card">
+                <div class="request-header">
+                    <div class="avatar">{initials}</div>
+                    <div class="request-info">
+                        <div class="request-name">{req['other_user_name']}</div>
+                        <div class="request-date">{req['created_at'][:10]}</div>
                     </div>
-                    <div style="display: flex; gap: 10px;">
-                        <a href="/respond-contact-request/{req['id']}/accept" 
-                           style="background: #28a745; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500; font-size: 14px;">
-                           ✅ Accept
+                    <div class="request-actions">
+                        <a href="/respond-contact-request/{req['id']}/accept" class="btn btn-accept">
+                            Accept
                         </a>
-                        <a href="/respond-contact-request/{req['id']}/deny" 
-                           style="background: #dc3545; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500; font-size: 14px;">
-                           ❌ Decline
+                        <a href="/respond-contact-request/{req['id']}/deny" class="btn btn-decline">
+                            Decline
                         </a>
                     </div>
                 </div>
-                {f'<div style="background: #f8f9fa; padding: 15px; border-radius: 6px; font-style: italic; color: #555; margin-bottom: 15px;">"{req["message"]}"</div>' if req['message'] else ''}
-                <div style="font-size: 14px; color: #666; padding: 10px; background: #fff3cd; border-radius: 6px; border: 1px solid #ffeaa7;">
-                    <strong>If you accept:</strong> {req['other_user_name']} will receive your phone number: <strong>{user_info['phone']}</strong>
+                
+                {f'<div class="request-message">"{req["message"]}"</div>' if req['message'] else ''}
+                
+                <div class="privacy-notice">
+                    <div class="privacy-icon">🔒</div>
+                    <div class="privacy-text">
+                        <strong>If you accept:</strong> {req['other_user_name']} will receive your phone number: <strong>{user_info['phone']}</strong>
+                    </div>
                 </div>
             </div>
             '''
     else:
         received_html = '''
-        <div style="text-align: center; padding: 40px; color: #666; background: white; border-radius: 8px; border: 2px dashed #ddd;">
-            <div style="font-size: 48px; margin-bottom: 15px;">📭</div>
-            <div style="font-size: 18px; margin-bottom: 8px;">No pending contact requests</div>
-            <div style="font-size: 14px;">When someone wants to connect with you, their requests will appear here.</div>
+        <div class="empty-state">
+            <div class="empty-title">No Pending Requests</div>
+            <div class="empty-text">When someone wants to connect with you, their requests will appear here.</div>
         </div>
         '''
     
-    # Build sent requests HTML
+    # Build sent requests HTML with new design
     sent_html = ""
     if sent_requests:
         for req in sent_requests:
-            # Status styling
-            status_styles = {
-                'pending': {'color': '#856404', 'bg': '#fff3cd', 'border': '#ffeaa7', 'icon': '⏳'},
-                'accepted': {'color': '#155724', 'bg': '#d4edda', 'border': '#c3e6cb', 'icon': '✅'},
-                'denied': {'color': '#721c24', 'bg': '#f8d7da', 'border': '#f5c6cb', 'icon': '❌'}
+            # Get initials for avatar
+            name_parts = req['other_user_name'].split()
+            initials = name_parts[0][0] + (name_parts[-1][0] if len(name_parts) > 1 else '')
+            
+            # Status styling with your color palette
+            status_config = {
+                'pending': {'color': 'var(--color-charcoal)', 'bg': 'var(--color-sage)', 'icon': '⏳', 'text': 'Pending'},
+                'accepted': {'color': 'var(--color-white)', 'bg': 'var(--color-emerald)', 'icon': '✅', 'text': 'Accepted'},
+                'denied': {'color': 'var(--color-white)', 'bg': 'var(--color-gray-600)', 'icon': '❌', 'text': 'Declined'}
             }
             
-            style = status_styles.get(req['status'], status_styles['pending'])
-            status_text = f"{style['icon']} {req['status'].title()}"
+            config = status_config.get(req['status'], status_config['pending'])
             
             # Phone number display for accepted requests
-            phone_display = ""
+            contact_section = ""
             if req['status'] == 'accepted':
-                phone_display = f'''
-                <div style="margin-top: 15px; padding: 15px; background: #d4edda; border-radius: 6px; border: 1px solid #c3e6cb;">
-                    <div style="font-weight: 600; color: #155724; margin-bottom: 8px;">Contact Information:</div>
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <a href="tel:{req['other_user_phone']}" 
-                           style="background: #28a745; color: white; padding: 8px 16px; border-radius: 6px; text-decoration: none; font-weight: 500;">
-                           📞 Call {req['other_user_phone']}
+                contact_section = f'''
+                <div class="contact-info">
+                    <div class="contact-header">
+                        <div class="contact-icon">📞</div>
+                        <div class="contact-label">Contact Information Available</div>
+                    </div>
+                    <div class="contact-actions">
+                        <a href="tel:{req['other_user_phone']}" class="btn btn-call">
+                            Call {req['other_user_phone']}
                         </a>
-                        <span style="color: #155724; font-size: 14px;">You can now contact each other!</span>
+                        <div class="contact-note">You can now contact each other!</div>
                     </div>
                 </div>
                 '''
             
             sent_html += f'''
-            <div style="background: white; border-radius: 8px; padding: 20px; margin: 15px 0; border-left: 4px solid {style['border']}; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                    <div>
-                        <div style="font-size: 18px; font-weight: bold; color: #333;">{req['other_user_name']}</div>
-                        <div style="font-size: 14px; color: #666;">Sent on {req['created_at'][:10]}</div>
+            <div class="request-card">
+                <div class="request-header">
+                    <div class="avatar">{initials}</div>
+                    <div class="request-info">
+                        <div class="request-name">{req['other_user_name']}</div>
+                        <div class="request-date">{req['created_at'][:10]}</div>
                     </div>
-                    <div style="background: {style['bg']}; color: {style['color']}; padding: 8px 16px; border-radius: 20px; font-size: 14px; font-weight: 500; border: 1px solid {style['border']};">
-                        {status_text}
+                    <div class="status-badge" style="background: {config['bg']}; color: {config['color']};">
+                        <span class="status-icon">{config['icon']}</span>
+                        <span class="status-text">{config['text']}</span>
                     </div>
                 </div>
-                {f'<div style="background: #f8f9fa; padding: 15px; border-radius: 6px; font-style: italic; color: #555; margin-bottom: 10px;"><strong>Your message:</strong> "{req["message"]}"</div>' if req['message'] else ''}
-                {phone_display}
+                
+                {f'<div class="request-message sent"><strong>Your message:</strong> "{req["message"]}"</div>' if req['message'] else ''}
+                {contact_section}
             </div>
             '''
     else:
         sent_html = '''
-        <div style="text-align: center; padding: 40px; color: #666; background: white; border-radius: 8px; border: 2px dashed #ddd;">
-            <div style="font-size: 48px; margin-bottom: 15px;">📤</div>
-            <div style="font-size: 18px; margin-bottom: 8px;">No contact requests sent</div>
-            <div style="font-size: 14px;">When you request someone's contact information, it will appear here.</div>
+        <div class="empty-state">
+            <div class="empty-title">No Requests Sent</div>
+            <div class="empty-text">When you request someone's contact information, it will appear here.</div>
         </div>
         '''
     
-    # Build the complete HTML content
+    # Build the complete HTML content with enhanced styling
     content = f'''
-    <div style="max-width: 800px; margin: 0 auto; padding: 40px;">
-        <h1 style="font-size: 28px; text-align: center; margin-bottom: 40px; color: #333;">Contact Requests</h1>
+    <style>
+        .requests-container {{
+            font-family: 'Satoshi', -apple-system, BlinkMacSystemFont, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 2rem;
+        }}
         
-        <div style="margin-bottom: 50px;">
-            <h2 style="font-size: 22px; margin-bottom: 20px; color: #6c5ce7; display: flex; align-items: center; gap: 8px;">
-                📨 Requests Received
-                {f'<span style="background: #dc3545; color: white; border-radius: 50%; padding: 4px 8px; font-size: 12px; margin-left: 8px;">{len(pending_received)}</span>' if pending_received else ''}
-            </h2>
-            <div style="background: #f8f9fa; border-radius: 8px; padding: 20px;">
+        .requests-title {{
+            font-family: 'Clash Display', 'Satoshi', sans-serif;
+            font-size: clamp(2rem, 4vw, 2.5rem);
+            font-weight: 600;
+            text-align: center;
+            margin-bottom: 3rem;
+            color: var(--color-charcoal);
+            letter-spacing: -0.02em;
+        }}
+        
+        .requests-section {{
+            margin-bottom: 3rem;
+        }}
+        
+        .section-header {{
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+            padding: 0 0.5rem;
+        }}
+        
+        .section-title {{
+            font-family: 'Clash Display', 'Satoshi', sans-serif;
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--color-emerald);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            letter-spacing: -0.01em;
+        }}
+        
+        .notification-badge {{
+            background: var(--color-emerald);
+            color: white;
+            border-radius: 50%;
+            padding: 0.25rem 0.5rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            min-width: 1.25rem;
+            height: 1.25rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }}
+        
+        .requests-container-inner {{
+            background: var(--color-white);
+            border-radius: 20px;
+            padding: 2rem;
+            box-shadow: 
+                0 1px 3px rgba(0,0,0,0.04),
+                0 8px 24px rgba(0,0,0,0.08);
+            position: relative;
+        }}
+        
+        .requests-container-inner::before {{
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--color-sage), transparent);
+        }}
+        
+        .request-card {{
+            background: var(--color-gray-50);
+            border-radius: 16px;
+            padding: 2rem;
+            margin: 1.5rem 0;
+            border-left: 4px solid var(--color-sage);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }}
+        
+        .request-card:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.08);
+        }}
+        
+        .request-header {{
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+            margin-bottom: 1.5rem;
+        }}
+        
+        .avatar {{
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--color-lavender), var(--color-sage));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--color-charcoal);
+            font-size: 1.5rem;
+            font-weight: 700;
+            font-family: 'Clash Display', 'Satoshi', sans-serif;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+        }}
+        
+        .request-info {{
+            flex: 1;
+        }}
+        
+        .request-name {{
+            font-family: 'Clash Display', 'Satoshi', sans-serif;
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--color-charcoal);
+            margin-bottom: 0.25rem;
+        }}
+        
+        .request-date {{
+            font-size: 0.875rem;
+            color: var(--color-gray-600);
+            font-weight: 500;
+        }}
+        
+        .request-actions {{
+            display: flex;
+            gap: 0.75rem;
+        }}
+        
+        .btn {{
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1.25rem;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 0.875rem;
+            text-decoration: none;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border: none;
+            cursor: pointer;
+            font-family: 'Satoshi', sans-serif;
+            white-space: nowrap;
+        }}
+        
+        .btn-accept {{
+            background: var(--color-emerald);
+            color: white;
+            box-shadow: 0 4px 16px rgba(22, 122, 96, 0.2);
+        }}
+        
+        .btn-accept:hover {{
+            background: #0f5942;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(22, 122, 96, 0.3);
+        }}
+        
+        .btn-decline {{
+            background: var(--color-gray-600);
+            color: white;
+            box-shadow: 0 4px 16px rgba(117, 117, 117, 0.2);
+        }}
+        
+        .btn-decline:hover {{
+            background: #616161;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(117, 117, 117, 0.3);
+        }}
+        
+        .btn-call {{
+            background: var(--color-sage);
+            color: var(--color-charcoal);
+            box-shadow: 0 4px 16px rgba(198, 225, 155, 0.2);
+        }}
+        
+        .btn-call:hover {{
+            background: #9ac463;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(198, 225, 155, 0.3);
+        }}
+        
+        .status-badge {{
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1.25rem;
+            border-radius: 50px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            white-space: nowrap;
+        }}
+        
+        .status-icon {{
+            font-size: 1rem;
+        }}
+        
+        .request-message {{
+            background: var(--color-white);
+            padding: 1.5rem;
+            border-radius: 12px;
+            margin: 1.5rem 0;
+            border-left: 4px solid var(--color-emerald);
+            font-style: italic;
+            color: var(--color-gray-800);
+            line-height: 1.6;
+        }}
+        
+        .request-message.sent {{
+            border-left-color: var(--color-sage);
+        }}
+        
+        .privacy-notice {{
+            display: flex;
+            align-items: flex-start;
+            gap: 1rem;
+            padding: 1.5rem;
+            background: linear-gradient(135deg, var(--color-lavender), var(--color-sage));
+            border-radius: 12px;
+            margin-top: 1.5rem;
+        }}
+        
+        .privacy-icon {{
+            font-size: 1.25rem;
+            flex-shrink: 0;
+        }}
+        
+        .privacy-text {{
+            font-size: 0.875rem;
+            line-height: 1.5;
+            color: var(--color-charcoal);
+        }}
+        
+        .privacy-text strong {{
+            font-weight: 600;
+        }}
+        
+        .contact-info {{
+            background: linear-gradient(135deg, var(--color-emerald), var(--color-sage));
+            color: white;
+            padding: 1.5rem;
+            border-radius: 12px;
+            margin-top: 1.5rem;
+        }}
+        
+        .contact-header {{
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }}
+        
+        .contact-icon {{
+            font-size: 1.25rem;
+        }}
+        
+        .contact-label {{
+            font-weight: 600;
+            font-size: 0.875rem;
+        }}
+        
+        .contact-actions {{
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }}
+        
+        .contact-note {{
+            font-size: 0.875rem;
+            opacity: 0.9;
+        }}
+        
+        .empty-state {{
+            text-align: center;
+            padding: 3rem 2rem;
+            color: var(--color-gray-600);
+            background: var(--color-white);
+            border-radius: 16px;
+            border: 2px dashed var(--color-gray-200);
+        }}
+        
+        .empty-icon {{
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }}
+        
+        .empty-title {{
+            font-family: 'Clash Display', 'Satoshi', sans-serif;
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            color: var(--color-charcoal);
+        }}
+        
+        .empty-text {{
+            font-size: 0.875rem;
+            line-height: 1.5;
+        }}
+        
+        .back-to-dashboard {{
+            text-align: center;
+            margin-top: 3rem;
+        }}
+        
+        .btn-back {{
+            background: var(--color-emerald);
+            color: white;
+            padding: 1rem 2rem;
+            border-radius: 12px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.875rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 4px 16px rgba(22, 122, 96, 0.2);
+        }}
+        
+        .btn-back:hover {{
+            background: #0f5942;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(22, 122, 96, 0.3);
+        }}
+        
+        @media (max-width: 768px) {{
+            .requests-container {{
+                padding: 1rem;
+            }}
+            
+            .request-card {{
+                padding: 1.5rem;
+            }}
+            
+            .request-header {{
+                flex-direction: column;
+                text-align: center;
+                gap: 1rem;
+            }}
+            
+            .request-actions {{
+                justify-content: center;
+            }}
+            
+            .contact-actions {{
+                flex-direction: column;
+                align-items: flex-start;
+            }}
+        }}
+    </style>
+    
+    <div class="requests-container">
+        <h1 class="requests-title">Contact Requests</h1>
+        
+        <div class="requests-section">
+            <div class="section-header">
+                <h2 class="section-title">
+                    Requests Received
+                    {f'<span class="notification-badge">{len(pending_received)}</span>' if pending_received else ''}
+                </h2>
+            </div>
+            <div class="requests-container-inner">
                 {received_html}
             </div>
         </div>
         
-        <div style="margin-bottom: 40px;">
-            <h2 style="font-size: 22px; margin-bottom: 20px; color: #6c5ce7; display: flex; align-items: center; gap: 8px;">📤 Requests Sent</h2>
-            <div style="background: #f8f9fa; border-radius: 8px; padding: 20px;">
+        <div class="requests-section">
+            <div class="section-header">
+                <h2 class="section-title">Requests Sent</h2>
+            </div>
+            <div class="requests-container-inner">
                 {sent_html}
             </div>
         </div>
         
-        <div style="text-align: center; margin-top: 40px;">
-            <a href="/dashboard" style="background: #6c5ce7; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 500;">
+        <div class="back-to-dashboard">
+            <a href="/dashboard" class="btn-back">
                 ← Back to Matches
             </a>
         </div>
