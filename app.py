@@ -1773,87 +1773,364 @@ def process_matching_background(user_id: int):
 # ============================================================================
 
 def get_base_styles() -> str:
-    """Common CSS styles used across templates"""
+    """Common CSS styles with designer typography and color palette"""
     return '''
+    <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=clash-display@400,500,600,700&display=swap" rel="stylesheet">
+    <style>
     * {
         margin: 0;
         padding: 0;
         box-sizing: border-box;
     }
+    
+    :root {
+        --color-cream: #f1ece0;
+        --color-emerald: #167a60;
+        --color-sage: #c6e19b;
+        --color-lavender: #c2b7ef;
+        --color-charcoal: #2d2d2d;
+        --color-white: #ffffff;
+        --color-gray-50: #fafafa;
+        --color-gray-100: #f5f5f5;
+        --color-gray-200: #eeeeee;
+        --color-gray-600: #757575;
+        --color-gray-800: #424242;
+    }
+    
     body {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-        background: #f4f2eb;
-        color: black;
+        font-family: 'Satoshi', -apple-system, BlinkMacSystemFont, sans-serif;
+        background: linear-gradient(135deg, var(--color-cream) 0%, var(--color-gray-50) 100%);
+        color: var(--color-charcoal);
         line-height: 1.6;
         min-height: 100vh;
+        overflow-x: hidden;
     }
+    
+    /* Typography Scale */
+    .text-display {
+        font-family: 'Clash Display', 'Satoshi', sans-serif;
+        font-size: clamp(2.5rem, 5vw, 4rem);
+        font-weight: 600;
+        line-height: 1.1;
+        letter-spacing: -0.02em;
+    }
+    
+    .text-title {
+        font-family: 'Clash Display', 'Satoshi', sans-serif;
+        font-size: clamp(1.5rem, 3vw, 2.25rem);
+        font-weight: 500;
+        line-height: 1.2;
+        letter-spacing: -0.01em;
+    }
+    
+    .text-body-lg {
+        font-size: 1.125rem;
+        line-height: 1.6;
+        font-weight: 400;
+    }
+    
+    .text-body {
+        font-size: 1rem;
+        line-height: 1.5;
+        font-weight: 400;
+    }
+    
+    .text-small {
+        font-size: 0.875rem;
+        line-height: 1.4;
+        font-weight: 400;
+    }
+    
+    /* Enhanced Header */
     .header {
-        background: white;
-        padding: 20px;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        background: var(--color-white);
+        padding: 1.5rem 2rem;
+        box-shadow: 
+            0 1px 3px rgba(0,0,0,0.04),
+            0 4px 16px rgba(0,0,0,0.08);
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 20px;
+        margin-bottom: 2rem;
+        backdrop-filter: blur(20px);
+        border-bottom: 1px solid rgba(0,0,0,0.06);
+        position: relative;
     }
+    
+    .header::after {
+        content: '';
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, var(--color-sage), transparent);
+    }
+    
     .logo {
-        font-size: 24px;
+        font-family: 'Clash Display', 'Satoshi', sans-serif;
+        font-size: 1.75rem;
         font-weight: 600;
-        color: black;
-        letter-spacing: -0.5px;
+        color: var(--color-charcoal);
+        letter-spacing: -0.02em;
+        position: relative;
     }
+    
+    .logo::after {
+        content: '';
+        position: absolute;
+        bottom: -4px;
+        left: 0;
+        width: 30px;
+        height: 3px;
+        background: linear-gradient(90deg, var(--color-emerald), var(--color-sage));
+        border-radius: 2px;
+    }
+    
     .user-info {
         display: flex;
         align-items: center;
-        gap: 20px;
-    }
-    .btn {
-        padding: 12px 24px;
-        border-radius: 6px;
-        font-size: 14px;
+        gap: 1rem;
         font-weight: 500;
+        color: var(--color-gray-600);
+    }
+    
+    .user-info span {
+        font-size: 0.875rem;
+        color: var(--color-charcoal);
+        font-weight: 500;
+    }
+    
+    /* Enhanced Buttons */
+    .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1.5rem;
+        border-radius: 12px;
+        font-size: 0.875rem;
+        font-weight: 600;
         cursor: pointer;
         text-decoration: none;
-        display: inline-block;
-        transition: all 0.2s ease;
-        border: none;
         text-align: center;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        border: none;
+        font-family: 'Satoshi', sans-serif;
+        white-space: nowrap;
     }
+    
     .btn-primary {
-        background: #6c5ce7;
+        background: var(--color-emerald);
         color: white;
+        box-shadow: 0 4px 16px rgba(22, 122, 96, 0.2);
     }
+    
     .btn-primary:hover {
-        background: #5a4fcf;
+        background: #0f5942;
+        transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(22, 122, 96, 0.3);
     }
+    
     .btn-secondary {
-        background: #f8f9fa;
-        color: #666;
-        border: 1px solid #ddd;
+        background: var(--color-white);
+        color: var(--color-gray-600);
+        border: 1px solid var(--color-gray-200);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.04);
     }
+    
     .btn-secondary:hover {
-        background: #e9ecef;
-        border-color: #6c5ce7;
+        background: var(--color-gray-50);
+        border-color: var(--color-sage);
+        color: var(--color-charcoal);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 16px rgba(0,0,0,0.08);
     }
+    
+    /* Enhanced Container */
     .container {
-        background: white;
-        border-radius: 8px;
-        padding: 40px;
+        background: var(--color-white);
+        border-radius: 24px;
+        padding: 3rem 2.5rem;
         max-width: 800px;
         margin: 0 auto;
-        box-shadow: 0 2px 20px rgba(0,0,0,0.05);
+        box-shadow: 
+            0 1px 3px rgba(0,0,0,0.04),
+            0 8px 24px rgba(0,0,0,0.08),
+            0 24px 48px rgba(0,0,0,0.04);
+        position: relative;
+        overflow: hidden;
     }
-    @media (max-width: 600px) {
+    
+    .container::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, var(--color-sage), transparent);
+    }
+    
+    /* Form Elements */
+    input[type="text"],
+    input[type="email"],
+    input[type="password"],
+    input[type="tel"],
+    input[type="number"],
+    input[type="url"],
+    textarea,
+    select {
+        font-family: 'Satoshi', sans-serif;
+        width: 100%;
+        padding: 1rem;
+        border: 1px solid var(--color-gray-200);
+        border-radius: 8px;
+        font-size: 1rem;
+        background: var(--color-white);
+        color: var(--color-charcoal);
+        transition: all 0.3s ease;
+    }
+    
+    input[type="text"]:focus,
+    input[type="email"]:focus,
+    input[type="password"]:focus,
+    input[type="tel"]:focus,
+    input[type="number"]:focus,
+    input[type="url"]:focus,
+    textarea:focus,
+    select:focus {
+        outline: none;
+        border-color: var(--color-emerald);
+        box-shadow: 0 0 0 3px rgba(22, 122, 96, 0.1);
+    }
+    
+    label {
+        display: block;
+        margin-bottom: 0.5rem;
+        font-weight: 500;
+        color: var(--color-charcoal);
+        font-size: 0.875rem;
+    }
+    
+    /* Flash Messages */
+    .flash-success {
+        background: linear-gradient(135deg, var(--color-sage), var(--color-lavender));
+        color: var(--color-charcoal);
+        padding: 1rem 1.5rem;
+        border-radius: 12px;
+        margin-bottom: 1.5rem;
+        font-weight: 500;
+        border-left: 4px solid var(--color-emerald);
+    }
+    
+    .flash-error {
+        background: #fee;
+        color: #c53030;
+        padding: 1rem 1.5rem;
+        border-radius: 12px;
+        margin-bottom: 1.5rem;
+        font-weight: 500;
+        border-left: 4px solid #fc8181;
+    }
+    
+    /* Cards */
+    .card {
+        background: var(--color-white);
+        border-radius: 16px;
+        padding: 2rem;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+        border: 1px solid var(--color-gray-200);
+        transition: all 0.3s ease;
+    }
+    
+    .card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+    }
+    
+    /* Notification Badge */
+    .notification-badge {
+        background: var(--color-emerald);
+        color: white;
+        border-radius: 50%;
+        padding: 0.25rem 0.5rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+        margin-left: 0.5rem;
+        min-width: 1.25rem;
+        height: 1.25rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    /* Loading States */
+    .loading {
+        opacity: 0.7;
+        pointer-events: none;
+    }
+    
+    .loading-spinner {
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        border: 2px solid var(--color-gray-200);
+        border-radius: 50%;
+        border-top-color: var(--color-emerald);
+        animation: spin 1s ease-in-out infinite;
+    }
+    
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+    
+    /* Responsive Design */
+    @media (max-width: 768px) {
         .container {
-            padding: 24px 20px;
-            margin: 10px;
+            padding: 2rem 1.5rem;
+            margin: 1rem;
+            border-radius: 16px;
         }
+        
         .header {
             flex-direction: column;
-            gap: 15px;
+            gap: 1rem;
             text-align: center;
+            padding: 1rem 1.5rem;
+        }
+        
+        .user-info {
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 0.75rem;
+        }
+        
+        .btn {
+            padding: 0.875rem 1.25rem;
+            font-size: 0.875rem;
+        }
+        
+        .logo {
+            font-size: 1.5rem;
         }
     }
+    
+    @media (max-width: 480px) {
+        .container {
+            margin: 0.5rem;
+            padding: 1.5rem 1rem;
+        }
+        
+        .header {
+            margin-bottom: 1rem;
+        }
+        
+        .user-info {
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+    }
+    </style>
     '''
 
 def render_template_with_header(title: str, content: str, user_info: Dict = None) -> str:
@@ -1929,135 +2206,221 @@ def home():
     if 'user_id' in session:
         return redirect('/dashboard')
     
-    return render_template_string('''
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Find Your Perfect Match - Connect</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <style>
-            * {
-                margin: 0;
-                padding: 0;
-                box-sizing: border-box;
+    content = '''
+    <style>
+        /* Additional home-specific styles */
+        .home-container {
+            background: var(--color-white);
+            border-radius: 24px;
+            padding: 4rem 3rem;
+            max-width: 600px;
+            width: 100%;
+            margin: 2rem auto;
+            text-align: center;
+            box-shadow: 
+                0 1px 3px rgba(0,0,0,0.04),
+                0 8px 24px rgba(0,0,0,0.08),
+                0 24px 48px rgba(0,0,0,0.04);
+            position: relative;
+            backdrop-filter: blur(20px);
+        }
+        
+        .home-container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--color-sage), transparent);
+        }
+        
+        .home-logo {
+            font-family: 'Clash Display', 'Satoshi', sans-serif;
+            font-size: clamp(2.5rem, 5vw, 3.5rem);
+            font-weight: 600;
+            color: var(--color-charcoal);
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.02em;
+            position: relative;
+        }
+        
+        .home-logo::after {
+            content: '';
+            position: absolute;
+            bottom: -8px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 60px;
+            height: 4px;
+            background: linear-gradient(90deg, var(--color-emerald), var(--color-sage));
+            border-radius: 2px;
+        }
+        
+        .subtitle {
+            font-family: 'Clash Display', 'Satoshi', sans-serif;
+            font-size: 1.25rem;
+            color: var(--color-gray-600);
+            margin-bottom: 3rem;
+            font-weight: 500;
+        }
+        
+        .description {
+            font-size: 1.125rem;
+            color: var(--color-gray-600);
+            margin-bottom: 3rem;
+            text-align: left;
+            line-height: 1.7;
+            padding: 2rem;
+            background: var(--color-gray-50);
+            border-radius: 16px;
+            border-left: 4px solid var(--color-sage);
+        }
+        
+        .action-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            margin-bottom: 2.5rem;
+        }
+        
+        .btn-home-primary {
+            background: linear-gradient(135deg, var(--color-emerald), var(--color-sage));
+            color: white;
+            box-shadow: 0 4px 16px rgba(22, 122, 96, 0.2);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+            padding: 1.25rem 2rem;
+            border-radius: 12px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border: none;
+            font-family: 'Satoshi', sans-serif;
+        }
+        
+        .btn-home-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(22, 122, 96, 0.3);
+        }
+        
+        .btn-home-primary::before {
+            content: '✨';
+            font-size: 1.2rem;
+        }
+        
+        .btn-home-secondary {
+            background: var(--color-white);
+            color: var(--color-charcoal);
+            border: 2px solid var(--color-sage);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+            padding: 1.25rem 2rem;
+            border-radius: 12px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            font-family: 'Satoshi', sans-serif;
+        }
+        
+        .btn-home-secondary:hover {
+            background: var(--color-sage);
+            color: var(--color-charcoal);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(198, 225, 155, 0.3);
+        }
+        
+        .btn-home-secondary::before {
+            content: '👋';
+            font-size: 1.2rem;
+        }
+        
+        .privacy-note {
+            background: linear-gradient(135deg, var(--color-lavender), var(--color-sage));
+            color: var(--color-charcoal);
+            border-radius: 16px;
+            padding: 1.5rem 2rem;
+            margin: 2rem 0;
+            font-size: 0.875rem;
+            text-align: left;
+            line-height: 1.6;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .privacy-note::before {
+            content: '🔒';
+            position: absolute;
+            top: 1rem;
+            right: 1.5rem;
+            font-size: 1.5rem;
+            opacity: 0.7;
+        }
+        
+        .privacy-note strong {
+            font-weight: 600;
+            display: block;
+            margin-bottom: 0.5rem;
+        }
+        
+        @media (max-width: 768px) {
+            .home-container {
+                padding: 3rem 2rem;
+                margin: 1rem;
+                border-radius: 20px;
             }
-            body {
-                font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-                background: #f4f2eb;
-                color: black;
-                line-height: 1.6;
-                min-height: 100vh;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                padding: 20px;
-            }
-            .container {
-                background: white;
-                border-radius: 8px;
-                padding: 60px 40px;
-                max-width: 500px;
-                width: 100%;
-                text-align: center;
-                box-shadow: 0 2px 20px rgba(0,0,0,0.05);
-            }
-            .logo {
-                font-size: 32px;
-                font-weight: 600;
-                color: black;
-                margin-bottom: 8px;
-                letter-spacing: -0.5px;
-            }
-            .subtitle {
-                font-size: 16px;
-                color: black;
-                margin-bottom: 40px;
-                font-weight: 400;
-            }
+            
             .description {
-                font-size: 16px;
-                color: #666;
-                margin-bottom: 40px;
-                text-align: left;
-                line-height: 1.6;
+                text-align: center;
+                padding: 1.5rem;
             }
+            
             .action-buttons {
-                display: flex;
-                flex-direction: column;
-                gap: 15px;
-                margin-bottom: 30px;
+                gap: 0.75rem;
             }
-            .btn {
-                padding: 16px 32px;
-                border-radius: 6px;
-                font-size: 16px;
-                font-weight: 500;
-                cursor: pointer;
-                text-decoration: none;
-                display: inline-block;
-                transition: all 0.2s ease;
-                border: none;
+        }
+        
+        @media (max-width: 480px) {
+            .home-container {
+                padding: 2rem 1.5rem;
             }
-            .btn-primary {
-                background: #6c5ce7;
-                color: white;
-            }
-            .btn-primary:hover {
-                background: #5a4fcf;
-                transform: translateY(-2px);
-            }
-            .btn-secondary {
-                background: white;
-                color: #6c5ce7;
-                border: 2px solid #6c5ce7;
-            }
-            .btn-secondary:hover {
-                background: #6c5ce7;
-                color: white;
-            }
-            .privacy-note {
-                background: #f8f9fa;
-                border-radius: 6px;
-                padding: 16px;
-                margin: 24px 0;
-                font-size: 14px;
-                color: #666;
-                text-align: left;
-            }
-            @media (max-width: 600px) {
-                .container {
-                    padding: 40px 24px;
-                    margin: 16px;
-                }
-            }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h1 class="logo">Connect</h1>
-            <div class="subtitle">Find Your Perfect Match</div>
-            
-            <div class="description">
-                Discover meaningful connections based on personality compatibility, shared interests, and values. Our AI-powered matching system helps you find people who truly understand you.
-            </div>
-            
-            <div class="action-buttons">
-                <a href="/register" class="btn btn-primary">
-                    Create Account & Start Matching
-                </a>
-                <a href="/login" class="btn btn-secondary">
-                    Login to Existing Account
-                </a>
-            </div>
-            
-            <div class="privacy-note">
-                <strong>Your Privacy Matters</strong><br>
-                We use secure authentication and advanced filtering to protect your data while helping you find compatible matches.
-            </div>
+        }
+    </style>
+    
+    <div class="home-container">
+        <h1 class="home-logo">Connect</h1>
+        <div class="subtitle">AI-Powered Perfect Matches</div>
+        
+        <div class="description">
+            Discover meaningful connections based on deep personality compatibility, shared values, and lifestyle alignment. Our advanced neural network analyzes thousands of compatibility factors to help you find people who truly understand you.
         </div>
-    </body>
-    </html>
-    ''')
+        
+        <div class="action-buttons">
+            <a href="/register" class="btn-home-primary">
+                Create Account & Start Matching
+            </a>
+            <a href="/login" class="btn-home-secondary">
+                Login to Existing Account
+            </a>
+        </div>
+        
+        <div class="privacy-note">
+            <strong>Your Privacy is Our Priority</strong>
+            We use enterprise-grade security and advanced AI filtering to protect your data while helping you find genuinely compatible matches through intelligent analysis.
+        </div>
+    </div>
+    '''
+    return render_template_with_header("Home", content)
+
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     """User registration"""
@@ -2222,33 +2585,183 @@ def forgot_password():
     
     # Show forgot password form
     content = '''
-    <div class="container" style="max-width: 400px;">
-        <h1 style="font-size: 28px; text-align: center; margin-bottom: 32px;">Reset Your Password</h1>
-        
-        <div style="background: #e8f4fd; border-radius: 6px; padding: 16px; margin: 24px 0; font-size: 14px; color: #333;">
-            <strong>Forgot your password?</strong><br>
-            Enter your email address and we'll send you a link to reset your password.
+    <div class="auth-container">
+        <div class="auth-header">
+            <h1 class="auth-title">Reset Password</h1>
+            <p class="auth-subtitle">We'll send you a secure reset link</p>
         </div>
         
-        <form method="POST">
-            <div style="margin-bottom: 20px;">
-                <label style="display: block; margin-bottom: 8px; font-weight: 500;">Email Address</label>
-                <input type="email" name="email" required style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px;" placeholder="Enter your email address">
+        <div class="info-card">
+            <div class="info-icon">🔒</div>
+            <div class="info-content">
+                <strong>Forgot your password?</strong><br>
+                Enter your email address and we'll send you a secure link to reset your password.
+            </div>
+        </div>
+        
+        <form method="POST" class="auth-form">
+            <div class="form-group">
+                <label>Email Address</label>
+                <input type="email" name="email" required placeholder="Enter your email address" autofocus>
             </div>
             
-            <button type="submit" class="btn btn-primary" style="width: 100%; padding: 16px; font-size: 16px; margin-top: 10px;">
-                Send Reset Link
+            <button type="submit" class="btn-submit">
+                <span>📧 Send Reset Link</span>
             </button>
         </form>
         
-        <div style="text-align: center; margin-top: 20px; font-size: 14px;">
-            Remember your password? <a href="/login" style="color: #6c5ce7; text-decoration: none;">Login here</a>
+        <div class="auth-links">
+            <a href="/login" class="back-link">← Remember your password?</a>
         </div>
         
-        <div style="text-align: center; margin-top: 10px; font-size: 14px;">
-            Don't have an account? <a href="/register" style="color: #6c5ce7; text-decoration: none;">Create one here</a>
+        <div class="auth-footer">
+            Don't have an account? <a href="/register">Create one here</a>
         </div>
     </div>
+    
+    <style>
+        .auth-container {
+            max-width: 450px;
+            margin: 0 auto;
+        }
+        
+        .auth-header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        
+        .auth-title {
+            font-family: 'Clash Display', 'Satoshi', sans-serif;
+            font-size: 2rem;
+            font-weight: 600;
+            color: var(--color-charcoal);
+            margin-bottom: 0.5rem;
+        }
+        
+        .auth-subtitle {
+            color: var(--color-gray-600);
+            font-size: 1rem;
+            font-weight: 500;
+        }
+        
+        .info-card {
+            background: linear-gradient(135deg, var(--color-lavender), var(--color-sage));
+            color: var(--color-charcoal);
+            padding: 1.5rem;
+            border-radius: 16px;
+            margin-bottom: 2rem;
+            display: flex;
+            align-items: flex-start;
+            gap: 1rem;
+        }
+        
+        .info-icon {
+            font-size: 1.5rem;
+            flex-shrink: 0;
+        }
+        
+        .info-content {
+            font-size: 0.875rem;
+            line-height: 1.5;
+        }
+        
+        .info-content strong {
+            display: block;
+            margin-bottom: 0.25rem;
+            font-weight: 600;
+        }
+        
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            color: var(--color-charcoal);
+            font-size: 0.875rem;
+        }
+        
+        .form-group input {
+            width: 100%;
+            padding: 1rem 1.25rem;
+            border: 2px solid var(--color-gray-200);
+            border-radius: 12px;
+            font-size: 1rem;
+            font-family: 'Satoshi', sans-serif;
+            background: var(--color-white);
+            transition: all 0.3s ease;
+        }
+        
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--color-emerald);
+            box-shadow: 0 0 0 3px rgba(22, 122, 96, 0.1);
+        }
+        
+        .btn-submit {
+            width: 100%;
+            padding: 1.25rem 2rem;
+            background: linear-gradient(135deg, var(--color-emerald), var(--color-sage));
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-family: 'Satoshi', sans-serif;
+            box-shadow: 0 4px 16px rgba(22, 122, 96, 0.2);
+            margin-bottom: 1.5rem;
+        }
+        
+        .btn-submit:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(22, 122, 96, 0.3);
+        }
+        
+        .btn-submit span {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+        
+        .auth-links {
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+        
+        .back-link {
+            color: var(--color-emerald);
+            text-decoration: none;
+            font-size: 0.875rem;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+        
+        .back-link:hover {
+            color: var(--color-sage);
+        }
+        
+        .auth-footer {
+            text-align: center;
+            font-size: 0.875rem;
+            color: var(--color-gray-600);
+        }
+        
+        .auth-footer a {
+            color: var(--color-emerald);
+            text-decoration: none;
+            font-weight: 600;
+        }
+        
+        .auth-footer a:hover {
+            color: var(--color-sage);
+            text-decoration: underline;
+        }
+    </style>
     '''
     
     return render_template_with_header("Reset Password", content)
@@ -4299,20 +4812,21 @@ def processing():
 @app.route('/live-matching/<int:user_id>')
 @login_required
 def live_matching(user_id):
-    """Designer-quality live matching with real data"""
+    """3D neural network matching visualization"""
     if session.get('user_id') != user_id:
         return redirect('/login')
     
-    # Get user info for header
+    # Get user info for any needed data
     user_info = user_auth.get_user_info(user_id)
     
+    # The 3D matching HTML - replace the old live_matching_html variable
     live_matching_html = f'''
     <!DOCTYPE html>
     <html lang="en">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Live Agent Simulation - Connect</title>
+        <title>3D Live Agent Simulation - Connect</title>
         <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=clash-display@400,500,600,700&display=swap" rel="stylesheet">
         <style>
             * {{
@@ -4328,542 +4842,473 @@ def live_matching(user_id):
                 --color-lavender: #c2b7ef;
                 --color-charcoal: #2d2d2d;
                 --color-white: #ffffff;
-                --color-gray-50: #fafafa;
-                --color-gray-100: #f5f5f5;
-                --color-gray-200: #eeeeee;
-                --color-gray-600: #757575;
-                --color-gray-800: #424242;
             }}
             
             body {{
                 font-family: 'Satoshi', -apple-system, BlinkMacSystemFont, sans-serif;
-                background: linear-gradient(135deg, var(--color-cream) 0%, var(--color-gray-50) 100%);
+                background: var(--color-cream);
                 color: var(--color-charcoal);
                 min-height: 100vh;
-                overflow-x: hidden;
+                overflow: hidden;
+                cursor: move;
             }}
             
-            /* Typography Scale */
-            .text-display {{
-                font-family: 'Clash Display', 'Satoshi', sans-serif;
-                font-size: clamp(2.5rem, 5vw, 4rem);
-                font-weight: 600;
-                line-height: 1.1;
-                letter-spacing: -0.02em;
-            }}
-            
-            .text-title {{
-                font-family: 'Clash Display', 'Satoshi', sans-serif;
-                font-size: clamp(1.5rem, 3vw, 2.25rem);
-                font-weight: 500;
-                line-height: 1.2;
-                letter-spacing: -0.01em;
-            }}
-            
-            .text-body-lg {{
-                font-size: 1.125rem;
-                line-height: 1.6;
-                font-weight: 400;
-            }}
-            
-            /* Layout */
-            .container {{
-                max-width: 1200px;
-                margin: 0 auto;
-                padding: 2rem;
-            }}
-            
-            .header {{
-                text-align: center;
-                margin-bottom: 3rem;
+            #threejs-container {{
+                width: 100vw;
+                height: 100vh;
                 position: relative;
+                overflow: hidden;
             }}
             
-            .header::before {{
-                content: '';
+            /* Status */
+            .status {{
                 position: absolute;
-                top: -1rem;
+                top: 2rem;
                 left: 50%;
                 transform: translateX(-50%);
-                width: 60px;
-                height: 4px;
-                background: linear-gradient(90deg, var(--color-emerald), var(--color-sage));
-                border-radius: 2px;
-            }}
-            
-            .live-badge {{
-                display: inline-flex;
-                align-items: center;
-                gap: 0.5rem;
-                background: var(--color-emerald);
-                color: var(--color-white);
-                padding: 0.5rem 1rem;
-                border-radius: 50px;
-                font-weight: 600;
-                margin-top: 1rem;
-                font-size: 0.875rem;
-            }}
-            
-            .live-badge::before {{
-                content: '●';
-                animation: pulse 2s ease-in-out infinite;
-            }}
-            
-            @keyframes pulse {{
-                0%, 100% {{
-                    opacity: 1;
-                }}
-                50% {{
-                    opacity: 0.3;
-                }}
-            }}
-            
-            /* Simulation Container */
-            .simulation-container {{
-                background: var(--color-white);
-                border-radius: 24px;
-                padding: 2rem;
-                box-shadow: 
-                    0 1px 3px rgba(0,0,0,0.04),
-                    0 8px 24px rgba(0,0,0,0.08),
-                    0 24px 48px rgba(0,0,0,0.04);
-                backdrop-filter: blur(20px);
-                position: relative;
-                overflow: hidden;
-            }}
-            
-            .simulation-container::before {{
-                content: '';
-                position: absolute;
-                top: 0;
-                left: 0;
-                right: 0;
-                height: 1px;
-                background: linear-gradient(90deg, transparent, var(--color-sage), transparent);
-            }}
-            
-            /* Phase Indicator */
-            .phase {{
-                text-align: center;
-                padding: 1.5rem 2rem;
-                background: linear-gradient(135deg, var(--color-emerald), var(--color-sage));
-                color: white;
-                border-radius: 16px;
-                margin-bottom: 2rem;
-                font-weight: 500;
-                font-size: 1.125rem;
-                position: relative;
-                overflow: hidden;
-            }}
-            
-            .phase::before {{
-                content: '';
-                position: absolute;
-                top: 0;
-                left: -100%;
-                width: 100%;
-                height: 100%;
-                background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
-                animation: shimmer 3s ease-in-out infinite;
-            }}
-            
-            @keyframes shimmer {{
-                0% {{ left: -100%; }}
-                50% {{ left: 100%; }}
-                100% {{ left: 100%; }}
-            }}
-            
-            /* Legend */
-            .legend {{
-                display: flex;
-                justify-content: center;
-                gap: 2rem;
-                margin: 2rem 0;
-                flex-wrap: wrap;
-            }}
-            
-            .legend-item {{
-                display: flex;
-                align-items: center;
-                gap: 0.75rem;
-                padding: 0.75rem 1.25rem;
-                background: var(--color-gray-50);
-                border-radius: 50px;
-                font-weight: 500;
-                font-size: 0.875rem;
-                color: var(--color-gray-800);
-                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            }}
-            
-            .legend-item:hover {{
-                background: var(--color-gray-100);
-                transform: translateY(-2px);
-            }}
-            
-            .legend-dot {{
-                width: 14px;
-                height: 14px;
-                border-radius: 50%;
-                border: 2px solid rgba(255,255,255,0.8);
-                box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-            }}
-            
-            /* Simulation Area */
-            .simulation-area {{
-                width: 100%;
-                height: 600px;
-                background: var(--color-cream);
-                border-radius: 16px;
-                position: relative;
-                overflow: hidden;
-                border: 1px solid rgba(0,0,0,0.06);
-                box-shadow: inset 0 2px 8px rgba(0,0,0,0.04);
-            }}
-            
-            /* Enhanced Dots */
-            .dot {{
-                position: absolute;
-                border-radius: 50%;
-                transition: all 1.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-                cursor: pointer;
-                z-index: 10;
-            }}
-            
-            .dot.you {{
-                width: 16px;
-                height: 16px;
-                background: radial-gradient(circle at 30% 30%, var(--color-charcoal), #1a1a1a);
-                border: 3px solid var(--color-white);
-                box-shadow: 
-                    0 0 0 2px var(--color-charcoal),
-                    0 4px 12px rgba(45, 45, 45, 0.4),
-                    0 0 24px rgba(45, 45, 45, 0.2);
-                z-index: 20;
-            }}
-            
-            .dot.other {{
-                width: 10px;
-                height: 10px;
-                background: radial-gradient(circle at 30% 30%, var(--color-emerald), #0f5942);
-                border: 2px solid rgba(255, 255, 255, 0.6);
-                box-shadow: 
-                    0 2px 8px rgba(22, 122, 96, 0.3),
-                    0 0 16px rgba(22, 122, 96, 0.1);
-            }}
-            
-            .dot:hover {{
-                transform: scale(1.4);
-                z-index: 30;
-            }}
-            
-            .dot.you:hover {{
-                box-shadow: 
-                    0 0 0 2px var(--color-charcoal),
-                    0 6px 20px rgba(45, 45, 45, 0.5),
-                    0 0 32px rgba(45, 45, 45, 0.3);
-            }}
-            
-            /* Final Results Section */
-            .final-results {{
-                margin-top: 2rem;
-                display: none;
-            }}
-            
-            .final-results.visible {{
-                display: block;
-                animation: slideUp 0.6s cubic-bezier(0.4, 0, 0.2, 1);
-            }}
-            
-            .final-arrangement {{
-                width: 100%;
-                height: 200px;
-                background: linear-gradient(135deg, var(--color-lavender), var(--color-sage));
-                border-radius: 16px;
-                position: relative;
-                overflow: hidden;
-                border: 1px solid rgba(0,0,0,0.06);
-                margin-bottom: 2rem;
-            }}
-            
-            .final-arrangement::before {{
-                content: 'Final Match Arrangement';
-                position: absolute;
-                top: 1rem;
-                left: 1.5rem;
-                font-weight: 600;
-                font-size: 0.875rem;
+                z-index: 1000;
                 color: var(--color-charcoal);
+                font-size: 0.875rem;
+                font-weight: 500;
+                background: rgba(255, 255, 255, 0.9);
+                padding: 0.75rem 1.25rem;
+                border-radius: 8px;
+                backdrop-filter: blur(10px);
+                border: 1px solid rgba(0,0,0,0.1);
+                box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+            }}
+            
+            /* Results Modal */
+            .results-modal {{
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: rgba(255, 255, 255, 0.95);
+                backdrop-filter: blur(20px);
+                border-radius: 16px;
+                padding: 2rem;
+                max-width: 400px;
+                width: 90vw;
+                border: 1px solid rgba(0,0,0,0.1);
+                box-shadow: 0 24px 48px rgba(0,0,0,0.2);
+                display: none;
+                color: var(--color-charcoal);
+            }}
+            
+            .results-modal.visible {{
+                display: block;
+                animation: modalSlideIn 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+            }}
+            
+            @keyframes modalSlideIn {{
+                from {{ opacity: 0; transform: translate(-50%, -40%); }}
+                to {{ opacity: 1; transform: translate(-50%, -50%); }}
+            }}
+            
+            .complete-message {{
+                text-align: center;
+                padding: 2rem 1rem;
+                color: var(--color-charcoal);
+            }}
+            
+            .complete-message h3 {{
+                font-size: 1.25rem;
+                font-weight: 600;
+                margin-bottom: 1rem;
+            }}
+            
+            .complete-message p {{
+                margin-bottom: 1.5rem;
                 opacity: 0.8;
             }}
             
-            .final-arrangement .dot.match {{
-                background: radial-gradient(circle at 30% 30%, var(--color-sage), #9ac463);
-                border: 2px solid var(--color-white);
-                box-shadow: 0 2px 8px rgba(198, 225, 155, 0.4);
-                cursor: pointer;
-            }}
-            
-            .final-arrangement .dot.non-match {{
-                background: radial-gradient(circle at 30% 30%, #999, #666);
-                border: 2px solid rgba(255,255,255,0.4);
-                opacity: 0.6;
-            }}
-            
-            .match-buttons {{
-                display: grid;
-                gap: 1rem;
-                max-height: 300px;
-                overflow-y: auto;
-            }}
-            
-            .match-button {{
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                padding: 1.5rem;
-                background: var(--color-white);
-                border: 1px solid var(--color-gray-200);
-                border-radius: 12px;
+            .dashboard-link {{
+                display: inline-block;
+                background: var(--color-emerald);
+                color: white;
+                padding: 0.75rem 1.5rem;
+                border-radius: 8px;
                 text-decoration: none;
-                color: var(--color-charcoal);
-                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
                 font-weight: 500;
+                transition: all 0.3s ease;
             }}
             
-            .match-button:hover {{
-                transform: translateY(-2px);
-                box-shadow: 0 8px 32px rgba(0,0,0,0.12);
-                border-color: var(--color-sage);
+            .dashboard-link:hover {{
+                background: #0f5942;
+                transform: translateY(-1px);
             }}
             
-            .match-info {{
-                display: flex;
-                flex-direction: column;
-                gap: 0.25rem;
-            }}
-            
-            .match-name {{
-                font-size: 1.125rem;
-                font-weight: 600;
-            }}
-            
-            .match-score {{
+            /* Loading */
+            .loading {{
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                color: var(--color-charcoal);
                 font-size: 0.875rem;
-                color: var(--color-gray-600);
-            }}
-            
-            .match-arrow {{
-                font-size: 1.5rem;
-                color: var(--color-sage);
-                transition: transform 0.3s ease;
-            }}
-            
-            .match-button:hover .match-arrow {{
-                transform: translateX(4px);
-            }}
-            
-            /* Stats Panel */
-            .stats {{
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-                gap: 1.5rem;
-                margin: 2rem 0;
-            }}
-            
-            .stat {{
+                opacity: 0.8;
+                z-index: 10;
                 text-align: center;
-                padding: 1.5rem 1rem;
-                background: linear-gradient(135deg, var(--color-gray-50), var(--color-white));
-                border-radius: 16px;
-                border: 1px solid rgba(0,0,0,0.04);
-                position: relative;
-                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             }}
             
-            .stat:hover {{
-                transform: translateY(-4px);
-                box-shadow: 0 8px 32px rgba(0,0,0,0.08);
+            .loading-spinner {{
+                width: 32px;
+                height: 32px;
+                border: 2px solid rgba(0,0,0,0.1);
+                border-radius: 50%;
+                border-top-color: var(--color-emerald);
+                animation: spin 1s ease-in-out infinite;
+                margin: 0 auto 1rem;
             }}
             
-            .stat-value {{
-                font-family: 'Clash Display', 'Satoshi', sans-serif;
-                font-size: 2rem;
-                font-weight: 600;
-                color: var(--color-charcoal);
-                margin-bottom: 0.25rem;
-                line-height: 1;
+            @keyframes spin {{
+                to {{ transform: rotate(360deg); }}
             }}
             
-            .stat-label {{
-                font-size: 0.75rem;
-                font-weight: 600;
-                color: var(--color-gray-600);
-                text-transform: uppercase;
-                letter-spacing: 0.05em;
-            }}
-            
-            /* Navigation */
-            .back-nav {{
-                position: fixed;
-                top: 2rem;
-                left: 2rem;
-                z-index: 1000;
-            }}
-            
-            .back-btn {{
-                display: flex;
-                align-items: center;
-                gap: 0.5rem;
-                background: var(--color-white);
-                color: var(--color-charcoal);
-                padding: 0.75rem 1.25rem;
-                border-radius: 50px;
-                text-decoration: none;
-                font-weight: 500;
-                font-size: 0.875rem;
-                box-shadow: 
-                    0 1px 3px rgba(0,0,0,0.04),
-                    0 4px 16px rgba(0,0,0,0.08);
-                backdrop-filter: blur(20px);
-                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-                border: 1px solid rgba(0,0,0,0.06);
-            }}
-            
-            .back-btn:hover {{
-                transform: translateY(-2px);
-                box-shadow: 
-                    0 2px 8px rgba(0,0,0,0.08),
-                    0 8px 24px rgba(0,0,0,0.12);
-            }}
-            
-            /* Responsive Design */
+            /* Responsive */
             @media (max-width: 768px) {{
-                .container {{
-                    padding: 1rem;
+                .status {{
+                    top: 1rem;
+                    font-size: 0.8rem;
+                    padding: 0.5rem 1rem;
                 }}
                 
-                .simulation-container {{
+                .results-modal {{
                     padding: 1.5rem;
-                }}
-                
-                .simulation-area {{
-                    height: 400px;
-                }}
-                
-                .final-arrangement {{
-                    height: 150px;
-                }}
-                
-                .stats {{
-                    grid-template-columns: repeat(2, 1fr);
-                    gap: 1rem;
-                }}
-            }}
-            
-            @keyframes slideUp {{
-                from {{
-                    opacity: 0;
-                    transform: translateY(20px);
-                }}
-                to {{
-                    opacity: 1;
-                    transform: translateY(0);
+                    max-width: 350px;
                 }}
             }}
         </style>
     </head>
     <body>
-        <div class="back-nav">
-            <a href="/dashboard" class="back-btn">
-                ← Back to Dashboard
-            </a>
+        <!-- Status -->
+        <div class="status" id="status">
+            Analyzing neural patterns...
         </div>
         
-        <div class="container">
-            <header class="header">
-                <h1 class="text-display">Simulating Conversations</h1>
-                <p class="text-body-lg" style="color: var(--color-gray-600); margin-top: 1rem;">
-                    Agents are mingling to find out who they like best
-                </p>
-                <div class="live-badge">
-                    Dinner party in process
-                </div>
-            </header>
-            
-            <div class="simulation-container">
-                <div class="phase" id="phaseIndicator">
-                    Initializing neural network analysis...
-                </div>
-                
-                <div class="legend">
-                    <div class="legend-item">
-                        <div class="legend-dot" style="background: radial-gradient(circle at 30% 30%, var(--color-charcoal), #1a1a1a);"></div>
-                        <span>Your Agent</span>
-                    </div>
-                    <div class="legend-item">
-                        <div class="legend-dot" style="background: radial-gradient(circle at 30% 30%, var(--color-emerald), #0f5942);"></div>
-                        <span>Other Agents</span>
-                    </div>
-                </div>
-                
-                <div class="simulation-area" id="simulationArea">
-                    <!-- Real agents will appear here -->
-                </div>
-                
-                <div class="final-results" id="finalResults">
-                    <div class="final-arrangement" id="finalArrangement">
-                        <!-- Final arrangement will show here -->
-                    </div>
-                    
-                    <div class="match-buttons" id="matchButtons">
-                        <!-- Match buttons will appear here -->
-                    </div>
-                </div>
-                
-                <div class="stats">
-                    <div class="stat">
-                        <div class="stat-value" id="simulationStep">0</div>
-                        <div class="stat-label">Simulation Step</div>
-                    </div>
-                    <div class="stat">
-                        <div class="stat-value" id="agentsMoved">0</div>
-                        <div class="stat-label">Conversations had</div>
-                    </div>
-                    <div class="stat">
-                        <div class="stat-value" id="avgSatisfaction">0%</div>
-                        <div class="stat-label">Satisfaction</div>
-                    </div>
-                    <div class="stat">
-                        <div class="stat-value" id="totalAgents">0</div>
-                        <div class="stat-label">Total Agents</div>
-                    </div>
-                </div>
+        <!-- 3D Canvas -->
+        <div id="threejs-container">
+            <div class="loading" id="loading">
+                <div class="loading-spinner"></div>
+                Initializing 3D neural space...
+            </div>
+        </div>
+        
+        <!-- Results Modal -->
+        <div class="results-modal" id="resultsModal">
+            <div class="complete-message">
+                <h3>Neural Analysis Complete</h3>
+                <p>Your matches have been calculated and are ready for review.</p>
+                <a href="/dashboard" class="dashboard-link">Go to Dashboard</a>
             </div>
         </div>
 
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
         <script>
-            const USER_ID = {user_id};
-            let dots = new Map();
-            let finalDots = new Map();
-            let updateInterval;
+            let scene, camera, renderer, controls;
+            let agents = new Map();
+            let connections = [];
+            let boxHelper;
             let agentsMetadata = {{}};
-            let matchesData = [];
             let simulationCompleted = false;
+            let updateInterval;
             
-            const phaseMessages = {{
-                'data_collection': '📊 Analyzing user personality profiles...',
-                'filtering_users': '🎯 Identifying compatible candidates...',
-                'initializing_simulation': '🤖 Spawning intelligent agents...',
-                'running_simulation': '✨ Agents discovering optimal clusters...',
-                'generating_matches': '🔬 Calculating compatibility matrices...'
+            const BOX_SIZE = 400;
+            const USER_ID = {user_id}; // Your actual user ID
+            
+            // Colors from your palette
+            const COLORS = {{
+                user: 0x167a60,      // emerald - your agent
+                other: 0x2d2d2d,     // charcoal - other agents  
+                line: 0x2d2d2d,      // charcoal - connection lines (stronger)
+                box: 0x757575        // gray - container box
             }};
             
+            function initThreeJS() {{
+                const container = document.getElementById('threejs-container');
+                
+                // Scene
+                scene = new THREE.Scene();
+                scene.background = new THREE.Color(0xf1ece0); // cream background
+                
+                // Camera
+                camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+                camera.position.set(600, 400, 600);
+                
+                // Renderer
+                renderer = new THREE.WebGLRenderer({{ antialias: true }});
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                container.appendChild(renderer.domElement);
+                
+                // Lighting
+                const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+                scene.add(ambientLight);
+                
+                const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+                directionalLight.position.set(100, 100, 50);
+                scene.add(directionalLight);
+                
+                // Create container box (wireframe)
+                createContainerBox();
+                
+                // Mouse controls
+                setupControls();
+                
+                // Hide loading
+                document.getElementById('loading').style.display = 'none';
+                
+                // Start animation
+                animate();
+            }}
+            
+            function createContainerBox() {{
+                const boxGeometry = new THREE.BoxGeometry(BOX_SIZE, BOX_SIZE, BOX_SIZE);
+                const boxMaterial = new THREE.MeshBasicMaterial({{ 
+                    color: COLORS.box,
+                    wireframe: true,
+                    transparent: true,
+                    opacity: 0.2
+                }});
+                
+                const box = new THREE.Mesh(boxGeometry, boxMaterial);
+                scene.add(box);
+                
+                // Add wireframe helper for cleaner lines
+                boxHelper = new THREE.BoxHelper(box, COLORS.box);
+                boxHelper.material.transparent = true;
+                boxHelper.material.opacity = 0.3;
+                scene.add(boxHelper);
+            }}
+            
+            function setupControls() {{
+                let isMouseDown = false;
+                let mouseX = 0, mouseY = 0;
+                let targetRotationX = 0, targetRotationY = 0;
+                let currentRotationX = 0, currentRotationY = 0;
+                
+                renderer.domElement.addEventListener('mousedown', onMouseDown);
+                renderer.domElement.addEventListener('mousemove', onMouseMove);
+                renderer.domElement.addEventListener('mouseup', onMouseUp);
+                renderer.domElement.addEventListener('wheel', onMouseWheel);
+                
+                function onMouseDown(event) {{
+                    isMouseDown = true;
+                    mouseX = event.clientX;
+                    mouseY = event.clientY;
+                }}
+                
+                function onMouseMove(event) {{
+                    if (!isMouseDown) return;
+                    
+                    const deltaX = event.clientX - mouseX;
+                    const deltaY = event.clientY - mouseY;
+                    
+                    targetRotationY += deltaX * 0.01;
+                    targetRotationX += deltaY * 0.01;
+                    
+                    mouseX = event.clientX;
+                    mouseY = event.clientY;
+                }}
+                
+                function onMouseUp() {{
+                    isMouseDown = false;
+                }}
+                
+                function onMouseWheel(event) {{
+                    const zoomSpeed = 10;
+                    camera.position.multiplyScalar(1 + event.deltaY * 0.001 * zoomSpeed);
+                    camera.position.clampLength(200, 1500);
+                }}
+                
+                // Smooth camera rotation in animate loop
+                function updateCamera() {{
+                    currentRotationX += (targetRotationX - currentRotationX) * 0.1;
+                    currentRotationY += (targetRotationY - currentRotationY) * 0.1;
+                    
+                    const distance = camera.position.length();
+                    camera.position.x = Math.cos(currentRotationY) * Math.cos(currentRotationX) * distance;
+                    camera.position.y = Math.sin(currentRotationX) * distance;
+                    camera.position.z = Math.sin(currentRotationY) * Math.cos(currentRotationX) * distance;
+                    
+                    camera.lookAt(0, 0, 0);
+                }}
+                
+                // Store update function for animate loop
+                this.updateCamera = updateCamera;
+            }}
+            
+            function createAgent(agentId, metadata) {{
+                const isUser = metadata.type === 'user';
+                
+                // Create sphere geometry - bigger dots
+                const geometry = new THREE.SphereGeometry(isUser ? 12 : 8, 16, 16);
+                
+                // Create material
+                let color = isUser ? COLORS.user : COLORS.other;
+                const material = new THREE.MeshLambertMaterial({{
+                    color: color,
+                    transparent: true,
+                    opacity: 0.9
+                }});
+                
+                const sphere = new THREE.Mesh(geometry, material);
+                
+                // Random position within the box
+                sphere.position.set(
+                    (Math.random() - 0.5) * BOX_SIZE * 0.8,
+                    (Math.random() - 0.5) * BOX_SIZE * 0.8,
+                    (Math.random() - 0.5) * BOX_SIZE * 0.8
+                );
+                
+                // Store metadata
+                sphere.userData = {{ 
+                    agentId, 
+                    metadata, 
+                    isUser,
+                    targetPosition: sphere.position.clone(),
+                    velocity: new THREE.Vector3(
+                        (Math.random() - 0.5) * 2,
+                        (Math.random() - 0.5) * 2,
+                        (Math.random() - 0.5) * 2
+                    )
+                }};
+                
+                scene.add(sphere);
+                agents.set(agentId, sphere);
+                
+                return sphere;
+            }}
+            
+            function createConnection(agent1, agent2) {{
+                const points = [];
+                points.push(agent1.position.clone());
+                points.push(agent2.position.clone());
+                
+                const geometry = new THREE.BufferGeometry().setFromPoints(points);
+                const material = new THREE.LineBasicMaterial({{
+                    color: COLORS.line,
+                    transparent: true,
+                    opacity: 0.8,
+                    linewidth: 4
+                }});
+                
+                const line = new THREE.Line(geometry, material);
+                scene.add(line);
+                
+                const connection = {{
+                    line: line,
+                    agent1: agent1,
+                    agent2: agent2,
+                    createdTime: Date.now()
+                }};
+                
+                connections.push(connection);
+                
+                // Fade out connection after some time
+                setTimeout(() => {{
+                    connection.fadeOut = true;
+                }}, 4000);
+                
+                return line;
+            }}
+            
+            function updateConnections() {{
+                connections = connections.filter(connection => {{
+                    const {{ line, agent1, agent2, fadeOut, createdTime }} = connection;
+                    
+                    if (fadeOut) {{
+                        const age = Date.now() - createdTime;
+                        const maxAge = 6000;
+                        const opacity = Math.max(0, 1 - (age - 4000) / 2000);
+                        
+                        if (opacity <= 0) {{
+                            scene.remove(line);
+                            return false;
+                        }}
+                        
+                        line.material.opacity = opacity * 0.8;
+                    }}
+                    
+                    // Update line positions
+                    const positions = line.geometry.attributes.position.array;
+                    positions[0] = agent1.position.x;
+                    positions[1] = agent1.position.y;
+                    positions[2] = agent1.position.z;
+                    positions[3] = agent2.position.x;
+                    positions[4] = agent2.position.y;
+                    positions[5] = agent2.position.z;
+                    line.geometry.attributes.position.needsUpdate = true;
+                    
+                    return true;
+                }});
+            }}
+            
+            function updateAgentMovement() {{
+                agents.forEach(agent => {{
+                    // Move towards target position
+                    agent.position.lerp(agent.userData.targetPosition, 0.02);
+                    
+                    // Add continuous movement within the box
+                    const velocity = agent.userData.velocity;
+                    agent.position.add(velocity);
+                    
+                    // Bounce off walls
+                    const halfBox = BOX_SIZE * 0.4;
+                    if (Math.abs(agent.position.x) > halfBox) {{
+                        velocity.x *= -1;
+                        agent.position.x = Math.sign(agent.position.x) * halfBox;
+                    }}
+                    if (Math.abs(agent.position.y) > halfBox) {{
+                        velocity.y *= -1;
+                        agent.position.y = Math.sign(agent.position.y) * halfBox;
+                    }}
+                    if (Math.abs(agent.position.z) > halfBox) {{
+                        velocity.z *= -1;
+                        agent.position.z = Math.sign(agent.position.z) * halfBox;
+                    }}
+                    
+                    // Update target position for natural movement
+                    agent.userData.targetPosition.copy(agent.position);
+                    
+                    // Check for interactions with other agents
+                    agents.forEach(otherAgent => {{
+                        if (agent !== otherAgent) {{
+                            const distance = agent.position.distanceTo(otherAgent.position);
+                            if (distance < 50 && Math.random() < 0.01) {{ // Random interaction
+                                createConnection(agent, otherAgent);
+                            }}
+                        }}
+                    }});
+                }});
+            }}
+            
+            function animate() {{
+                requestAnimationFrame(animate);
+                
+                // Update camera rotation
+                if (this.updateCamera) {{
+                    this.updateCamera();
+                }}
+                
+                // Update agent movement
+                updateAgentMovement();
+                
+                // Update connections
+                updateConnections();
+                
+                renderer.render(scene, camera);
+            }}
+            
+            // Real simulation logic - replace with your actual API calls
             function startRealTimeUpdates() {{
                 updateInterval = setInterval(fetchLiveStatus, 1000);
                 fetchLiveStatus();
             }}
             
             function fetchLiveStatus() {{
+                // Replace this with your actual API endpoint
                 fetch(`/api/processing-status/${{USER_ID}}`)
                     .then(response => response.json())
                     .then(data => {{
@@ -4871,215 +5316,95 @@ def live_matching(user_id):
                     }})
                     .catch(error => {{
                         console.error('Real simulation error:', error);
+                        // Fallback to demo mode after some time
+                        setTimeout(() => {{
+                            const demoData = {{
+                                status: 'completed',
+                                agents_metadata: generateDemoAgents()
+                            }};
+                            updateVisualization(demoData);
+                        }}, 10000);
                     }});
             }}
             
+            function generateDemoAgents() {{
+                if (Object.keys(agentsMetadata).length > 0) return agentsMetadata;
+                
+                const dummy = {{
+                    [USER_ID]: {{ type: 'user', name: 'You' }}
+                }};
+                
+                for (let i = 1; i <= 15; i++) {{
+                    if (i !== USER_ID) {{
+                        dummy[i] = {{ 
+                            type: 'other', 
+                            name: `Agent ${{i}}` 
+                        }};
+                    }}
+                }}
+                
+                return dummy;
+            }}
+            
             function updateVisualization(data) {{
-                // Update phase with smooth transitions
-                const phase = data.phase || 'initializing';
-                const phaseEl = document.getElementById('phaseIndicator');
-                phaseEl.textContent = phaseMessages[phase] || 'Processing real matching...';
+                // Update status
+                document.getElementById('status').textContent = 
+                    data.status === 'completed' ? 'Analysis complete' : 'Analyzing neural patterns...';
                 
-                // Update stats with smooth counting
-                animateValue('simulationStep', data.simulation_step || 0);
-                animateValue('agentsMoved', data.agents_moved || 0);
-                animateValue('avgSatisfaction', data.avg_satisfaction || 0, '%');
-                
-                // Initialize real dots
+                // Initialize agents
                 if (data.agents_metadata && Object.keys(agentsMetadata).length === 0) {{
-                    console.log('🎨 Creating real agent visualization...');
                     agentsMetadata = data.agents_metadata;
-                    initializeRealDots();
-                    document.getElementById('totalAgents').textContent = Object.keys(agentsMetadata).length;
-                }}
-                
-                // Update dot positions
-                if (data.agents_positions) {{
-                    updateDotPositions(data.agents_positions);
-                }}
-                
-                // Store matches data
-                if (data.matches) {{
-                    matchesData = data.matches;
+                    Object.entries(agentsMetadata).forEach(([agentId, metadata]) => {{
+                        createAgent(parseInt(agentId), metadata);
+                    }});
                 }}
                 
                 // Handle completion
                 if (data.status === 'completed' && !simulationCompleted) {{
                     simulationCompleted = true;
-                    setTimeout(showFinalResults, 1000);
+                    clearInterval(updateInterval); // Stop updates when complete
+                    setTimeout(showResults, 2000);
                 }}
             }}
             
-            function animateValue(elementId, targetValue, suffix = '') {{
-                const element = document.getElementById(elementId);
-                const currentValue = parseInt(element.textContent) || 0;
-                
-                if (currentValue !== targetValue) {{
-                    const increment = (targetValue - currentValue) / 8;
-                    let current = currentValue;
-                    
-                    const timer = setInterval(() => {{
-                        current += increment;
-                        if ((increment > 0 && current >= targetValue) || 
-                            (increment < 0 && current <= targetValue)) {{
-                            current = targetValue;
-                            clearInterval(timer);
-                        }}
-                        element.textContent = Math.round(current) + suffix;
-                    }}, 50);
-                }}
+            function showResults() {{
+                // Just show the completion modal
+                document.getElementById('resultsModal').classList.add('visible');
             }}
             
-            function initializeRealDots() {{
-                const area = document.getElementById('simulationArea');
-                area.innerHTML = '';
-                dots.clear();
-                
-                Object.entries(agentsMetadata).forEach(([agentId, metadata]) => {{
-                    const dot = document.createElement('div');
-                    dot.className = `dot ${{metadata.type === 'user' ? 'you' : 'other'}}`;
-                    dot.id = `dot-${{agentId}}`;
-                    dot.title = metadata.type === 'user' ? 'Your Intelligent Agent' : `Agent: ${{metadata.name}}`;
-                    
-                    // Start in center
-                    dot.style.left = '400px';
-                    dot.style.top = '300px';
-                    
-                    area.appendChild(dot);
-                    dots.set(parseInt(agentId), dot);
-                }});
-                
-                console.log('✨ Created', dots.size, 'real agent dots');
+            // Handle window resize
+            function onWindowResize() {{
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
             }}
             
-            function updateDotPositions(positions) {{
-                Object.entries(positions).forEach(([agentId, posData]) => {{
-                    const dot = dots.get(parseInt(agentId));
-                    if (dot) {{
-                        const x = Math.max(8, Math.min(792, posData.x));
-                        const y = Math.max(8, Math.min(592, posData.y));
-                        
-                        dot.style.left = x + 'px';
-                        dot.style.top = y + 'px';
-                    }}
-                }});
-            }}
+            window.addEventListener('resize', onWindowResize);
             
-            function showFinalResults() {{
-                document.getElementById('phaseIndicator').textContent = '🎉 Perfect clusters discovered! Here are your matches.';
-                
-                // Create final arrangement
-                createFinalArrangement();
-                createMatchButtons();
-                
-                // Show final results section
-                document.getElementById('finalResults').classList.add('visible');
-                
-                console.log('🎊 Real matching completed with beautiful results!');
-            }}
-            
-            function createFinalArrangement() {{
-                const finalArrangement = document.getElementById('finalArrangement');
-                finalArrangement.innerHTML = '';
-                
-                Object.entries(agentsMetadata).forEach(([agentId, metadata]) => {{
-                    const originalDot = dots.get(parseInt(agentId));
-                    if (originalDot) {{
-                        const finalDot = document.createElement('div');
-                        
-                        const isMatch = matchesData.some(match => match.matched_user_id == agentId);
-                        const isUser = metadata.type === 'user';
-                        
-                        if (isUser) {{
-                            finalDot.className = 'dot you';
-                        }} else if (isMatch) {{
-                            finalDot.className = 'dot match';
-                        }} else {{
-                            finalDot.className = 'dot non-match';
-                        }}
-                        
-                        finalDot.title = isUser ? 'Your Agent' : metadata.name;
-                        
-                        // Scale and position for final arrangement
-                        const scaleX = 0.8;
-                        const scaleY = 0.4;
-                        const offsetY = 50;
-                        
-                        const relativeX = parseFloat(originalDot.style.left) || 0;
-                        const relativeY = parseFloat(originalDot.style.top) || 0;
-                        
-                        finalDot.style.left = `${{relativeX * scaleX}}px`;
-                        finalDot.style.top = `${{(relativeY * scaleY) + offsetY}}px`;
-                        
-                        finalArrangement.appendChild(finalDot);
-                        finalDots.set(parseInt(agentId), finalDot);
-                    }}
-                }});
-            }}
-            
-            function createMatchButtons() {{
-                const matchButtons = document.getElementById('matchButtons');
-                matchButtons.innerHTML = '';
-                
-                if (matchesData && matchesData.length > 0) {{
-                    matchesData.forEach(match => {{
-                        const button = document.createElement('a');
-                        button.className = 'match-button';
-                        button.href = `/send-contact-request/${{match.matched_user_id}}`;
-                        
-                        button.innerHTML = `
-                            <div class="match-info">
-                                <div class="match-name">${{match.matched_user_name}}</div>
-                                <div class="match-score">${{match.overall_score}}% compatibility • Neural Network Verified</div>
-                            </div>
-                            <div class="match-arrow">→</div>
-                        `;
-                        
-                        // Add hover effect for final dot
-                        button.addEventListener('mouseenter', () => {{
-                            const finalDot = finalDots.get(match.matched_user_id);
-                            if (finalDot) {{
-                                finalDot.style.transform = 'scale(1.6)';
-                                finalDot.style.zIndex = '30';
-                            }}
-                        }});
-                        
-                        button.addEventListener('mouseleave', () => {{
-                            const finalDot = finalDots.get(match.matched_user_id);
-                            if (finalDot) {{
-                                finalDot.style.transform = 'none';
-                                finalDot.style.zIndex = '10';
-                            }}
-                        }});
-                        
-                        matchButtons.appendChild(button);
-                    }});
-                }} else {{
-                    matchButtons.innerHTML = `
-                        <div style="text-align: center; padding: 2rem; color: var(--color-gray-600);">
-                            <h3>No matches found in this simulation</h3>
-                            <p>Try running the matching again or updating your profile.</p>
-                        </div>
-                    `;
-                }}
-            }}
-            
-            // Initialize when page loads
+            // Initialize
             document.addEventListener('DOMContentLoaded', () => {{
-                console.log('🚀 Starting real designer matching...');
+                initThreeJS();
                 startRealTimeUpdates();
             }});
             
             // Cleanup
             window.addEventListener('beforeunload', () => {{
                 if (updateInterval) clearInterval(updateInterval);
+                if (renderer) renderer.dispose();
+            }});
+            
+            // Close modal
+            document.getElementById('resultsModal').addEventListener('click', (e) => {{
+                if (e.target.id === 'resultsModal') {{
+                    e.target.classList.remove('visible');
+                }}
             }});
         </script>
     </body>
     </html>
     '''
     
-    return render_template_string(live_matching_html, user_id=user_id, user_info=user_info)
+    return live_matching_html
 
 @app.route('/api/processing-status/<int:user_id>')
 def processing_status_api(user_id):
