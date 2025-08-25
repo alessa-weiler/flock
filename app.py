@@ -2164,7 +2164,7 @@ def get_base_styles() -> str:
     </style>
     '''
 
-def render_template_with_header(title: str, content: str, user_info: Dict = None) -> str:
+def render_template_with_header(title: str, content: str, user_info: Dict = None, minimal_nav: bool = False) -> str:
     """Render template with consistent header"""
     # Add notification badge for contact requests (only if logged in)
     notification_badge = ""
@@ -2173,24 +2173,34 @@ def render_template_with_header(title: str, content: str, user_info: Dict = None
     # Check if user is actually logged in (has user_id in session)
     if 'user_id' in session:
         user_id = session['user_id']
-        pending_requests = user_auth.get_contact_requests(user_id, 'received')
-        pending_count = len([r for r in pending_requests if r['status'] == 'pending'])
-        if pending_count > 0:
-            notification_badge = f'<span style="background: #dc3545; color: white; border-radius: 50%; padding: 4px 8px; font-size: 12px; margin-left: 8px;">{pending_count}</span>'
         
         # Get user info for display name
         if not user_info:
             user_info = user_auth.get_user_info(user_id) or {}
         
-        # Logged in user navigation
-        user_nav = f'''
-            <div class="user-info">
-                <span>{user_info.get('first_name', user_info.get('email', 'User'))}</span>
-                <a href="/edit-profile" class="btn btn-secondary" style="padding: 8px 16px; font-size: 14px;"> Edit Profile</a>
-                <a href="/contact-requests" class="btn btn-secondary">Requests{notification_badge}</a>
-                <a href="/logout" class="btn btn-secondary">Logout</a>
-            </div>
-        '''
+        if minimal_nav:
+            # Minimal navigation for onboarding - just logout
+            user_nav = f'''
+                <div class="user-info">
+                    <span>{user_info.get('first_name', user_info.get('email', 'User'))}</span>
+                    <a href="/logout" class="btn btn-secondary">Logout</a>
+                </div>
+            '''
+        else:
+            # Full navigation for completed profiles
+            pending_requests = user_auth.get_contact_requests(user_id, 'received')
+            pending_count = len([r for r in pending_requests if r['status'] == 'pending'])
+            if pending_count > 0:
+                notification_badge = f'<span style="background: #dc3545; color: white; border-radius: 50%; padding: 4px 8px; font-size: 12px; margin-left: 8px;">{pending_count}</span>'
+            
+            user_nav = f'''
+                <div class="user-info">
+                    <span>{user_info.get('first_name', user_info.get('email', 'User'))}</span>
+                    <a href="/edit-profile" class="btn btn-secondary" style="padding: 8px 16px; font-size: 14px;">✏️ Edit Profile</a>
+                    <a href="/contact-requests" class="btn btn-secondary">Requests{notification_badge}</a>
+                    <a href="/logout" class="btn btn-secondary">Logout</a>
+                </div>
+            '''
     else:
         # Not logged in navigation
         user_nav = '''
@@ -4221,7 +4231,7 @@ def render_onboarding_template(step, total_steps, step_title, step_description, 
     </div>
     '''
     
-    return render_template_with_header(f"Step {step}: {step_title}", content)
+    return render_template_with_header(f"Step {step}: {step_title}", content, minimal_nav=True)
 
 def render_onboarding_step_content(step: int, profile: Dict) -> str:
     """Render content for specific onboarding step"""
@@ -4535,8 +4545,24 @@ def render_step_7_content(profile: Dict) -> str:
     
     return content
 
-def render_step_8_content(profile: Dict) -> str:
-    """Compatibility Preferences step"""
+def render_checkbox_options_with_limit(name: str, options: List[Tuple[str, str]], 
+                                       selected: List[str] = [], max_selections: int = 3) -> str:
+    """Render checkbox options with selection limit"""
+    html = ""
+    for value, label in options:
+        checked = 'checked' if value in selected else ''
+        html += f'''
+        <div style="display: flex; align-items: center; padding: 12px; background: white; border-radius: 4px; border: 1px solid #ddd;">
+            <input type="checkbox" name="{name}" value="{value}" {checked} 
+                   style="margin-right: 10px;" 
+                   onchange="limitCheckboxSelections(this, '{name}', {max_selections})">
+            <label style="cursor: pointer; flex: 1; margin: 0;">{label}</label>
+        </div>
+        '''
+    return html
+
+def render_step_8_content_fixed(profile: Dict) -> str:
+    """Compatibility Preferences step with limited checkboxes"""
     return f'''
     <div style="background: #f8f9fa; border-radius: 6px; padding: 15px; margin-bottom: 25px; border-left: 4px solid #167a60;">
         <strong>Compatibility Preferences & Deal-breakers</strong><br>
@@ -4557,9 +4583,11 @@ def render_step_8_content(profile: Dict) -> str:
     </div>
     
     <div style="margin-bottom: 20px;">
-        <label style="display: block; margin-bottom: 8px; font-weight: 500;">Friendship red flags (Select up to 3)</label>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 10px; margin-top: 8px;">
-            {render_checkbox_options("red_flags", [
+        <label style="display: block; margin-bottom: 8px; font-weight: 500;">
+            Friendship red flags <span style="color: #167a60; font-weight: 600;">(Select up to 3)</span>
+        </label>
+        <div id="red-flags-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 10px; margin-top: 8px;">
+            {render_checkbox_options_with_limit("red_flags", [
                 ("consistently_self_centered", "Consistently self-centered conversations"),
                 ("frequent_plan_cancellations", "Frequent plan cancellations"),
                 ("gossiping_about_friends", "Gossiping about other friends"),
@@ -4568,9 +4596,126 @@ def render_step_8_content(profile: Dict) -> str:
                 ("competing_rather_celebrating", "Competing rather than celebrating your successes"),
                 ("emotional_volatility_without_awareness", "Emotional volatility without self-awareness"),
                 ("pushing_political_religious_views", "Pushing political/religious views")
-            ], profile.get('red_flags', []))}
+            ], profile.get('red_flags', []), max_selections=3)}
+        </div>
+        <div id="red-flags-counter" style="margin-top: 10px; font-size: 12px; color: #666;">
+            <span id="selected-count">0</span> of 3 selected
         </div>
     </div>
+    
+    <script>
+    function limitCheckboxSelections(changedCheckbox, groupName, maxSelections) {
+        const checkboxes = document.querySelectorAll(`input[name="${groupName}"]`);
+        const checkedBoxes = document.querySelectorAll(`input[name="${groupName}"]:checked`);
+        const counter = document.getElementById('selected-count');
+        
+        // Update counter
+        if (counter) {
+            counter.textContent = checkedBoxes.length;
+        }
+        
+        // If we've exceeded the limit, uncheck the most recent one
+        if (checkedBoxes.length > maxSelections) {
+            changedCheckbox.checked = false;
+            
+            // Update counter again
+            const newCheckedBoxes = document.querySelectorAll(`input[name="${groupName}"]:checked`);
+            if (counter) {
+                counter.textContent = newCheckedBoxes.length;
+            }
+            
+            // Show warning message
+            showSelectionLimitWarning(maxSelections);
+            return;
+        }
+        
+        // Enable/disable unchecked boxes based on limit
+        checkboxes.forEach(checkbox => {
+            if (!checkbox.checked) {
+                checkbox.disabled = checkedBoxes.length >= maxSelections;
+                // Visual feedback for disabled checkboxes
+                const parentDiv = checkbox.closest('div');
+                if (checkbox.disabled) {
+                    parentDiv.style.opacity = '0.6';
+                    parentDiv.style.pointerEvents = 'none';
+                } else {
+                    parentDiv.style.opacity = '1';
+                    parentDiv.style.pointerEvents = 'auto';
+                }
+            }
+        });
+        
+        // Update counter color
+        const counterElement = document.getElementById('red-flags-counter');
+        if (counterElement) {
+            if (checkedBoxes.length >= maxSelections) {
+                counterElement.style.color = '#167a60';
+                counterElement.style.fontWeight = '600';
+            } else {
+                counterElement.style.color = '#666';
+                counterElement.style.fontWeight = 'normal';
+            }
+        }
+    }
+    
+    function showSelectionLimitWarning(maxSelections) {
+        // Create or update warning message
+        let warning = document.getElementById('selection-warning');
+        if (!warning) {
+            warning = document.createElement('div');
+            warning.id = 'selection-warning';
+            warning.style.cssText = `
+                background: #fff3cd;
+                color: #856404;
+                padding: 10px 15px;
+                border-radius: 6px;
+                margin-top: 10px;
+                font-size: 14px;
+                border: 1px solid #ffeaa7;
+                animation: fadeInOut 3s ease-in-out;
+            `;
+            document.getElementById('red-flags-container').parentNode.appendChild(warning);
+            
+            // Add CSS animation
+            if (!document.getElementById('warning-animation-style')) {
+                const style = document.createElement('style');
+                style.id = 'warning-animation-style';
+                style.textContent = `
+                    @keyframes fadeInOut {
+                        0% { opacity: 0; transform: translateY(-10px); }
+                        20% { opacity: 1; transform: translateY(0); }
+                        80% { opacity: 1; transform: translateY(0); }
+                        100% { opacity: 0; transform: translateY(-10px); }
+                    }
+                `;
+                document.head.appendChild(style);
+            }
+        }
+        
+        warning.textContent = `You can only select up to ${maxSelections} red flags. Please uncheck one first.`;
+        
+        // Remove warning after animation
+        setTimeout(() => {
+            if (warning && warning.parentNode) {
+                warning.parentNode.removeChild(warning);
+            }
+        }, 3000);
+    }
+    
+    // Initialize counters on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        const redFlagsChecked = document.querySelectorAll('input[name="red_flags"]:checked');
+        const counter = document.getElementById('selected-count');
+        if (counter) {
+            counter.textContent = redFlagsChecked.length;
+        }
+        
+        // Initialize disabled state for any pre-selected items
+        if (redFlagsChecked.length > 0) {
+            limitCheckboxSelections(redFlagsChecked[0], 'red_flags', 3);
+        }
+    });
+    </script>
     '''
 
 def render_ranking_items(items: List[Tuple[str, str]], profile: Dict) -> str:
@@ -4837,23 +4982,9 @@ def complete_onboarding_enhanced():
     # Show completion page (enhanced version)
     content = '''
     <div class="container" style="max-width: 600px; text-align: center;">
-        <div style="font-size: 64px; margin-bottom: 20px;">🎉</div>
         <h1 style="font-size: 32px; font-weight: 600; color: #28a745; margin-bottom: 16px;">Profile Complete!</h1>
-        <div style="font-size: 18px; color: #666; margin-bottom: 30px;">Ready for AI-powered matching</div>
+        <div style="font-size: 18px; color: #666; margin-bottom: 30px;">Simulation ready</div>
         
-        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px; margin-bottom: 30px;">
-            <h3 style="margin-bottom: 10px; color: white;">🤖 Enhanced AI Matching</h3>
-            <p style="margin: 0; opacity: 0.9;">Your profile will be analyzed using neural networks and agent-based social simulation for the most accurate matches!</p>
-        </div>
-        
-        <div style="font-size: 16px; color: #333; margin-bottom: 40px; text-align: left; background: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #28a745;">
-            <strong>What happens next:</strong><br>
-            •  Neural network analyzes your personality patterns<br>
-            •  Social simulation finds your natural cluster<br>
-            •  AI learns from community interactions<br>
-            •  You get scientifically-backed compatibility matches<br>
-            •  System improves with every interaction
-        </div>
         
         <form method="POST">
             <div style="background: #f8f9fa; padding: 30px; border-radius: 8px; margin: 30px 0; text-align: left;">
@@ -4885,13 +5016,13 @@ def complete_onboarding_enhanced():
             </div>
             
             <button type="submit" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 18px 36px; border-radius: 8px; font-size: 18px; font-weight: 600; cursor: pointer; margin-top: 20px;">
-                🚀 Launch AI Matching
+                 Launch Simulation & Get Matches
             </button>
         </form>
     </div>
     '''
     
-    return render_template_with_header("Complete Profile", content)
+    return render_template_with_header("Complete Profile", content, minimal_nav=True)
 
 # ============================================================================
 # ROUTES - PROCESSING & RESULTS
