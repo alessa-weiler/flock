@@ -865,9 +865,9 @@ class UserAuthSystem:
                 <style>
                     body {{ font-family: 'Inter', sans-serif; line-height: 1.6; color: #333; }}
                     .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                    .header {{ background: linear-gradient(135deg, #6c5ce7, #a29bfe); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }}
+                    .header {{ background: linear-gradient(135deg, #167a60, #c6e19b); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }}
                     .content {{ background: white; padding: 30px; border: 1px solid #ddd; }}
-                    .button {{ display: inline-block; padding: 15px 30px; margin: 10px; text-decoration: none; border-radius: 6px; font-weight: bold; text-align: center; background: #6c5ce7; color: white; }}
+                    .button {{ display: inline-block; padding: 15px 30px; margin: 10px; text-decoration: none; border-radius: 6px; font-weight: bold; text-align: center; background: #167a60; color: white; }}
                     .footer {{ background: #f8f9fa; padding: 20px; text-align: center; font-size: 12px; color: #666; border-radius: 0 0 8px 8px; }}
                     .warning {{ background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 6px; margin: 20px 0; color: #856404; }}
                 </style>
@@ -1183,7 +1183,7 @@ class EmailFollowupSystem:
                 <style>
                     body {{ font-family: 'Inter', sans-serif; line-height: 1.6; color: #333; }}
                     .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                    .header {{ background: linear-gradient(135deg, #6c5ce7, #a29bfe); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }}
+                    .header {{ background: linear-gradient(135deg, #167a60, #c6e19b); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }}
                     .content {{ background: white; padding: 30px; border: 1px solid #ddd; }}
                     .button {{ display: inline-block; padding: 15px 30px; margin: 10px; text-decoration: none; border-radius: 6px; font-weight: bold; text-align: center; }}
                     .btn-yes {{ background: #28a745; color: white; }}
@@ -1206,7 +1206,7 @@ class EmailFollowupSystem:
                         <p>To help us improve our matching system and provide better recommendations in the future, we'd love to know:</p>
                         
                         <div style="background: #f8f9fa; padding: 20px; border-radius: 6px; text-align: center; margin: 25px 0;">
-                            <h3 style="margin-top: 0; color: #6c5ce7;">Would you want to meet {other_user_name} again?</h3>
+                            <h3 style="margin-top: 0; color: #167a60;">Would you want to meet {other_user_name} again?</h3>
                             
                             <div style="margin: 20px 0;">
                                 <a href="{yes_url}" class="button btn-yes">✅ Yes, I'd meet them again!</a>
@@ -1917,16 +1917,6 @@ def get_base_styles() -> str:
         position: relative;
     }
     
-    .logo::after {
-        content: '';
-        position: absolute;
-        bottom: -4px;
-        left: 0;
-        width: 30px;
-        height: 3px;
-        background: linear-gradient(90deg, var(--color-emerald), var(--color-sage));
-        border-radius: 2px;
-    }
     
     .user-info {
         display: flex;
@@ -2196,7 +2186,7 @@ def render_template_with_header(title: str, content: str, user_info: Dict = None
         user_nav = f'''
             <div class="user-info">
                 <span>{user_info.get('first_name', user_info.get('email', 'User'))}</span>
-                <a href="/edit-profile" class="btn btn-secondary" style="padding: 8px 16px; font-size: 14px;">✏️ Edit Profile</a>
+                <a href="/edit-profile" class="btn btn-secondary" style="padding: 8px 16px; font-size: 14px;"> Edit Profile</a>
                 <a href="/contact-requests" class="btn btn-secondary">Requests{notification_badge}</a>
                 <a href="/logout" class="btn btn-secondary">Logout</a>
             </div>
@@ -2549,7 +2539,7 @@ def register():
         </form>
         
         <div style="text-align: center; margin-top: 20px; font-size: 14px;">
-            Already have an account? <a href="/login" style="color: #6c5ce7; text-decoration: none;">Login here</a>
+            Already have an account? <a href="/login" style="color: #167a60; text-decoration: none;">Login here</a>
         </div>
     </div>
     '''
@@ -2598,10 +2588,10 @@ def user_login():
             </button>
         </form>
         <div style="text-align: center; margin-top: 20px; font-size: 14px;">
-            <a href="/forgot-password" style="color: #6c5ce7; text-decoration: none;">Forgot your password?</a>
+            <a href="/forgot-password" style="color: #167a60; text-decoration: none;">Forgot your password?</a>
         </div>
         <div style="text-align: center; margin-top: 20px; font-size: 14px;">
-            Don't have an account? <a href="/register" style="color: #6c5ce7; text-decoration: none;">Create one here</a>
+            Don't have an account? <a href="/register" style="color: #167a60; text-decoration: none;">Create one here</a>
         </div>
     </div>
     '''
@@ -2911,7 +2901,7 @@ def reset_password(token):
         </form>
         
         <div style="text-align: center; margin-top: 20px; font-size: 14px;">
-            <a href="/login" style="color: #6c5ce7; text-decoration: none;">Back to Login</a>
+            <a href="/login" style="color: #167a60; text-decoration: none;">Back to Login</a>
         </div>
     </div>
     '''
@@ -3755,7 +3745,7 @@ def render_new_profile_dashboard() -> str:
     """Render dashboard for new users without profile"""
     return '''
     <div class="container">
-        <div style="text-align: center; margin-bottom: 40px; padding: 30px; background: #f4f2eb; border-radius: 15px; border: 2px solid #6c5ce7;">
+        <div style="text-align: center; margin-bottom: 40px; padding: 30px; background: #f4f2eb; border-radius: 15px; border: 2px solid #167a60;">
             <div style="font-size: 28px; font-weight: bold; margin-bottom: 15px;">Ready to Find Your Perfect Matches?</div>
             <p style="font-size: 18px; margin: 0;">Let's create your profile to start matching.</p>
         </div>
@@ -3946,8 +3936,8 @@ def edit_profile():
         
         <form method="POST" enctype="multipart/form-data">
             <!-- Basic Information Section -->
-            <div style="background: #f8f9fa; border-radius: 8px; padding: 25px; margin-bottom: 30px; border-left: 4px solid #6c5ce7;">
-                <h3 style="margin-top: 0; color: #6c5ce7;">Basic Information</h3>
+            <div style="background: #f8f9fa; border-radius: 8px; padding: 25px; margin-bottom: 30px; border-left: 4px solid #167a60;">
+                <h3 style="margin-top: 0; color: #167a60;">Basic Information</h3>
                 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
                     <div>
@@ -4123,15 +4113,15 @@ def render_enhanced_match_card(match: Dict, index: int) -> str:
     if privacy_settings.get('share_photo', True) and match_profile.get('profile_photo_url'):
         profile_image = f'''
             <img src="{match_profile['profile_photo_url']}" 
-                 style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 3px solid #6c5ce7;"
+                 style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 3px solid #167a60;"
                  onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
-            <div style="display: none; width: 80px; height: 80px; border-radius: 50%; background: linear-gradient(135deg, #6c5ce7, #a29bfe); display: flex; align-items: center; justify-content: center; color: white; font-size: 32px; font-weight: 600;">
+            <div style="display: none; width: 80px; height: 80px; border-radius: 50%; background: linear-gradient(135deg, #167a60, #c6e19b); display: flex; align-items: center; justify-content: center; color: white; font-size: 32px; font-weight: 600;">
                 {get_initials(match['matched_user_name'])}
             </div>
         '''
     else:
         profile_image = f'''
-            <div style="width: 80px; height: 80px; border-radius: 50%; background: linear-gradient(135deg, #6c5ce7, #a29bfe); display: flex; align-items: center; justify-content: center; color: white; font-size: 32px; font-weight: 600;">
+            <div style="width: 80px; height: 80px; border-radius: 50%; background: linear-gradient(135deg, #167a60, #c6e19b); display: flex; align-items: center; justify-content: center; color: white; font-size: 32px; font-weight: 600;">
                 {get_initials(match['matched_user_name'])}
             </div>
         '''
@@ -4153,7 +4143,7 @@ def render_enhanced_match_card(match: Dict, index: int) -> str:
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin: 15px 0;">
                 <div style="text-align: center; background: white; padding: 15px; border-radius: 8px;">
                     <div style="font-size: 11px; color: #666; text-transform: uppercase; margin-bottom: 5px;">Personality</div>
-                    <div style="font-size: 20px; font-weight: bold; color: #6c5ce7;">{match['personality_score']}</div>
+                    <div style="font-size: 20px; font-weight: bold; color: #167a60;">{match['personality_score']}</div>
                 </div>
                 <div style="text-align: center; background: white; padding: 15px; border-radius: 8px;">
                     <div style="font-size: 11px; color: #666; text-transform: uppercase; margin-bottom: 5px;">Values</div>
@@ -4167,7 +4157,7 @@ def render_enhanced_match_card(match: Dict, index: int) -> str:
         '''
     
     return f'''
-        <div style="background: #f8f9fa; border-radius: 15px; padding: 30px; margin: 25px 0; border-left: 5px solid #6c5ce7;">
+        <div style="background: #f8f9fa; border-radius: 15px; padding: 30px; margin: 25px 0; border-left: 5px solid #167a60;">
             <div style="display: flex; align-items: center; margin-bottom: 20px; gap: 20px;">
                 {profile_image}
                 <div>
@@ -4181,7 +4171,7 @@ def render_enhanced_match_card(match: Dict, index: int) -> str:
             
             <div style="text-align: center; margin-top: 20px;">
                 <a href="/send-contact-request/{match['matched_user_id']}" 
-                   style="background: #6c5ce7; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 500;">
+                   style="background: #167a60; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 500;">
                    📞 Request Contact
                 </a>
             </div>
@@ -4214,7 +4204,7 @@ def render_onboarding_template(step, total_steps, step_title, step_description, 
             <div style="font-size: 16px; color: #666; margin-bottom: 20px;">{step_description}</div>
             
             <div style="background: #f2f2f2; border-radius: 10px; height: 8px; margin: 20px 0; overflow: hidden;">
-                <div style="background: linear-gradient(90deg, #6c5ce7, #a29bfe); height: 100%; border-radius: 10px; width: {progress_percent}%;"></div>
+                <div style="background: linear-gradient(90deg, #167a60, #a29bfe); height: 100%; border-radius: 10px; width: {progress_percent}%;"></div>
             </div>
         </div>
         
@@ -4261,7 +4251,7 @@ def render_onboarding_step_content(step: int, profile: Dict) -> str:
 def render_step_1_content(profile: Dict) -> str:
     """Basic Information step"""
     return f'''
-    <div style="background: #f8f9fa; border-radius: 6px; padding: 15px; margin-bottom: 25px; border-left: 4px solid #6c5ce7;">
+    <div style="background: #f8f9fa; border-radius: 6px; padding: 15px; margin-bottom: 25px; border-left: 4px solid #167a60;">
         <strong>Let's start with the basics!</strong><br>
         This information helps us find people in your area and ensures you're matched with the right people.
     </div>
@@ -4315,13 +4305,46 @@ def render_step_1_content(profile: Dict) -> str:
 def render_slider_component(label: str, name: str, left_label: str, right_label: str, value: int = 5) -> str:
     """Render a slider component"""
     return f'''
+    <style>
+        input[type=range] {{
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: linear-gradient(to right, #167a60 0%, #167a60 {(value-1)*11}% , #ddd {(value-1)*11}%, #ddd 100%);
+            outline: none;
+        }}
+        input[type=range]::-webkit-slider-thumb {{
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #167a60; /* Pont green thumb */
+            cursor: pointer;
+            border: none;
+            margin-top: -6px; /* align thumb with track */
+        }}
+        input[type=range]::-moz-range-thumb {{
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #167a60; /* Pont green thumb */
+            cursor: pointer;
+            border: none;
+        }}
+    </style>
+
     <div style="margin: 20px 0; padding: 20px; background: #f8f9fa; border-radius: 8px; border: 1px solid #e0e0e0;">
         <div style="font-weight: 500; margin-bottom: 15px;">{label}</div>
         <div style="position: relative; margin: 20px 0;">
-            <input type="range" min="1" max="10" value="{value}" 
-                   name="{name}" 
-                   style="width: 100%; height: 6px; border-radius: 3px; background: #ddd; outline: none; -webkit-appearance: none; appearance: none;">
-            <div style="display: flex; justify-content: space-between; margin-top: 8px; font-size: 12px; color: #666;">
+            <input type="range" min="1" max="10" value="{value}" name="{name}" 
+                   oninput="this.style.background = 
+                       'linear-gradient(to right, #167a60 0%, #167a60 ' + 
+                       ((this.value-1)*11) + '%, #ddd ' + 
+                       ((this.value-1)*11) + '%, #ddd 100%)'">
+            <div style="display: flex; justify-content: space-between; margin-top: 8px; font-size: 12px; color: #2d2d2d;">
                 <span>{left_label}</span>
                 <span>{right_label}</span>
             </div>
@@ -4332,7 +4355,7 @@ def render_slider_component(label: str, name: str, left_label: str, right_label:
 def render_step_2_content(profile: Dict) -> str:
     """Core Personality step"""
     content = '''
-    <div style="background: #f8f9fa; border-radius: 6px; padding: 15px; margin-bottom: 25px; border-left: 4px solid #6c5ce7;">
+    <div style="background: #f8f9fa; border-radius: 6px; padding: 15px; margin-bottom: 25px; border-left: 4px solid #167a60;">
         <strong>Core Personality Architecture</strong><br>
         These unique psychological dimensions help us understand your friendship compatibility style.
     </div>
@@ -4355,7 +4378,7 @@ def render_step_2_content(profile: Dict) -> str:
 def render_step_3_content(profile: Dict) -> str:
     """Social Exchange step"""
     return f'''
-    <div style="background: #f8f9fa; border-radius: 6px; padding: 15px; margin-bottom: 25px; border-left: 4px solid #6c5ce7;">
+    <div style="background: #f8f9fa; border-radius: 6px; padding: 15px; margin-bottom: 25px; border-left: 4px solid #167a60;">
         <strong>Social Exchange Patterns</strong><br>
         Understanding how you give and receive in friendships helps us find complementary matches.
     </div>
@@ -4408,7 +4431,7 @@ def render_radio_options(name: str, options: List[Tuple[str, str]], selected: st
 def render_step_4_content(profile: Dict) -> str:
     """Values & Worldview step"""
     content = '''
-    <div style="background: #f8f9fa; border-radius: 6px; padding: 15px; margin-bottom: 25px; border-left: 4px solid #6c5ce7;">
+    <div style="background: #f8f9fa; border-radius: 6px; padding: 15px; margin-bottom: 25px; border-left: 4px solid #167a60;">
         <strong>Values & Worldview Alignment</strong><br>
         Understanding what drives you helps us find friends who share your fundamental outlook.
     </div>
@@ -4431,7 +4454,7 @@ def render_step_4_content(profile: Dict) -> str:
 def render_step_5_content(profile: Dict) -> str:
     """Lifestyle & Activities step"""
     content = '''
-    <div style="background: #f8f9fa; border-radius: 6px; padding: 15px; margin-bottom: 25px; border-left: 4px solid #6c5ce7;">
+    <div style="background: #f8f9fa; border-radius: 6px; padding: 15px; margin-bottom: 25px; border-left: 4px solid #167a60;">
         <strong>Activity & Lifestyle Synchronization</strong><br>
         Your daily rhythms and activity preferences help us find friends you'll actually enjoy spending time with.
     </div>
@@ -4454,7 +4477,7 @@ def render_step_5_content(profile: Dict) -> str:
 def render_step_6_content(profile: Dict) -> str:
     """Emotional Intelligence step"""
     return f'''
-    <div style="background: #f8f9fa; border-radius: 6px; padding: 15px; margin-bottom: 25px; border-left: 4px solid #6c5ce7;">
+    <div style="background: #f8f9fa; border-radius: 6px; padding: 15px; margin-bottom: 25px; border-left: 4px solid #167a60;">
         <strong>Emotional Intelligence Mapping</strong><br>
         How you process emotions and handle stress is crucial for friendship compatibility.
     </div>
@@ -4493,7 +4516,7 @@ def render_step_6_content(profile: Dict) -> str:
 def render_step_7_content(profile: Dict) -> str:
     """Social Boundaries step"""
     content = '''
-    <div style="background: #f8f9fa; border-radius: 6px; padding: 15px; margin-bottom: 25px; border-left: 4px solid #6c5ce7;">
+    <div style="background: #f8f9fa; border-radius: 6px; padding: 15px; margin-bottom: 25px; border-left: 4px solid #167a60;">
         <strong>Social Boundaries & Compatibility</strong><br>
         Understanding your comfort zones helps us match you with people who respect your style.
     </div>
@@ -4515,7 +4538,7 @@ def render_step_7_content(profile: Dict) -> str:
 def render_step_8_content(profile: Dict) -> str:
     """Compatibility Preferences step"""
     return f'''
-    <div style="background: #f8f9fa; border-radius: 6px; padding: 15px; margin-bottom: 25px; border-left: 4px solid #6c5ce7;">
+    <div style="background: #f8f9fa; border-radius: 6px; padding: 15px; margin-bottom: 25px; border-left: 4px solid #167a60;">
         <strong>Compatibility Preferences & Deal-breakers</strong><br>
         Help us understand what matters most to you in friendships and what to avoid.
     </div>
@@ -4563,7 +4586,7 @@ def render_ranking_items(items: List[Tuple[str, str]], profile: Dict) -> str:
         html += f'''
         <div style="display: flex; align-items: center; padding: 12px; background: white; border-radius: 4px; border: 1px solid #ddd; margin: 8px 0;">
             <select name="{name}" required style="width: 60px; margin-right: 15px; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
-                <option value="">Rank</option>
+                <option value="">#</option>
                 {options}
             </select>
             <label style="flex: 1; margin: 0;">{label}</label>
@@ -4587,7 +4610,7 @@ def render_checkbox_options(name: str, options: List[Tuple[str, str]], selected:
 def render_step_9_content(profile: Dict) -> str:
     """Social Context step"""
     content = '''
-    <div style="background: #f8f9fa; border-radius: 6px; padding: 15px; margin-bottom: 25px; border-left: 4px solid #6c5ce7;">
+    <div style="background: #f8f9fa; border-radius: 6px; padding: 15px; margin-bottom: 25px; border-left: 4px solid #167a60;">
         <strong>Social Context & Goals</strong><br>
         Understanding your current social situation helps us find the right type of connections.
     </div>
@@ -4620,7 +4643,7 @@ def render_step_9_content(profile: Dict) -> str:
 def render_step_10_content(profile: Dict) -> str:
     """Final Details step"""
     return f'''
-    <div style="background: #f8f9fa; border-radius: 6px; padding: 15px; margin-bottom: 25px; border-left: 4px solid #6c5ce7;">
+    <div style="background: #f8f9fa; border-radius: 6px; padding: 15px; margin-bottom: 25px; border-left: 4px solid #167a60;">
         <strong>Final Details</strong><br>
         Last step! Help us understand your practical needs and add some personal touches.
     </div>
