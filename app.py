@@ -2958,67 +2958,220 @@ def register():
             else:
                 flash(result['error'], 'error')
     
+    # Get flash messages and convert to HTML
     flash_html = ""
-    for category, message in get_flashed_messages(with_categories=True):
-        color = "#dc3545" if category == "error" else "#28a745"
-        flash_html += f'''
-        <div style="background: {color}; color: white; padding: 12px; border-radius: 4px; margin-bottom: 20px; font-size: 14px;">
-            {message}
-        </div>
-        '''
+    messages = get_flashed_messages(with_categories=True)
+    if messages:
+        flash_html = '<div class="flash-messages">'
+        for category, message in messages:
+            flash_html += f'<div class="flash-{category}">{message}</div>'
+        flash_html += '</div>'
     
-    # Registration form
+    # Registration form with aesthetic design
     content = f'''
-    <div class="container" style="max-width: 400px;">
-        <h1 style="font-size: 28px; text-align: center; margin-bottom: 32px;">Create Your Account</h1>
+    <style>
+        body {{
+            background-color: #f4e8ee;
+            color: #2d2d2d;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }}
         
-        <!-- Flash messages -->
+        .aesthetic-container {{
+            background-color: #f4e8ee;
+            max-width: 500px;
+            width: 100%;
+            padding: 60px 40px;
+            text-align: center;
+        }}
+        
+        .aesthetic-title {{
+            font-size: 32px;
+            font-weight: 300;
+            margin-bottom: 8px;
+            color: #2d2d2d;
+            letter-spacing: -0.5px;
+        }}
+        
+        .aesthetic-subtitle {{
+            font-size: 16px;
+            color: #6b9b99;
+            margin-bottom: 48px;
+            line-height: 1.5;
+        }}
+        
+        .form-group {{
+            margin-bottom: 24px;
+            text-align: left;
+        }}
+        
+        .form-row {{
+            display: flex;
+            gap: 16px;
+            margin-bottom: 24px;
+        }}
+        
+        .form-row .form-group {{
+            flex: 1;
+            margin-bottom: 0;
+        }}
+        
+        .form-label {{
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 8px;
+            color: #2d2d2d;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }}
+        
+        .form-input {{
+            width: 100%;
+            padding: 16px 20px;
+            background-color: rgba(255, 255, 255, 0.3);
+            border: 1px solid rgba(107, 155, 153, 0.3);
+            border-radius: 8px;
+            color: #2d2d2d;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            box-sizing: border-box;
+        }}
+        
+        .form-input:focus {{
+            outline: none;
+            border-color: #6b9b99;
+            box-shadow: 0 0 0 1px rgba(107, 155, 153, 0.3);
+            background-color: rgba(255, 255, 255, 0.5);
+        }}
+        
+        .form-input::placeholder {{
+            color: rgba(45, 45, 45, 0.5);
+        }}
+        
+        .register-button {{
+            width: 100%;
+            padding: 16px;
+            background-color: #6b9b99;
+            color: #ffffff;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 16px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }}
+        
+        .register-button:hover {{
+            background-color: #5a8785;
+            transform: translateY(-1px);
+        }}
+        
+        .register-button:active {{
+            transform: translateY(0);
+        }}
+        
+        .form-links {{
+            margin-top: 32px;
+            font-size: 14px;
+        }}
+        
+        .form-links a {{
+            color: #6b9b99;
+            text-decoration: none;
+            transition: color 0.3s ease;
+        }}
+        
+        .form-links a:hover {{
+            color: #ff9500;
+        }}
+        
+        /* Flash message styling */
+        .flash-messages {{
+            margin-bottom: 24px;
+        }}
+        
+        .flash-error {{
+            background-color: rgba(255, 149, 0, 0.1);
+            border: 1px solid rgba(255, 149, 0, 0.3);
+            color: #ff9500;
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            font-size: 14px;
+            text-align: left;
+        }}
+        
+        .flash-success {{
+            background-color: rgba(107, 155, 153, 0.1);
+            border: 1px solid rgba(107, 155, 153, 0.3);
+            color: #6b9b99;
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            font-size: 14px;
+            text-align: left;
+        }}
+    </style>
+    
+    <div class="aesthetic-container">
+        <h1 class="aesthetic-title">Create your account</h1>
+        <p class="aesthetic-subtitle">Join us and start your journey</p>
+        
         {flash_html}
         
         <form method="POST">
-            <div style="display: flex; gap: 15px; margin-bottom: 20px;">
-                <div style="flex: 1;">
-                    <label style="display: block; margin-bottom: 8px; font-weight: 500;">First Name</label>
-                    <input type="text" name="first_name" required style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px;">
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">First Name</label>
+                    <input type="text" name="first_name" class="form-input" placeholder="John" required>
                 </div>
-                <div style="flex: 1;">
-                    <label style="display: block; margin-bottom: 8px; font-weight: 500;">Last Name</label>
-                    <input type="text" name="last_name" required style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px;">
+                <div class="form-group">
+                    <label class="form-label">Last Name</label>
+                    <input type="text" name="last_name" class="form-input" placeholder="Doe" required>
                 </div>
             </div>
             
-            <div style="margin-bottom: 20px;">
-                <label style="display: block; margin-bottom: 8px; font-weight: 500;">Email Address</label>
-                <input type="email" name="email" required style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px;">
+            <div class="form-group">
+                <label class="form-label">Email Address</label>
+                <input type="email" name="email" class="form-input" placeholder="john@example.com" required>
             </div>
             
-            <div style="margin-bottom: 20px;">
-                <label style="display: block; margin-bottom: 8px; font-weight: 500;">Phone Number (Required for contact requests)</label>
-                <input type="tel" name="phone" required style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px;">
+            <div class="form-group">
+                <label class="form-label">Phone Number</label>
+                <input type="tel" name="phone" class="form-input" placeholder="+44 7XXX XXXXXX" required>
             </div>
             
-            <div style="margin-bottom: 20px;">
-                <label style="display: block; margin-bottom: 8px; font-weight: 500;">Password</label>
-                <input type="password" name="password" required minlength="6" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px;">
+            <div class="form-group">
+                <label class="form-label">Password</label>
+                <input type="password" name="password" class="form-input" placeholder="••••••••" required minlength="6">
             </div>
             
-            <div style="margin-bottom: 20px;">
-                <label style="display: block; margin-bottom: 8px; font-weight: 500;">Confirm Password</label>
-                <input type="password" name="confirm_password" required style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px;">
+            <div class="form-group">
+                <label class="form-label">Confirm Password</label>
+                <input type="password" name="confirm_password" class="form-input" placeholder="••••••••" required>
             </div>
             
-            <button type="submit" class="btn btn-primary" style="width: 100%; padding: 16px; font-size: 16px; margin-top: 10px;">
+            <button type="submit" class="register-button">
                 Create Account
             </button>
         </form>
         
-        <div style="text-align: center; margin-top: 20px; font-size: 14px;">
-            Already have an account? <a href="/login" style="color: #167a60; text-decoration: none;">Login here</a>
+        <div class="form-links">
+            Already have an account? <a href="/login">Sign in here</a>
         </div>
     </div>
     '''
     
-    return render_template_with_header("Create Account", content)
+    return content
 
 @app.route('/login', methods=['GET', 'POST'])
 def user_login():
@@ -3041,36 +3194,193 @@ def user_login():
             else:
                 flash(result['error'], 'error')
     
-    # Login form
-    content = '''
-    <div class="container" style="max-width: 400px;">
-        <h1 style="font-size: 28px; text-align: center; margin-bottom: 32px;">Login to Your Account</h1>
+    # Get flash messages and convert to HTML
+    flash_html = ""
+    messages = get_flashed_messages(with_categories=True)
+    if messages:
+        flash_html = '<div class="flash-messages">'
+        for category, message in messages:
+            flash_html += f'<div class="flash-{category}">{message}</div>'
+        flash_html += '</div>'
+    
+    # Login form with aesthetic design
+    content = f'''
+    <style>
+        body {{
+            background-color: #f4e8ee;
+            color: #2d2d2d;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }}
+        
+        .aesthetic-container {{
+            background-color: #f4e8ee;
+            max-width: 400px;
+            width: 100%;
+            padding: 60px 40px;
+            text-align: center;
+        }}
+        
+        .aesthetic-title {{
+            font-size: 32px;
+            font-weight: 300;
+            margin-bottom: 8px;
+            color: #2d2d2d;
+            letter-spacing: -0.5px;
+        }}
+        
+        .aesthetic-subtitle {{
+            font-size: 16px;
+            color: #6b9b99;
+            margin-bottom: 48px;
+            line-height: 1.5;
+        }}
+        
+        .form-group {{
+            margin-bottom: 24px;
+            text-align: left;
+        }}
+        
+        .form-label {{
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 8px;
+            color: #2d2d2d;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }}
+        
+        .form-input {{
+            width: 100%;
+            padding: 16px 20px;
+            background-color: rgba(255, 255, 255, 0.3);
+            border: 1px solid rgba(107, 155, 153, 0.3);
+            border-radius: 8px;
+            color: #2d2d2d;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            box-sizing: border-box;
+        }}
+        
+        .form-input:focus {{
+            outline: none;
+            border-color: #6b9b99;
+            box-shadow: 0 0 0 1px rgba(107, 155, 153, 0.3);
+            background-color: rgba(255, 255, 255, 0.5);
+        }}
+        
+        .form-input::placeholder {{
+            color: rgba(45, 45, 45, 0.5);
+        }}
+        
+        .login-button {{
+            width: 100%;
+            padding: 16px;
+            background-color: #6b9b99;
+            color: #ffffff;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 16px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }}
+        
+        .login-button:hover {{
+            background-color: #5a8785;
+            transform: translateY(-1px);
+        }}
+        
+        .login-button:active {{
+            transform: translateY(0);
+        }}
+        
+        .form-links {{
+            margin-top: 32px;
+            font-size: 14px;
+        }}
+        
+        .form-links a {{
+            color: #6b9b99;
+            text-decoration: none;
+            transition: color 0.3s ease;
+        }}
+        
+        .form-links a:hover {{
+            color: #ff9500;
+        }}
+        
+        .divider {{
+            margin: 24px 0;
+            color: rgba(107, 155, 153, 0.5);
+        }}
+        
+        /* Flash message styling */
+        .flash-messages {{
+            margin-bottom: 24px;
+        }}
+        
+        .flash-error {{
+            background-color: rgba(255, 149, 0, 0.1);
+            border: 1px solid rgba(255, 149, 0, 0.3);
+            color: #ff9500;
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            font-size: 14px;
+        }}
+        
+        .flash-success {{
+            background-color: rgba(107, 155, 153, 0.1);
+            border: 1px solid rgba(107, 155, 153, 0.3);
+            color: #6b9b99;
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            font-size: 14px;
+        }}
+    </style>
+    
+    <div class="aesthetic-container">
+        <h1 class="aesthetic-title">Welcome back</h1>
+        <p class="aesthetic-subtitle">Enter your credentials to access your account</p>
+        
+        {flash_html}
         
         <form method="POST">
-            <div style="margin-bottom: 20px;">
-                <label style="display: block; margin-bottom: 8px; font-weight: 500;">Email Address</label>
-                <input type="email" name="email" required style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px;">
+            <div class="form-group">
+                <label class="form-label">Email Address</label>
+                <input type="email" name="email" class="form-input" placeholder="your@email.com" required>
             </div>
             
-            <div style="margin-bottom: 20px;">
-                <label style="display: block; margin-bottom: 8px; font-weight: 500;">Password</label>
-                <input type="password" name="password" required style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px;">
+            <div class="form-group">
+                <label class="form-label">Password</label>
+                <input type="password" name="password" class="form-input" placeholder="••••••••" required>
             </div>
             
-            <button type="submit" class="btn btn-primary" style="width: 100%; padding: 16px; font-size: 16px; margin-top: 10px;">
-                Login
+            <button type="submit" class="login-button">
+                Sign In
             </button>
         </form>
-        <div style="text-align: center; margin-top: 20px; font-size: 14px;">
-            <a href="/forgot-password" style="color: #167a60; text-decoration: none;">Forgot your password?</a>
-        </div>
-        <div style="text-align: center; margin-top: 20px; font-size: 14px;">
-            Don't have an account? <a href="/register" style="color: #167a60; text-decoration: none;">Create one here</a>
+        
+        <div class="form-links">
+            <a href="/forgot-password">Forgot your password?</a>
+            <div class="divider">•</div>
+            Don't have an account? <a href="/register">Create one here</a>
         </div>
     </div>
     '''
     
-    return render_template_with_header("Login", content)
+    return content
 
 @app.route('/logout')
 def logout():
@@ -3093,188 +3403,220 @@ def forgot_password():
             flash('If this email address exists in our system, you will receive a password reset link shortly.', 'success')
             return redirect('/forgot-password')
     
-    # Show forgot password form
-    content = '''
-    <div class="auth-container">
-        <div class="auth-header">
-            <h1 class="auth-title">Reset Password</h1>
-            <p class="auth-subtitle">We'll send you a secure reset link</p>
-        </div>
-        
-        <div class="info-card">
-            <div class="info-icon">🔒</div>
-            <div class="info-content">
-                <strong>Forgot your password?</strong><br>
-                Enter your email address and we'll send you a secure link to reset your password.
-            </div>
-        </div>
-        
-        <form method="POST" class="auth-form">
-            <div class="form-group">
-                <label>Email Address</label>
-                <input type="email" name="email" required placeholder="Enter your email address" autofocus>
-            </div>
-            
-            <button type="submit" class="btn-submit">
-                <span>📧 Send Reset Link</span>
-            </button>
-        </form>
-        
-        <div class="auth-links">
-            <a href="/login" class="back-link">← Remember your password?</a>
-        </div>
-        
-        <div class="auth-footer">
-            Don't have an account? <a href="/register">Create one here</a>
-        </div>
-    </div>
+    # Get flash messages and convert to HTML
+    flash_html = ""
+    messages = get_flashed_messages(with_categories=True)
+    if messages:
+        flash_html = '<div class="flash-messages">'
+        for category, message in messages:
+            flash_html += f'<div class="flash-{category}">{message}</div>'
+        flash_html += '</div>'
     
+    # Forgot password form with aesthetic design
+    content = f'''
     <style>
-        .auth-container {
-            max-width: 450px;
-            margin: 0 auto;
-        }
-        
-        .auth-header {
-            text-align: center;
-            margin-bottom: 2rem;
-        }
-        
-        .auth-title {
-            font-family: 'Clash Display', 'Satoshi', sans-serif;
-            font-size: 2rem;
-            font-weight: 600;
-            color: var(--color-charcoal);
-            margin-bottom: 0.5rem;
-        }
-        
-        .auth-subtitle {
-            color: var(--color-gray-600);
-            font-size: 1rem;
-            font-weight: 500;
-        }
-        
-        .info-card {
-            background: linear-gradient(135deg, var(--color-lavender), var(--color-sage));
-            color: var(--color-charcoal);
-            padding: 1.5rem;
-            border-radius: 16px;
-            margin-bottom: 2rem;
-            display: flex;
-            align-items: flex-start;
-            gap: 1rem;
-        }
-        
-        .info-icon {
-            font-size: 1.5rem;
-            flex-shrink: 0;
-        }
-        
-        .info-content {
-            font-size: 0.875rem;
-            line-height: 1.5;
-        }
-        
-        .info-content strong {
-            display: block;
-            margin-bottom: 0.25rem;
-            font-weight: 600;
-        }
-        
-        .form-group {
-            margin-bottom: 1.5rem;
-        }
-        
-        .form-group label {
-            display: block;
-            margin-bottom: 0.5rem;
-            font-weight: 600;
-            color: var(--color-charcoal);
-            font-size: 0.875rem;
-        }
-        
-        .form-group input {
-            width: 100%;
-            padding: 1rem 1.25rem;
-            border: 2px solid var(--color-gray-200);
-            border-radius: 12px;
-            font-size: 1rem;
-            font-family: 'Satoshi', sans-serif;
-            background: var(--color-white);
-            transition: all 0.3s ease;
-        }
-        
-        .form-group input:focus {
-            outline: none;
-            border-color: var(--color-emerald);
-            box-shadow: 0 0 0 3px rgba(22, 122, 96, 0.1);
-        }
-        
-        .btn-submit {
-            width: 100%;
-            padding: 1.25rem 2rem;
-            background: linear-gradient(135deg, var(--color-emerald), var(--color-sage));
-            color: white;
-            border: none;
-            border-radius: 12px;
-            font-size: 1rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            font-family: 'Satoshi', sans-serif;
-            box-shadow: 0 4px 16px rgba(22, 122, 96, 0.2);
-            margin-bottom: 1.5rem;
-        }
-        
-        .btn-submit:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(22, 122, 96, 0.3);
-        }
-        
-        .btn-submit span {
+        body {{
+            background-color: #f4e8ee;
+            color: #2d2d2d;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 0.5rem;
-        }
+        }}
         
-        .auth-links {
+        .aesthetic-container {{
+            background-color: #f4e8ee;
+            max-width: 400px;
+            width: 100%;
+            padding: 60px 40px;
             text-align: center;
-            margin-bottom: 1.5rem;
-        }
+        }}
         
-        .back-link {
-            color: var(--color-emerald);
-            text-decoration: none;
-            font-size: 0.875rem;
-            font-weight: 500;
-            transition: all 0.3s ease;
-        }
+        .aesthetic-title {{
+            font-size: 32px;
+            font-weight: 300;
+            margin-bottom: 8px;
+            color: #2d2d2d;
+            letter-spacing: -0.5px;
+        }}
         
-        .back-link:hover {
-            color: var(--color-sage);
-        }
+        .aesthetic-subtitle {{
+            font-size: 16px;
+            color: #6b9b99;
+            margin-bottom: 32px;
+            line-height: 1.5;
+        }}
         
-        .auth-footer {
-            text-align: center;
-            font-size: 0.875rem;
-            color: var(--color-gray-600);
-        }
+        .info-card {{
+            background: rgba(107, 155, 153, 0.1);
+            padding: 24px;
+            border-radius: 12px;
+            margin-bottom: 32px;
+            text-align: left;
+            border: 1px solid rgba(107, 155, 153, 0.2);
+        }}
         
-        .auth-footer a {
-            color: var(--color-emerald);
-            text-decoration: none;
+        .info-card-header {{
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 8px;
             font-weight: 600;
-        }
+            color: #2d2d2d;
+        }}
         
-        .auth-footer a:hover {
-            color: var(--color-sage);
-            text-decoration: underline;
-        }
+        .info-icon {{
+            font-size: 20px;
+        }}
+        
+        .info-text {{
+            font-size: 14px;
+            color: #6b9b99;
+            line-height: 1.5;
+        }}
+        
+        .form-group {{
+            margin-bottom: 24px;
+            text-align: left;
+        }}
+        
+        .form-label {{
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 8px;
+            color: #2d2d2d;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }}
+        
+        .form-input {{
+            width: 100%;
+            padding: 16px 20px;
+            background-color: rgba(255, 255, 255, 0.3);
+            border: 1px solid rgba(107, 155, 153, 0.3);
+            border-radius: 8px;
+            color: #2d2d2d;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            box-sizing: border-box;
+        }}
+        
+        .form-input:focus {{
+            outline: none;
+            border-color: #6b9b99;
+            box-shadow: 0 0 0 1px rgba(107, 155, 153, 0.3);
+            background-color: rgba(255, 255, 255, 0.5);
+        }}
+        
+        .form-input::placeholder {{
+            color: rgba(45, 45, 45, 0.5);
+        }}
+        
+        .reset-button {{
+            width: 100%;
+            padding: 16px;
+            background-color: #6b9b99;
+            color: #ffffff;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 16px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }}
+        
+        .reset-button:hover {{
+            background-color: #5a8785;
+            transform: translateY(-1px);
+        }}
+        
+        .reset-button:active {{
+            transform: translateY(0);
+        }}
+        
+        .form-links {{
+            margin-top: 32px;
+            font-size: 14px;
+        }}
+        
+        .form-links a {{
+            color: #6b9b99;
+            text-decoration: none;
+            transition: color 0.3s ease;
+        }}
+        
+        .form-links a:hover {{
+            color: #ff9500;
+        }}
+        
+        /* Flash message styling */
+        .flash-messages {{
+            margin-bottom: 24px;
+        }}
+        
+        .flash-error {{
+            background-color: rgba(255, 149, 0, 0.1);
+            border: 1px solid rgba(255, 149, 0, 0.3);
+            color: #ff9500;
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            font-size: 14px;
+            text-align: left;
+        }}
+        
+        .flash-success {{
+            background-color: rgba(107, 155, 153, 0.1);
+            border: 1px solid rgba(107, 155, 153, 0.3);
+            color: #6b9b99;
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            font-size: 14px;
+            text-align: left;
+        }}
     </style>
+    
+    <div class="aesthetic-container">
+        <h1 class="aesthetic-title">Reset your password</h1>
+        <p class="aesthetic-subtitle">We'll send you a secure reset link</p>
+        
+        <div class="info-card">
+            <div class="info-card-header">
+                <span>Forgot your password?</span>
+            </div>
+            <div class="info-text">
+                Enter your email address and we'll send you a link to reset your password.
+            </div>
+        </div>
+        
+        {flash_html}
+        
+        <form method="POST">
+            <div class="form-group">
+                <label class="form-label">Email Address</label>
+                <input type="email" name="email" class="form-input" placeholder="your@email.com" required autofocus>
+            </div>
+            
+            <button type="submit" class="reset-button">
+                Send Reset Link
+            </button>
+        </form>
+        
+        <div class="form-links">
+            <a href="/login">← Remember your password?</a>
+        </div>
+    </div>
     '''
     
-    return render_template_with_header("Reset Password", content)
+    return content
 
 @app.route('/reset-password/<token>', methods=['GET', 'POST'])
 def reset_password(token):
@@ -3417,12 +3759,22 @@ def dashboard():
     return render_template_with_header("Dashboard", content, user_info)
 
 def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
-    """Render dashboard with designer styling and beautiful typography"""
+    """Render dashboard with pink aesthetic styling"""
     user_id = session['user_id']
+    
+    # Get flash messages and convert to HTML
+    flash_html = ""
+    messages = get_flashed_messages(with_categories=True)
+    if messages:
+        flash_html = '<div class="flash-messages">'
+        for category, message in messages:
+            flash_html += f'<div class="flash-{category}">{message}</div>'
+        flash_html += '</div>'
+    
     matches_html = ""
     
     for i, match in enumerate(matches, 1):
-        # Enhanced compatibility badges with new colors
+        # Enhanced compatibility badges
         compatibility_badges = ""
         
         # Neural network confidence badge
@@ -3450,14 +3802,14 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
         name_parts = match['matched_user_name'].split()
         initials = name_parts[0][0] + (name_parts[-1][0] if len(name_parts) > 1 else '')
         
-        # Enhanced contact button logic with new styling
+        # Enhanced contact button logic
         request_status = user_auth.get_request_status(user_id, match['matched_user_id'])
         if request_status == 'pending':
-            contact_button = '<span class="btn btn-pending">📞 Request Pending</span>'
+            contact_button = '<span class="btn btn-pending">Request Pending</span>'
         elif request_status == 'accepted':
-            contact_button = f'<a href="tel:{match["matched_user_phone"]}" class="btn btn-success">📞 Call {match["matched_user_phone"]}</a>'
+            contact_button = f'<a href="tel:{match["matched_user_phone"]}" class="btn btn-success">Call {match["matched_user_phone"]}</a>'
         elif request_status == 'denied':
-            contact_button = '<span class="btn btn-declined"> Request Declined</span>'
+            contact_button = '<span class="btn btn-declined">Request Declined</span>'
         else:
             contact_button = f'''
                 <a href="/send-contact-request/{match["matched_user_id"]}" 
@@ -3467,7 +3819,7 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
                 </a>
             '''
         
-        # Enhanced scoring display with designer styling
+        # Enhanced scoring display
         enhanced_scores_html = ""
         if data_confidence >= 50:
             enhanced_scores_html = f'''
@@ -3504,7 +3856,6 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
                 <div class="avatar">{initials}</div>
                 <div class="match-info">
                     <div class="match-name">{match['matched_user_name']}</div>
-                    
                 </div>
             </div>
             
@@ -3556,135 +3907,52 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
         '''
         matches_html += match_html
     
-    
-    
     matches_count_section = f'''
     <div class="matches-header">
         <h1 class="matches-title">Your Matches</h1>
-        <p class="matches-subtitle">We’ve simulated the dinner party for you. Here are your {len(matches)} best fits, as chosen by your agent.</p>
+        <p class="matches-subtitle">We've simulated the dinner party for you. Here are your {len(matches)} best fits, as chosen by your agent.</p>
         <div class="profile-updated">Profile updated: {user_info['profile_date'][:10] if user_info['profile_date'] else 'Recently'}</div>
     </div>
     '''
     
     return f'''
-    <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=clash-display@400,500,600,700&display=swap" rel="stylesheet">
     <style>
-        :root {{
-            --color-cream: #f1ece0;
-            --color-emerald: #167a60;
-            --color-sage: #c6e19b;
-            --color-lavender: #c2b7ef;
-            --color-charcoal: #2d2d2d;
-            --color-white: #ffffff;
-            --color-gray-50: #fafafa;
-            --color-gray-100: #f5f5f5;
-            --color-gray-200: #eeeeee;
-            --color-gray-600: #757575;
-            --color-gray-800: #424242;
-        }}
-        
-        .dashboard-container {{
-            font-family: 'Satoshi', -apple-system, BlinkMacSystemFont, sans-serif;
-            max-width: 1000px;
-            margin: 0 auto;
-            padding: 2rem;
-            background: linear-gradient(135deg, var(--color-cream) 0%, var(--color-gray-50) 100%);
+        body {{
+            background-color: #f4e8ee;
+            color: #2d2d2d;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 0;
             min-height: 100vh;
         }}
         
-        .system-info-card {{
-            background: linear-gradient(135deg, var(--color-emerald), var(--color-sage));
-            color: white;
+        .dashboard-container {{
+            max-width: 1000px;
+            margin: 0 auto;
             padding: 2rem;
-            border-radius: 20px;
-            margin-bottom: 3rem;
-            position: relative;
-            overflow: hidden;
-        }}
-        
-        .system-info-card::before {{
-            content: '';
-            position: absolute;
-            top: 0;
-            left: -100%;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
-            animation: shimmer 3s ease-in-out infinite;
-        }}
-        
-        @keyframes shimmer {{
-            0% {{ left: -100%; }}
-            50% {{ left: 100%; }}
-            100% {{ left: 100%; }}
-        }}
-        
-        .system-info-content h3 {{
-            font-family: 'Clash Display', 'Satoshi', sans-serif;
-            font-size: 1.5rem;
-            font-weight: 600;
-            margin: 0 0 0.75rem 0;
-            color: white;
-        }}
-        
-        .system-info-content p {{
-            margin: 0 0 1.5rem 0;
-            opacity: 0.9;
-            font-size: 1rem;
-            line-height: 1.6;
-        }}
-        
-        .feature-tags {{
-            display: flex;
-            gap: 1rem;
-            flex-wrap: wrap;
-        }}
-        
-        .feature-tag {{
-            background: rgba(255,255,255,0.2);
-            padding: 0.5rem 1rem;
-            border-radius: 50px;
-            font-size: 0.875rem;
-            font-weight: 500;
-            backdrop-filter: blur(10px);
         }}
         
         .matches-header {{
             text-align: center;
             margin-bottom: 3rem;
             padding: 2.5rem 2rem;
-            background: var(--color-white);
+            background: rgba(255, 255, 255, 0.7);
             border-radius: 20px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.06);
-            position: relative;
-        }}
-        
-        .matches-header::before {{
-            content: '';
-            position: absolute;
-            top: -0.5rem;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 60px;
-            height: 4px;
-            background: linear-gradient(90deg, var(--color-emerald), var(--color-sage));
-            border-radius: 2px;
+            backdrop-filter: blur(10px);
         }}
         
         .matches-title {{
-            font-family: 'Clash Display', 'Satoshi', sans-serif;
-            font-size: clamp(2rem, 4vw, 3rem);
-            font-weight: 600;
+            font-size: 2.5rem;
+            font-weight: 300;
             margin: 0 0 1rem 0;
-            color: var(--color-charcoal);
+            color: #2d2d2d;
             letter-spacing: -0.02em;
-            line-height: 1.1;
         }}
         
         .matches-subtitle {{
             font-size: 1.125rem;
             line-height: 1.6;
-            color: var(--color-gray-600);
+            color: #6b9b99;
             margin: 0 0 1rem 0;
             max-width: 600px;
             margin-left: auto;
@@ -3693,35 +3961,32 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
         
         .profile-updated {{
             font-size: 0.875rem;
-            color: var(--color-gray-600);
+            color: rgba(107, 155, 153, 0.8);
             font-weight: 500;
         }}
         
         .match-card {{
-            background: var(--color-white);
+            background: rgba(255, 255, 255, 0.8);
             border-radius: 24px;
             padding: 2.5rem;
             margin: 2rem 0;
-            box-shadow: 
-                0 1px 3px rgba(0,0,0,0.04),
-                0 8px 24px rgba(0,0,0,0.08);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(107, 155, 153, 0.2);
             position: relative;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            border-left: 4px solid var(--color-sage);
+            transition: all 0.3s ease;
         }}
         
         .match-card:hover {{
             transform: translateY(-4px);
-            box-shadow: 
-                0 4px 12px rgba(0,0,0,0.08),
-                0 16px 48px rgba(0,0,0,0.12);
+            background: rgba(255, 255, 255, 0.9);
+            border-color: rgba(107, 155, 153, 0.3);
         }}
         
         .match-number {{
             position: absolute;
             top: -1rem;
             left: 2rem;
-            background: linear-gradient(135deg, var(--color-emerald), var(--color-sage));
+            background: #6b9b99;
             color: white;
             border-radius: 50%;
             width: 48px;
@@ -3731,7 +3996,6 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
             justify-content: center;
             font-weight: 700;
             font-size: 1.25rem;
-            font-family: 'Clash Display', 'Satoshi', sans-serif;
         }}
         
         .match-header {{
@@ -3745,15 +4009,13 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
             width: 80px;
             height: 80px;
             border-radius: 50%;
-            background: linear-gradient(135deg, var(--color-lavender), var(--color-sage));
+            background: linear-gradient(135deg, #6b9b99, #ff9500);
             display: flex;
             align-items: center;
             justify-content: center;
-            color: var(--color-charcoal);
+            color: white;
             font-size: 2rem;
             font-weight: 700;
-            font-family: 'Clash Display', 'Satoshi', sans-serif;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.1);
         }}
         
         .match-info {{
@@ -3761,17 +4023,10 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
         }}
         
         .match-name {{
-            font-family: 'Clash Display', 'Satoshi', sans-serif;
             font-size: 1.75rem;
             font-weight: 600;
             margin-bottom: 0.25rem;
-            color: var(--color-charcoal);
-        }}
-        
-        .match-subtitle {{
-            font-size: 0.875rem;
-            color: var(--color-gray-600);
-            font-weight: 500;
+            color: #2d2d2d;
         }}
         
         .compatibility-score {{
@@ -3782,14 +4037,13 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
         .score-circle {{
             display: inline-block;
             padding: 2rem;
-            background: linear-gradient(135deg, var(--color-emerald), var(--color-sage));
+            background: #6b9b99;
             border-radius: 20px;
             color: white;
             min-width: 200px;
         }}
         
         .score-number {{
-            font-family: 'Clash Display', 'Satoshi', sans-serif;
             font-size: 3rem;
             font-weight: 700;
             line-height: 1;
@@ -3808,7 +4062,7 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
             gap: 1.5rem;
             margin: 2rem 0;
             padding: 2rem;
-            background: linear-gradient(135deg, var(--color-charcoal), var(--color-gray-800));
+            background: rgba(45, 45, 45, 0.9);
             border-radius: 16px;
         }}
         
@@ -3827,7 +4081,6 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
         }}
         
         .score-value {{
-            font-family: 'Clash Display', 'Satoshi', sans-serif;
             font-size: 1.5rem;
             font-weight: 700;
             margin-bottom: 0.75rem;
@@ -3843,7 +4096,7 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
         
         .score-fill {{
             height: 100%;
-            background: linear-gradient(90deg, var(--color-sage), var(--color-lavender));
+            background: linear-gradient(90deg, #6b9b99, #ff9500);
             border-radius: 2px;
             transition: width 1s ease;
         }}
@@ -3866,30 +4119,32 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
         }}
         
         .badge-ai {{
-            background: var(--color-lavender);
-            color: var(--color-charcoal);
+            background: rgba(255, 149, 0, 0.2);
+            color: #ff9500;
+            border: 1px solid rgba(255, 149, 0, 0.3);
         }}
         
         .badge-neural {{
-            background: var(--color-emerald);
+            background: #6b9b99;
             color: white;
         }}
         
         .badge-simulation {{
-            background: var(--color-sage);
-            color: var(--color-charcoal);
+            background: rgba(107, 155, 153, 0.2);
+            color: #6b9b99;
+            border: 1px solid rgba(107, 155, 153, 0.3);
         }}
         
         .badge-personality {{
-            background: var(--color-cream);
-            color: var(--color-charcoal);
-            border: 1px solid var(--color-gray-200);
+            background: rgba(255, 255, 255, 0.8);
+            color: #2d2d2d;
+            border: 1px solid rgba(107, 155, 153, 0.3);
         }}
         
         .badge-values {{
-            background: var(--color-cream);
-            color: var(--color-charcoal);
-            border: 1px solid var(--color-gray-200);
+            background: rgba(255, 255, 255, 0.8);
+            color: #2d2d2d;
+            border: 1px solid rgba(107, 155, 153, 0.3);
         }}
         
         .detailed-scores {{
@@ -3898,8 +4153,9 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
             gap: 1.5rem;
             margin: 2rem 0;
             padding: 2rem;
-            background: var(--color-gray-50);
+            background: rgba(255, 255, 255, 0.5);
             border-radius: 16px;
+            backdrop-filter: blur(10px);
         }}
         
         .score-item {{
@@ -3911,50 +4167,48 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
         .score-category {{
             font-size: 0.875rem;
             font-weight: 600;
-            color: var(--color-charcoal);
+            color: #2d2d2d;
             min-width: 80px;
         }}
         
         .score-value-small {{
-            font-family: 'Clash Display', 'Satoshi', sans-serif;
             font-size: 1.25rem;
             font-weight: 600;
-            color: var(--color-charcoal);
+            color: #2d2d2d;
             min-width: 40px;
         }}
         
         .score-bar-small {{
             flex: 1;
             height: 6px;
-            background: var(--color-gray-200);
+            background: rgba(107, 155, 153, 0.2);
             border-radius: 3px;
             overflow: hidden;
         }}
         
         .score-fill-small {{
             height: 100%;
-            background: linear-gradient(90deg, var(--color-emerald), var(--color-sage));
+            background: linear-gradient(90deg, #6b9b99, #ff9500);
             border-radius: 3px;
             transition: width 1s ease;
         }}
         
         .compatibility-analysis {{
-            background: var(--color-white);
+            background: rgba(255, 255, 255, 0.8);
             padding: 2rem;
             border-radius: 16px;
             margin: 2rem 0;
-            border-left: 4px solid var(--color-emerald);
+            border-left: 4px solid #6b9b99;
             font-size: 1rem;
             line-height: 1.6;
-            color: var(--color-gray-800);
-            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+            color: #2d2d2d;
         }}
         
         .match-actions {{
             text-align: center;
             margin-top: 2rem;
             padding-top: 2rem;
-            border-top: 1px solid var(--color-gray-200);
+            border-top: 1px solid rgba(107, 155, 153, 0.2);
         }}
         
         .btn {{
@@ -3966,75 +4220,73 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
             font-weight: 600;
             font-size: 0.875rem;
             text-decoration: none;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: all 0.3s ease;
             border: none;
             cursor: pointer;
-            font-family: 'Satoshi', sans-serif;
         }}
         
         .btn-primary {{
-            background: var(--color-emerald);
+            background: #6b9b99;
             color: white;
-            box-shadow: 0 4px 16px rgba(22, 122, 96, 0.2);
         }}
         
         .btn-primary:hover {{
-            background: #0f5942;
+            background: #5a8785;
             transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(22, 122, 96, 0.3);
         }}
         
         .btn-pending {{
-            background: var(--color-lavender);
-            color: var(--color-charcoal);
+            background: rgba(255, 149, 0, 0.2);
+            color: #ff9500;
+            border: 1px solid rgba(255, 149, 0, 0.3);
         }}
         
         .btn-success {{
-            background: var(--color-sage);
-            color: var(--color-charcoal);
+            background: rgba(107, 155, 153, 0.2);
+            color: #6b9b99;
             text-decoration: none;
+            border: 1px solid rgba(107, 155, 153, 0.3);
         }}
         
         .btn-success:hover {{
-            background: #9ac463;
+            background: rgba(107, 155, 153, 0.3);
             transform: translateY(-2px);
         }}
         
         .btn-declined {{
-            background: var(--color-gray-200);
-            color: var(--color-gray-600);
+            background: rgba(150, 150, 150, 0.2);
+            color: #666;
+            border: 1px solid rgba(150, 150, 150, 0.3);
         }}
         
-        @media (max-width: 768px) {{
-            .dashboard-container {{
-                padding: 1rem;
-            }}
-            
-            .match-card {{
-                padding: 2rem 1.5rem;
-            }}
-            
-            .match-header {{
-                flex-direction: column;
-                text-align: center;
-                gap: 1rem;
-            }}
-            
-            .ai-scores-grid {{
-                grid-template-columns: 1fr;
-            }}
-            
-            .detailed-scores {{
-                grid-template-columns: 1fr;
-            }}
-            
-            .compatibility-badges {{
-                justify-content: center;
-            }}
+        /* Flash message styling */
+        .flash-messages {{
+            margin-bottom: 24px;
+        }}
+        
+        .flash-error {{
+            background-color: rgba(255, 149, 0, 0.1);
+            border: 1px solid rgba(255, 149, 0, 0.3);
+            color: #ff9500;
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            font-size: 14px;
+        }}
+        
+        .flash-success {{
+            background-color: rgba(107, 155, 153, 0.1);
+            border: 1px solid rgba(107, 155, 153, 0.3);
+            color: #6b9b99;
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            font-size: 14px;
         }}
     </style>
     
     <div class="dashboard-container">
+        {flash_html}
         {matches_count_section}
         {matches_html}
         
@@ -4045,7 +4297,6 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
             if (!viewStartTimes[matchUserId]) {{
                 viewStartTimes[matchUserId] = Date.now();
                 
-                // Track after 3 seconds of viewing
                 setTimeout(() => {{
                     if (viewStartTimes[matchUserId]) {{
                         const timeSpent = (Date.now() - viewStartTimes[matchUserId]) / 1000;
