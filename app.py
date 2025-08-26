@@ -54,7 +54,7 @@ except ImportError:
 # Flask and related imports
 from flask import (
     Flask, render_template_string, request, redirect, session, 
-    jsonify, flash, url_for, send_from_directory, abort
+    jsonify, flash, url_for, send_from_directory, abort, get_flashed_messages
 )
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -2451,15 +2451,15 @@ def home():
         <h1 class="main-txt">Connect</h1>
         
         <div class="welcome-text hide-text">
-            <div>Welcome, choose your agent to begin</div>
+            <div>choose your agent to begin</div>
             <div class="login-link">
                 <a href="/login">(or click here to sign in if you already have an account)</a>
             </div>
         </div>
         
         <div class="instruction-text hide-text">
-            <strong>Click any floating sphere</strong><br>
-            to start your journey!
+            <strong>click any floating sphere</strong><br>
+            to begin shaping your agent to be simulation-ready
         </div>
         
         <canvas class="webgl" id="webgl"></canvas>
@@ -2867,13 +2867,22 @@ def register():
             else:
                 flash(result['error'], 'error')
     
+    flash_html = ""
+    for category, message in get_flashed_messages(with_categories=True):
+        color = "#dc3545" if category == "error" else "#28a745"
+        flash_html += f'''
+        <div style="background: {color}; color: white; padding: 12px; border-radius: 4px; margin-bottom: 20px; font-size: 14px;">
+            {message}
+        </div>
+        '''
+    
     # Registration form
-    content = '''
+    content = f'''
     <div class="container" style="max-width: 400px;">
         <h1 style="font-size: 28px; text-align: center; margin-bottom: 32px;">Create Your Account</h1>
         
         <!-- Flash messages -->
-        <div id="flash-messages"></div>
+        {flash_html}
         
         <form method="POST">
             <div style="display: flex; gap: 15px; margin-bottom: 20px;">
