@@ -2247,18 +2247,188 @@ def render_template_with_header(title: str, content: str, user_info: Dict = None
 
     return f'''
     <!DOCTYPE html>
-    <html>
+    <html lang="en">
     <head>
-        <title>{title} - Connect</title>
+        <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <style>{get_base_styles()}</style>
+        <title>{title}</title>
+        {get_base_styles()}
+        
+        <!-- Transition Styles -->
+        <style>
+            /* Page transition overlay */
+            .page-transition-overlay {{
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: radial-gradient(circle at center, rgba(22, 122, 96, 0.1), rgba(22, 122, 96, 0.3));
+                backdrop-filter: blur(10px);
+                z-index: 9999;
+                opacity: 0;
+                pointer-events: none;
+                transition: opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            }}
+            
+            .page-transition-overlay.active {{
+                opacity: 1;
+                pointer-events: all;
+            }}
+            
+            /* Glow effect */
+            .page-transition-glow {{
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                width: 200px;
+                height: 200px;
+                background: radial-gradient(circle, rgba(22, 122, 96, 0.8), rgba(22, 122, 96, 0.4), transparent);
+                border-radius: 50%;
+                animation: pulse-glow 1.5s ease-in-out infinite;
+            }}
+            
+            @keyframes pulse-glow {{
+                0%, 100% {{
+                    transform: translate(-50%, -50%) scale(1);
+                    opacity: 0.8;
+                }}
+                50% {{
+                    transform: translate(-50%, -50%) scale(1.2);
+                    opacity: 1;
+                }}
+            }}
+            
+            /* Content fade animation */
+            .page-content {{
+                opacity: 0;
+                transform: translateY(20px);
+                animation: fadeInUp 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+                animation-delay: 0.2s;
+            }}
+            
+            @keyframes fadeInUp {{
+                to {{
+                    opacity: 1;
+                    transform: translateY(0);
+                }}
+            }}
+            
+            /* Enhanced navigation links */
+            a:not(.no-transition) {{
+                position: relative;
+                transition: all 0.3s ease;
+            }}
+            
+            a:not(.no-transition):hover {{
+                text-shadow: 0 0 10px rgba(22, 122, 96, 0.5);
+            }}
+        </style>
     </head>
     <body>
-        <div class="header">
-            <div class="logo">Connect</div>
-            {user_nav}
+        <!-- Transition overlay -->
+        <div class="page-transition-overlay" id="transitionOverlay">
+            <div class="page-transition-glow"></div>
         </div>
-        {content}
+        
+        <!-- Page content -->
+        <div class="page-content">
+            <div class="header">
+                <div class="logo">Connect</div>
+                {user_nav}
+            </div>
+            
+            <main>
+                {content}
+            </main>
+        </div>
+        
+        <!-- Transition JavaScript -->
+        <script>
+            class PageTransition {{
+                constructor() {{
+                    this.overlay = document.getElementById('transitionOverlay');
+                    this.isTransitioning = false;
+                    this.init();
+                }}
+                
+                init() {{
+                    // Add transition to all navigation links
+                    document.addEventListener('click', (e) => {{
+                        const link = e.target.closest('a');
+                        if (link && !link.classList.contains('no-transition') && 
+                            !link.href.startsWith('mailto:') && 
+                            !link.href.startsWith('tel:') &&
+                            link.hostname === window.location.hostname) {{
+                            e.preventDefault();
+                            this.navigate(link.href);
+                        }}
+                    }});
+                    
+                    // Handle browser back/forward
+                    window.addEventListener('popstate', () => {{
+                        this.navigate(window.location.href, false);
+                    }});
+                }}
+                
+                async navigate(url, pushState = true) {{
+                    if (this.isTransitioning) return;
+                    
+                    this.isTransitioning = true;
+                    
+                    // Show transition overlay with glow
+                    this.overlay.classList.add('active');
+                    
+                    try {{
+                        // Wait for transition effect
+                        await new Promise(resolve => setTimeout(resolve, 400));
+                        
+                        // Fetch new page content
+                        const response = await fetch(url, {{
+                            headers: {{ 'X-Requested-With': 'XMLHttpRequest' }}
+                        }});
+                        
+                        if (response.ok) {{
+                            const html = await response.text();
+                            
+                            // Update page content
+                            document.documentElement.innerHTML = html;
+                            
+                            // Update URL if needed
+                            if (pushState) {{
+                                history.pushState(null, '', url);
+                            }}
+                            
+                            // Reinitialize transition system
+                            new PageTransition();
+                            
+                            // Hide overlay
+                            setTimeout(() => {{
+                                const newOverlay = document.getElementById('transitionOverlay');
+                                if (newOverlay) {{
+                                    newOverlay.classList.remove('active');
+                                }}
+                            }}, 100);
+                            
+                        }} else {{
+                            // Fallback to normal navigation
+                            window.location.href = url;
+                        }}
+                    }} catch (error) {{
+                        console.error('Transition error:', error);
+                        window.location.href = url;
+                    }}
+                    
+                    this.isTransitioning = false;
+                }}
+            }}
+            
+            // Initialize page transitions
+            document.addEventListener('DOMContentLoaded', () => {{
+                new PageTransition();
+            }});
+        </script>
     </body>
     </html>
     '''
@@ -3944,7 +4114,7 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
             text-align: center;
             margin-bottom: 3rem;
             padding: 2.5rem 2rem;
-            background: rgba(255, 255, 255, 0.7);
+            background: #f4e8ee;
             border-radius: 20px;
             backdrop-filter: blur(10px);
         }}
@@ -3974,7 +4144,7 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
         }}
         
         .match-card {{
-            background: rgba(255, 255, 255, 0.8);
+            background: #f4e8ee;
             border-radius: 24px;
             padding: 2.5rem;
             margin: 2rem 0;
@@ -3986,7 +4156,7 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
         
         .match-card:hover {{
             transform: translateY(-4px);
-            background: rgba(255, 255, 255, 0.9);
+            background: #f4e8ee;
             border-color: rgba(107, 155, 153, 0.3);
         }}
         
@@ -4017,7 +4187,7 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
             width: 80px;
             height: 80px;
             border-radius: 50%;
-            background: linear-gradient(135deg, #6b9b99, #ff9500);
+            background: linear-gradient(135deg, #6b9b99, #f4e8ee);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -4343,12 +4513,12 @@ def render_no_matches_dashboard() -> str:
     <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=clash-display@400,500,600,700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --color-cream: #f1ece0;
-            --color-emerald: #167a60;
-            --color-sage: #c6e19b;
-            --color-lavender: #c2b7ef;
+            --color-cream: #f4e8ee;
+            --color-emerald: #6b9b99;
+            --color-sage: #6b9b99;
+            --color-lavender: #ff9500;
             --color-charcoal: #2d2d2d;
-            --color-white: #ffffff;
+            --color-white: #f4e8ee;
             --color-gray-50: #fafafa;
             --color-gray-600: #757575;
         }
@@ -4359,7 +4529,7 @@ def render_no_matches_dashboard() -> str:
             margin: 0 auto;
             padding: 2rem;
             text-align: center;
-            background: linear-gradient(135deg, var(--color-cream) 0%, var(--color-gray-50) 100%);
+            background: #f4e8ee;
             min-height: 80vh;
             display: flex;
             flex-direction: column;
@@ -4370,7 +4540,7 @@ def render_no_matches_dashboard() -> str:
             background: var(--color-white);
             padding: 3rem 2rem;
             border-radius: 24px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.08);
+            box-shadow: 0 8px 32px #f4e8ee;
         }
         
         .no-matches-icon {
@@ -4442,7 +4612,6 @@ def render_no_matches_dashboard() -> str:
     
     <div class="no-matches-container">
         <div class="no-matches-card">
-            <div class="no-matches-icon">🔍</div>
             <h3 class="no-matches-title">No Matches Found Yet</h3>
             <div class="no-matches-text">
                 We couldn't find compatible matches based on your current profile. This might be because:
@@ -6414,7 +6583,7 @@ def live_matching(user_id):
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>3D Live Agent Simulation - Connect</title>
+        <title>Dinner Party Simulation</title>
         <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=clash-display@400,500,600,700&display=swap" rel="stylesheet">
         <style>
             * {{
