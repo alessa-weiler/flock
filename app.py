@@ -2248,224 +2248,588 @@ email_followup = EmailFollowupSystem(user_auth)
 
 @app.route('/')
 def home():
-    """Landing page"""
+    """Landing page with 3D animated spheres"""
     if 'user_id' in session:
         return redirect('/dashboard')
     
     content = '''
     <style>
-        /* Additional home-specific styles */
-        .home-container {
-            background: var(--color-white);
-            border-radius: 24px;
-            padding: 4rem 3rem;
-            max-width: 600px;
-            width: 100%;
-            margin: 2rem auto;
-            text-align: center;
-            box-shadow: 
-                0 1px 3px rgba(0,0,0,0.04),
-                0 8px 24px rgba(0,0,0,0.08),
-                0 24px 48px rgba(0,0,0,0.04);
+        @import url("https://fonts.googleapis.com/css2?family=Clash+Display:wght@200..700&display=swap");
+        @import url("https://fonts.googleapis.com/css2?family=Satoshi:wght@300..900&display=swap");
+
+        /* Override any existing styles for full page layout */
+        html, body {
+            overflow-x: hidden;
+            margin: 0;
+            padding: 0;
+        }
+
+        .page-content {
             position: relative;
-            backdrop-filter: blur(20px);
+            min-height: 100vh;
+            background: transparent;
         }
         
-        .home-container::before {
-            content: '';
-            position: absolute;
+        /* Override any existing container backgrounds */
+        body, .container, .main-content, .content {
+            background: transparent !important;
+        }
+
+        canvas {
+            position: fixed;
             top: 0;
             left: 0;
-            right: 0;
-            height: 1px;
-            background: linear-gradient(90deg, transparent, var(--color-sage), transparent);
+            z-index: -1;
         }
-        
-        .home-logo {
-            font-family: 'Clash Display', 'Satoshi', sans-serif;
-            font-size: clamp(2.5rem, 5vw, 3.5rem);
-            font-weight: 600;
-            color: var(--color-charcoal);
-            margin-bottom: 0.5rem;
-            letter-spacing: -0.02em;
-            position: relative;
+
+        .mouse-effect {
+            opacity: 0;
+            position: fixed;
+            top: 0px;
+            left: 0px;
+            z-index: 1000;
         }
-        
-        .home-logo::after {
-            content: '';
+
+        .circle {
             position: absolute;
-            bottom: -8px;
+            background-color: var(--color-emerald);
+            width: 10px;
+            height: 10px;
+            left: 0px;
+            top: 0px;
+            border-radius: 100%;
+            z-index: 111111;
+            user-select: none;
+            pointer-events: none;
+            transition: all 0.05s;
+        }
+
+        .circle-follow {
+            position: absolute;
+            border: 1px solid var(--color-emerald);
+            width: 40px;
+            height: 40px;
+            left: 0px;
+            top: 0px;
+            border-radius: 100%;
+            z-index: 111111;
+            user-select: none;
+            pointer-events: none;
+            transition: all 0.1s;
+        }
+
+        .main-txt {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-family: "Clash Display", sans-serif;
+            font-size: clamp(80px, 10vw, 160px);
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: -4px;
+            z-index: -1;
+            transition: opacity 0.5s ease-in-out;
+            background: linear-gradient(135deg, var(--color-emerald), var(--color-sage), var(--color-lavender));
+            background-size: 200% 200%;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: gradientShift 4s ease-in-out infinite;
+        }
+
+        @keyframes gradientShift {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+
+        .hide-text {
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out;
+        }
+
+        .welcome-text {
+            position: fixed;
+            top: 10%;
             left: 50%;
             transform: translateX(-50%);
-            width: 60px;
-            height: 4px;
-            background: linear-gradient(90deg, var(--color-emerald), var(--color-sage));
-            border-radius: 2px;
-        }
-        
-        .subtitle {
-            font-family: 'Clash Display', 'Satoshi', sans-serif;
-            font-size: 1.25rem;
-            color: var(--color-gray-600);
-            margin-bottom: 3rem;
+            text-align: center;
+            z-index: 10;
+            color: var(--color-charcoal);
+            font-family: "Satoshi", sans-serif;
+            font-size: 1.2rem;
             font-weight: 500;
         }
-        
-        .description {
-            font-size: 1.125rem;
-            color: var(--color-gray-600);
-            margin-bottom: 3rem;
-            text-align: left;
-            line-height: 1.7;
-            padding: 2rem;
-            background: var(--color-gray-50);
-            border-radius: 16px;
-            border-left: 4px solid var(--color-sage);
-        }
-        
-        .action-buttons {
-            display: flex;
-            flex-direction: column;
-            gap: 1rem;
-            margin-bottom: 2.5rem;
-        }
-        
-        .btn-home-primary {
-            background: linear-gradient(135deg, var(--color-emerald), var(--color-sage));
-            color: white;
-            box-shadow: 0 4px 16px rgba(22, 122, 96, 0.2);
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.75rem;
-            padding: 1.25rem 2rem;
-            border-radius: 12px;
+
+        .welcome-text .login-link {
+            margin-top: 0.5rem;
             font-size: 1rem;
-            font-weight: 600;
-            cursor: pointer;
+        }
+
+        .welcome-text .login-link a {
+            color: var(--color-emerald);
             text-decoration: none;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            border: none;
-            font-family: 'Satoshi', sans-serif;
-        }
-        
-        .btn-home-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(22, 122, 96, 0.3);
-        }
-        
-        .btn-home-primary::before {
-            content: '✨';
-            font-size: 1.2rem;
-        }
-        
-        .btn-home-secondary {
-            background: var(--color-white);
-            color: var(--color-charcoal);
-            border: 2px solid var(--color-sage);
-            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.75rem;
-            padding: 1.25rem 2rem;
-            border-radius: 12px;
-            font-size: 1rem;
             font-weight: 600;
-            cursor: pointer;
-            text-decoration: none;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            font-family: 'Satoshi', sans-serif;
+            transition: color 0.3s ease;
         }
-        
-        .btn-home-secondary:hover {
-            background: var(--color-sage);
-            color: var(--color-charcoal);
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(198, 225, 155, 0.3);
+
+        .welcome-text .login-link a:hover {
+            color: var(--color-sage);
         }
-        
-        .btn-home-secondary::before {
-            content: '👋';
-            font-size: 1.2rem;
-        }
-        
-        .privacy-note {
-            background: linear-gradient(135deg, var(--color-lavender), var(--color-sage));
-            color: var(--color-charcoal);
+
+        .instruction-text {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            padding: 1rem 1.5rem;
             border-radius: 16px;
-            padding: 1.5rem 2rem;
-            margin: 2rem 0;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
             font-size: 0.875rem;
-            text-align: left;
-            line-height: 1.6;
-            position: relative;
-            overflow: hidden;
+            color: var(--color-gray-600);
+            max-width: 200px;
+            text-align: center;
+            animation: pulse 2s ease-in-out infinite;
+            z-index: 5;
         }
-        
-        .privacy-note::before {
-            content: '🔒';
-            position: absolute;
-            top: 1rem;
-            right: 1.5rem;
-            font-size: 1.5rem;
-            opacity: 0.7;
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
         }
-        
-        .privacy-note strong {
-            font-weight: 600;
+
+        .instruction-text::before {
+            content: '✨';
             display: block;
+            font-size: 1.5rem;
             margin-bottom: 0.5rem;
         }
-        
+
+        /* Responsive design */
         @media (max-width: 768px) {
-            .home-container {
-                padding: 3rem 2rem;
-                margin: 1rem;
-                border-radius: 20px;
+            .main-txt {
+                font-size: 60px;
             }
-            
-            .description {
-                text-align: center;
-                padding: 1.5rem;
+
+            .welcome-text {
+                top: 8%;
+                font-size: 1rem;
+                padding: 0 1rem;
             }
-            
-            .action-buttons {
-                gap: 0.75rem;
+
+            .instruction-text {
+                position: relative;
+                bottom: auto;
+                right: auto;
+                margin: 2rem auto 0;
+                max-width: none;
+            }
+
+            .mouse-effect {
+                display: none;
             }
         }
-        
+
         @media (max-width: 480px) {
-            .home-container {
-                padding: 2rem 1.5rem;
+            .welcome-text {
+                font-size: 0.9rem;
             }
         }
     </style>
     
-    <div class="home-container">
-        <h1 class="home-logo">Connect</h1>
-        <div class="subtitle">Skip the small talk</div>
-        
-        <div class="description">
-            Discover meaningful connections based on deep personality compatibility, shared values, and lifestyle alignment. Our advanced neural network analyzes thousands of compatibility factors to help you find people who truly understand you.
+    <!-- Include required libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+
+    <div class="page-content">
+        <div class="mouse-effect">
+            <div class="circle"></div>
+            <div class="circle-follow"></div>
         </div>
         
-        <div class="action-buttons">
-            <a href="/register" class="btn-home-primary">
-                Create Account & Start Matching
-            </a>
-            <a href="/login" class="btn-home-secondary">
-                Login to Existing Account
-            </a>
+        <h1 class="main-txt">Connect</h1>
+        
+        <div class="welcome-text hide-text">
+            <div>Welcome, choose your agent to begin</div>
+            <div class="login-link">
+                <a href="/login">(or click here to sign in if you already have an account)</a>
+            </div>
         </div>
         
-        <div class="privacy-note">
-            <strong>Your Privacy is Our Priority</strong>
-            We use enterprise-grade security and advanced AI filtering to protect your data while helping you find genuinely compatible matches through intelligent analysis.
+        <div class="instruction-text hide-text">
+            <strong>Click any floating sphere</strong><br>
+            to start your journey!
         </div>
+        
+        <canvas class="webgl" id="webgl"></canvas>
     </div>
+
+    <script>
+        // Scene setup
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(
+            25,
+            window.innerWidth / window.innerHeight,
+            0.1,
+            1000
+        );
+        camera.position.z = 24;
+
+        const renderer = new THREE.WebGLRenderer({
+            canvas: document.querySelector("#webgl"),
+            antialias: true,
+            alpha: true
+        });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+        // Default material (visible pink/coral color like your image)
+        const defaultMaterial = new THREE.MeshPhongMaterial({ 
+            color: "#ffb3ba",
+            shininess: 30,
+            transparent: false
+        });
+
+        // Hover material (darker pink)
+        const hoverMaterial = new THREE.MeshPhongMaterial({ 
+            color: "#ff9aa2",
+            shininess: 50,
+            transparent: false
+        });
+
+        // Click material (bright pink)
+        const clickMaterial = new THREE.MeshPhongMaterial({ 
+            color: "#ff6b7d",
+            shininess: 100,
+            transparent: false
+        });
+
+        const radii = [
+            1, 0.6, 0.8, 0.4, 0.9, 0.7, 0.9, 0.3, 0.2, 0.5, 0.6, 0.4, 0.5, 0.6, 0.7, 0.3, 0.4, 0.8, 0.7, 0.5,
+            0.4, 0.6, 0.35, 0.38, 0.9, 0.3, 0.6, 0.4, 0.2, 0.35, 0.5, 0.15, 0.2, 0.25, 0.4, 0.8, 0.76, 0.8, 1, 0.8,
+            0.7, 0.8, 0.3, 0.5, 0.6, 0.55, 0.42, 0.75, 0.66, 0.6, 0.7, 0.5, 0.6, 0.35, 0.35, 0.35, 0.8, 0.6, 0.7, 0.8,
+            0.4, 0.89, 0.3, 0.3, 0.6, 0.4, 0.2, 0.52, 0.5, 0.15, 0.2, 0.25, 0.4, 0.8, 0.76, 0.8, 1, 0.8, 0.7, 0.8,
+            0.3, 0.5, 0.6, 0.8, 0.7, 0.75, 0.66, 0.6, 0.7, 0.5, 0.6, 0.35, 0.35, 0.35, 0.8, 0.6, 0.7, 0.8, 0.4, 0.89, 0.3
+        ];
+
+        const positions = [
+            { x: 0, y: 0, z: 0 }, { x: 1.2, y: 0.9, z: -0.5 }, { x: 1.8, y: -0.3, z: 0 }, { x: -1, y: -1, z: 0 },
+            { x: -1, y: 1.62, z: 0 }, { x: -1.65, y: 0, z: -0.4 }, { x: -2.13, y: -1.54, z: -0.4 }, { x: 0.8, y: 0.94, z: 0.3 },
+            { x: 0.5, y: -1, z: 1.2 }, { x: -0.16, y: -1.2, z: 0.9 }, { x: 1.5, y: 1.2, z: 0.8 }, { x: 0.5, y: -1.58, z: 1.4 },
+            { x: -1.5, y: 1, z: 1.15 }, { x: -1.5, y: -1.5, z: 0.99 }, { x: -1.5, y: -1.5, z: -1.9 }, { x: 1.85, y: 0.8, z: 0.05 },
+            { x: 1.5, y: -1.2, z: -0.75 }, { x: 0.9, y: -1.62, z: 0.22 }, { x: 0.45, y: 2, z: 0.65 }, { x: 2.5, y: 1.22, z: -0.2 },
+            { x: 2.35, y: 0.7, z: 0.55 }, { x: -1.8, y: -0.35, z: 0.85 }, { x: -1.02, y: 0.2, z: 0.9 }, { x: 0.2, y: 1, z: 1 },
+            { x: -2.88, y: 0.7, z: 1 }, { x: -2, y: -0.95, z: 1.5 }, { x: -2.3, y: 2.4, z: -0.1 }, { x: -2.5, y: 1.9, z: 1.2 },
+            { x: -1.8, y: 0.37, z: 1.2 }, { x: -2.4, y: 1.42, z: 0.05 }, { x: -2.72, y: -0.9, z: 1.1 }, { x: -1.8, y: -1.34, z: 1.67 },
+            { x: -1.6, y: 1.66, z: 0.91 }, { x: -2.8, y: 1.58, z: 1.69 }, { x: -2.97, y: 2.3, z: 0.65 }, { x: 1.1, y: -0.2, z: -1.45 },
+            { x: -4, y: 1.78, z: 0.38 }, { x: 0.12, y: 1.4, z: -1.29 }, { x: -1.64, y: 1.4, z: -1.79 }, { x: -3.5, y: -0.58, z: 0.1 },
+            { x: -0.1, y: -1, z: -2 }, { x: -4.5, y: 0.55, z: -0.5 }, { x: -3.87, y: 0, z: 1 }, { x: -4.6, y: -0.1, z: 0.65 },
+            { x: -3, y: 1.5, z: -0.7 }, { x: -0.5, y: 0.2, z: -1.5 }, { x: -1.3, y: -0.45, z: -1.5 }, { x: -3.35, y: 0.25, z: -1.5 },
+            { x: -4.76, y: -1.26, z: 0.4 }, { x: -4.32, y: 0.85, z: 1.4 }, { x: -3.5, y: -1.82, z: 0.9 }, { x: -3.6, y: -0.6, z: 1.46 },
+            { x: -4.55, y: -1.5, z: 1.63 }, { x: -3.8, y: -1.15, z: 2.1 }, { x: -2.9, y: -0.25, z: 1.86 }, { x: -2.2, y: -0.4, z: 1.86 },
+            { x: -5.1, y: -0.24, z: 1.86 }, { x: -5.27, y: 1.24, z: 0.76 }, { x: -5.27, y: 2, z: -0.4 }, { x: -6.4, y: 0.4, z: 1 },
+            { x: -5.15, y: 0.95, z: 2 }, { x: -6.2, y: 0.5, z: -0.8 }, { x: -4, y: 0.08, z: 1.8 }, { x: 2, y: -0.95, z: 1.5 },
+            { x: 2.3, y: 2.4, z: -0.1 }, { x: 2.5, y: 1.9, z: 1.2 }, { x: 1.8, y: 0.37, z: 1.2 }, { x: 3.24, y: 0.6, z: 1.05 },
+            { x: 2.72, y: -0.9, z: 1.1 }, { x: 1.8, y: -1.34, z: 1.67 }, { x: 1.6, y: 1.99, z: 0.91 }, { x: 2.8, y: 1.58, z: 1.69 },
+            { x: 2.97, y: 2.3, z: 0.65 }, { x: -1.3, y: -0.2, z: -2.5 }, { x: 4, y: 1.78, z: 0.38 }, { x: 1.72, y: 1.4, z: -1.29 },
+            { x: 2.5, y: -1.2, z: -2 }, { x: 3.5, y: -0.58, z: 0.1 }, { x: 0.1, y: 0.4, z: -2.42 }, { x: 4.5, y: 0.55, z: -0.5 },
+            { x: 3.87, y: 0, z: 1 }, { x: 4.6, y: -0.1, z: 0.65 }, { x: 3, y: 1.5, z: -0.7 }, { x: 2.3, y: 0.6, z: -2.6 },
+            { x: 4, y: 1.5, z: -1.6 }, { x: 3.35, y: 0.25, z: -1.5 }, { x: 4.76, y: -1.26, z: 0.4 }, { x: 4.32, y: 0.85, z: 1.4 },
+            { x: 3.5, y: -1.82, z: 0.9 }, { x: 3.6, y: -0.6, z: 1.46 }, { x: 4.55, y: -1.5, z: 1.63 }, { x: 3.8, y: -1.15, z: 2.1 },
+            { x: 2.9, y: -0.25, z: 1.86 }, { x: 2.2, y: -0.4, z: 1.86 }, { x: 5.1, y: -0.24, z: 1.86 }, { x: 5.27, y: 1.24, z: 0.76 },
+            { x: 5.27, y: 2, z: -0.4 }, { x: 6.4, y: 0.4, z: 1 }, { x: 5.15, y: 0.95, z: 2 }, { x: 6.2, y: 0.5, z: -0.8 }, { x: 4, y: 0.08, z: 1.8 }
+        ];
+
+        const group = new THREE.Group();
+        const spheres = [];
+        let hoveredSphere = null;
+
+        positions.forEach((pos, index) => {
+            const radius = radii[index];
+            const geometry = new THREE.SphereGeometry(radius, 32, 32);
+            const sphere = new THREE.Mesh(geometry, defaultMaterial.clone());
+            sphere.position.set(pos.x, pos.y, pos.z);
+            sphere.userData = { 
+                originalPosition: { ...pos }, 
+                radius,
+                isHovered: false,
+                isClicked: false 
+            };
+            sphere.castShadow = true;
+            sphere.receiveShadow = true;
+            spheres.push(sphere);
+            group.add(sphere);
+        });
+
+        scene.add(group);
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 1);
+        scene.add(ambientLight);
+
+        const spotLight = new THREE.SpotLight(0xffffff, 0.52);
+        spotLight.position.set(14, 24, 30);
+        spotLight.castShadow = true;
+        scene.add(spotLight);
+
+        const directionalLight1 = new THREE.DirectionalLight(0xffffff, 0.2);
+        directionalLight1.position.set(0, -4, 0);
+        scene.add(directionalLight1);
+
+        // Mouse interaction
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        const tempVector = new THREE.Vector3();
+        const forces = new Map();
+
+        const initY = -25;
+        const revolutionRadius = 4;
+        const revolutionDuration = 2;
+        const breathingAmplitude = 0.1;
+        const breathingSpeed = 0.002;
+
+        // Initialize spheres below screen
+        spheres.forEach((sphere, i) => {
+            sphere.position.y = initY;
+        });
+
+        function initLoadingAnimation() {
+            spheres.forEach((sphere, i) => {
+                const delay = i * 0.02;
+                
+                if (typeof gsap !== 'undefined') {
+                    gsap.timeline()
+                        .to(sphere.position, {
+                            duration: revolutionDuration / 2,
+                            y: revolutionRadius,
+                            ease: "power1.out",
+                            onUpdate: function () {
+                                const progress = this.progress();
+                                sphere.position.z = sphere.userData.originalPosition.z + Math.sin(progress * Math.PI) * revolutionRadius;
+                            },
+                            delay: delay
+                        })
+                        .to(sphere.position, {
+                            duration: revolutionDuration / 2,
+                            y: initY / 5,
+                            ease: "power1.out",
+                            onUpdate: function () {
+                                const progress = this.progress();
+                                sphere.position.z = sphere.userData.originalPosition.z - Math.sin(progress * Math.PI) * revolutionRadius;
+                            }
+                        })
+                        .to(sphere.position, {
+                            duration: 0.6,
+                            x: sphere.userData.originalPosition.x,
+                            y: sphere.userData.originalPosition.y,
+                            z: sphere.userData.originalPosition.z,
+                            ease: "power1.out"
+                        });
+                }
+            });
+        }
+
+        // Call loading animation when page loads
+        window.addEventListener("load", initLoadingAnimation);
+
+        const hiddenElements = document.querySelectorAll(".hide-text");
+        const main_txt = document.querySelector(".main-txt");
+        const mouse_effect = document.querySelector(".mouse-effect");
+
+        // Initially ensure elements are hidden
+        hiddenElements.forEach((el) => {
+            el.style.opacity = "0";
+        });
+
+        // Disable mouse interaction during loading
+        let loadingComplete = false;
+        setTimeout(() => {
+            loadingComplete = true;
+            hiddenElements.forEach((el) => {
+                el.style.opacity = "1";
+            });
+            main_txt.style.opacity = "0";
+        }, (revolutionDuration + 1) * 1000);
+
+        // GSAP mouse following
+        if (typeof gsap !== 'undefined') {
+            gsap.set(".circle", { xPercent: -50, yPercent: -50 });
+            gsap.set(".circle-follow", { xPercent: -50, yPercent: -50 });
+
+            let xTo = gsap.quickTo(".circle", "x", { duration: 0.6, ease: "power3" }),
+                yTo = gsap.quickTo(".circle", "y", { duration: 0.6, ease: "power3" });
+
+            let xFollow = gsap.quickTo(".circle-follow", "x", { duration: 0.6, ease: "power3" }),
+                yFollow = gsap.quickTo(".circle-follow", "y", { duration: 0.6, ease: "power3" });
+
+            // Mouse move handler
+            function onMouseMove(event) {
+                if (!loadingComplete) return;
+
+                xTo(event.clientX);
+                yTo(event.clientY);
+                xFollow(event.clientX);
+                yFollow(event.clientY);
+
+                mouse_effect.style.opacity = "1";
+
+                mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+                mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+                raycaster.setFromCamera(mouse, camera);
+                const intersects = raycaster.intersectObjects(spheres);
+
+                // Reset previous hovered sphere
+                if (hoveredSphere && !intersects.find(intersect => intersect.object === hoveredSphere)) {
+                    hoveredSphere.material = defaultMaterial.clone();
+                    hoveredSphere.userData.isHovered = false;
+                    hoveredSphere = null;
+                }
+
+                if (intersects.length > 0) {
+                    const newHoveredSphere = intersects[0].object;
+                    
+                    // Only change material if not clicked
+                    if (!newHoveredSphere.userData.isClicked && newHoveredSphere !== hoveredSphere) {
+                        if (hoveredSphere) {
+                            hoveredSphere.material = defaultMaterial.clone();
+                            hoveredSphere.userData.isHovered = false;
+                        }
+                        
+                        newHoveredSphere.material = hoverMaterial.clone();
+                        newHoveredSphere.userData.isHovered = true;
+                        hoveredSphere = newHoveredSphere;
+                    }
+
+                    // Apply force for movement
+                    const force = new THREE.Vector3();
+                    force.subVectors(intersects[0].point, newHoveredSphere.position)
+                         .normalize()
+                         .multiplyScalar(0.2);
+                    forces.set(newHoveredSphere.uuid, force);
+                }
+            }
+
+            window.addEventListener("mousemove", onMouseMove);
+        }
+
+        // Click handler for spheres
+        function onMouseClick(event) {
+            if (!loadingComplete) return;
+
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(spheres);
+
+            if (intersects.length > 0) {
+                const clickedSphere = intersects[0].object;
+                clickedSphere.material = clickMaterial.clone();
+                clickedSphere.userData.isClicked = true;
+                
+                // Add click animation
+                if (typeof gsap !== 'undefined') {
+                    gsap.to(clickedSphere.scale, {
+                        duration: 0.1,
+                        x: 0.8, y: 0.8, z: 0.8,
+                        ease: "power2.out",
+                        onComplete: () => {
+                            gsap.to(clickedSphere.scale, {
+                                duration: 0.2,
+                                x: 1.2, y: 1.2, z: 1.2,
+                                ease: "power2.out",
+                                onComplete: () => {
+                                    // Redirect to registration
+                                    window.location.href = '/register';
+                                }
+                            });
+                        }
+                    });
+                }
+            }
+        }
+
+        window.addEventListener("click", onMouseClick);
+
+        // Collision detection
+        function handleCollisions() {
+            for (let i = 0; i < spheres.length; i++) {
+                const sphereA = spheres[i];
+                const radiusA = sphereA.userData.radius;
+
+                for (let j = i + 1; j < spheres.length; j++) {
+                    const sphereB = spheres[j];
+                    const radiusB = sphereB.userData.radius;
+
+                    const distance = sphereA.position.distanceTo(sphereB.position);
+                    const minDistance = (radiusA + radiusB) * 1.2;
+
+                    if (distance < minDistance) {
+                        tempVector.subVectors(sphereB.position, sphereA.position);
+                        tempVector.normalize();
+
+                        const pushStrength = (minDistance - distance) * 0.4;
+                        sphereA.position.sub(tempVector.multiplyScalar(pushStrength));
+                        sphereB.position.add(tempVector.multiplyScalar(pushStrength));
+                    }
+                }
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (loadingComplete) {
+                // Breathing animation
+                const time = Date.now() * breathingSpeed;
+                spheres.forEach((sphere, i) => {
+                    const offset = i * 0.2;
+                    const breathingY = Math.sin(time + offset) * breathingAmplitude;
+                    const breathingZ = Math.cos(time + offset) * breathingAmplitude * 0.5;
+
+                    // Apply forces and update positions
+                    const force = forces.get(sphere.uuid);
+                    if (force) {
+                        sphere.position.add(force);
+                        force.multiplyScalar(0.95);
+
+                        if (force.length() < 0.01) {
+                            forces.delete(sphere.uuid);
+                        }
+                    }
+
+                    // Return to original position with breathing offset
+                    const originalPos = sphere.userData.originalPosition;
+                    tempVector.set(
+                        originalPos.x,
+                        originalPos.y + breathingY,
+                        originalPos.z + breathingZ
+                    );
+                    sphere.position.lerp(tempVector, 0.018);
+                });
+
+                handleCollisions();
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        animate();
+
+        // Add resize handler
+        window.addEventListener("resize", () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
     '''
-    return render_template_with_header("Home", content)
+    return content
+                       
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -4561,7 +4925,7 @@ def render_checkbox_options_with_limit(name: str, options: List[Tuple[str, str]]
         '''
     return html
 
-def render_step_8_content_fixed(profile: Dict) -> str:
+def render_step_8_content(profile: Dict) -> str:
     """Compatibility Preferences step with limited checkboxes"""
     return f'''
     <div style="background: #f8f9fa; border-radius: 6px; padding: 15px; margin-bottom: 25px; border-left: 4px solid #167a60;">
@@ -4604,64 +4968,64 @@ def render_step_8_content_fixed(profile: Dict) -> str:
     </div>
     
     <script>
-    function limitCheckboxSelections(changedCheckbox, groupName, maxSelections) {
-        const checkboxes = document.querySelectorAll(`input[name="${groupName}"]`);
-        const checkedBoxes = document.querySelectorAll(`input[name="${groupName}"]:checked`);
+    function limitCheckboxSelections(changedCheckbox, groupName, maxSelections) {{
+        const checkboxes = document.querySelectorAll('input[name="' + groupName + '"]');
+        const checkedBoxes = document.querySelectorAll('input[name="' + groupName + '"]:checked');
         const counter = document.getElementById('selected-count');
         
         // Update counter
-        if (counter) {
+        if (counter) {{
             counter.textContent = checkedBoxes.length;
-        }
+        }}
         
         // If we've exceeded the limit, uncheck the most recent one
-        if (checkedBoxes.length > maxSelections) {
+        if (checkedBoxes.length > maxSelections) {{
             changedCheckbox.checked = false;
             
             // Update counter again
-            const newCheckedBoxes = document.querySelectorAll(`input[name="${groupName}"]:checked`);
-            if (counter) {
+            const newCheckedBoxes = document.querySelectorAll('input[name="' + groupName + '"]:checked');
+            if (counter) {{
                 counter.textContent = newCheckedBoxes.length;
-            }
+            }}
             
             // Show warning message
             showSelectionLimitWarning(maxSelections);
             return;
-        }
+        }}
         
         // Enable/disable unchecked boxes based on limit
-        checkboxes.forEach(checkbox => {
-            if (!checkbox.checked) {
+        checkboxes.forEach(checkbox => {{
+            if (!checkbox.checked) {{
                 checkbox.disabled = checkedBoxes.length >= maxSelections;
                 // Visual feedback for disabled checkboxes
                 const parentDiv = checkbox.closest('div');
-                if (checkbox.disabled) {
+                if (checkbox.disabled) {{
                     parentDiv.style.opacity = '0.6';
                     parentDiv.style.pointerEvents = 'none';
-                } else {
+                }} else {{
                     parentDiv.style.opacity = '1';
                     parentDiv.style.pointerEvents = 'auto';
-                }
-            }
-        });
+                }}
+            }}
+        }});
         
         // Update counter color
         const counterElement = document.getElementById('red-flags-counter');
-        if (counterElement) {
-            if (checkedBoxes.length >= maxSelections) {
+        if (counterElement) {{
+            if (checkedBoxes.length >= maxSelections) {{
                 counterElement.style.color = '#167a60';
                 counterElement.style.fontWeight = '600';
-            } else {
+            }} else {{
                 counterElement.style.color = '#666';
                 counterElement.style.fontWeight = 'normal';
-            }
-        }
-    }
+            }}
+        }}
+    }}
     
-    function showSelectionLimitWarning(maxSelections) {
+    function showSelectionLimitWarning(maxSelections) {{
         // Create or update warning message
         let warning = document.getElementById('selection-warning');
-        if (!warning) {
+        if (!warning) {{
             warning = document.createElement('div');
             warning.id = 'selection-warning';
             warning.style.cssText = `
@@ -4677,44 +5041,44 @@ def render_step_8_content_fixed(profile: Dict) -> str:
             document.getElementById('red-flags-container').parentNode.appendChild(warning);
             
             // Add CSS animation
-            if (!document.getElementById('warning-animation-style')) {
+            if (!document.getElementById('warning-animation-style')) {{
                 const style = document.createElement('style');
                 style.id = 'warning-animation-style';
                 style.textContent = `
-                    @keyframes fadeInOut {
-                        0% { opacity: 0; transform: translateY(-10px); }
-                        20% { opacity: 1; transform: translateY(0); }
-                        80% { opacity: 1; transform: translateY(0); }
-                        100% { opacity: 0; transform: translateY(-10px); }
-                    }
+                    @keyframes fadeInOut {{
+                        0% {{ opacity: 0; transform: translateY(-10px); }}
+                        20% {{ opacity: 1; transform: translateY(0); }}
+                        80% {{ opacity: 1; transform: translateY(0); }}
+                        100% {{ opacity: 0; transform: translateY(-10px); }}
+                    }}
                 `;
                 document.head.appendChild(style);
-            }
-        }
+            }}
+        }}
         
-        warning.textContent = `You can only select up to ${maxSelections} red flags. Please uncheck one first.`;
+        warning.textContent = `You can only select up to ${{maxSelections}} red flags. Please uncheck one first.`;
         
         // Remove warning after animation
-        setTimeout(() => {
-            if (warning && warning.parentNode) {
+        setTimeout(() => {{
+            if (warning && warning.parentNode) {{
                 warning.parentNode.removeChild(warning);
-            }
-        }, 3000);
-    }
+            }}
+        }}, 3000);
+    }}
     
     // Initialize counters on page load
-    document.addEventListener('DOMContentLoaded', function() {
+    document.addEventListener('DOMContentLoaded', function() {{
         const redFlagsChecked = document.querySelectorAll('input[name="red_flags"]:checked');
         const counter = document.getElementById('selected-count');
-        if (counter) {
+        if (counter) {{
             counter.textContent = redFlagsChecked.length;
-        }
+        }}
         
         // Initialize disabled state for any pre-selected items
-        if (redFlagsChecked.length > 0) {
+        if (redFlagsChecked.length > 0) {{
             limitCheckboxSelections(redFlagsChecked[0], 'red_flags', 3);
-        }
-    });
+        }}
+    }});
     </script>
     '''
 
