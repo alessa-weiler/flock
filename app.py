@@ -392,7 +392,34 @@ class UserAuthSystem:
         except Exception as e:
             print(f"Error getting user by email: {e}")
             return None
-
+    def get_user_by_phone(self, phone: str):
+        """Get user by phone number"""
+        try:
+            conn = sqlite3.connect('users.db')
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                SELECT id, email, first_name, last_name, phone 
+                FROM users 
+                WHERE phone = ?
+            ''', (phone,))
+            
+            user = cursor.fetchone()
+            conn.close()
+            
+            if user:
+                return {
+                    'id': user[0],
+                    'email': user[1],
+                    'first_name': user[2],
+                    'last_name': user[3],
+                    'phone': user[4]
+                }
+            return None
+            
+        except Exception as e:
+            print(f"Error getting user by phone: {e}")
+            return None
     def save_user_profile(self, user_id: int, profile_data: Dict[str, Any]) -> bool:
         """Save user profile data"""
         try:
@@ -2844,6 +2871,10 @@ def register():
         
         # Validation
         existing_user = user_auth.get_user_by_email(email)  # You'll need to add this method
+        existing_phone_user = user_auth.get_user_by_phone(phone)  # You'll need to add this method
+        if existing_phone_user:
+            flash('Phone number already exists. Please sign in here.', 'error')
+            return redirect('/login')
         if existing_user:
             flash('Email already registered. Please login instead.', 'error')
             return redirect('/login')
