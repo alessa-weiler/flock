@@ -2317,6 +2317,31 @@ def home():
             z-index: 1000;
         }
 
+        .typewriter {
+            overflow: hidden;
+            white-space: nowrap;
+            border-right: 2px solid var(--color-emerald, #10b981);
+            animation: blink-caret 1s step-end infinite;
+        }
+
+        .typewriter-line {
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .typewriter-line.active {
+            opacity: 1;
+        }
+
+        @keyframes blink-caret {
+            from, to { 
+                border-color: transparent; 
+            }
+            50% { 
+                border-color: var(--color-emerald, #10b981); 
+            }
+        }
+
         .circle {
             position: absolute;
             background-color: var(--color-emerald);
@@ -2478,10 +2503,7 @@ def home():
         <h1 class="main-txt">Connect</h1>
         
         <div class="welcome-text hide-text">
-            <div>choose your agent to begin</div>
-            <div class="login-link">
-                <a href="/login">(or click here to sign in if you already have an account)</a>
-            </div>
+            <div class="typewriter-line">choose your agent to begin</div>
         </div>
         
         <div class="instruction-text hide-text">
@@ -2623,6 +2645,27 @@ def home():
             sphere.position.y = initY;
         });
 
+        // Typewriter function
+        function typeWriter(element, text, speed = 100) {
+            return new Promise((resolve) => {
+                element.innerHTML = '';
+                element.classList.add('active', 'typewriter');
+                
+                let i = 0;
+                function type() {
+                    if (i < text.length) {
+                        element.innerHTML += text.charAt(i);
+                        i++;
+                        setTimeout(type, speed);
+                    } else {
+                        element.classList.remove('typewriter');
+                        resolve();
+                    }
+                }
+                type();
+            });
+        }
+
         function initLoadingAnimation() {
             spheres.forEach((sphere, i) => {
                 const delay = i * 0.02;
@@ -2659,9 +2702,6 @@ def home():
             });
         }
 
-        // Call loading animation when page loads
-        window.addEventListener("load", initLoadingAnimation);
-
         const hiddenElements = document.querySelectorAll(".hide-text");
         const main_txt = document.querySelector(".main-txt");
         const mouse_effect = document.querySelector(".mouse-effect");
@@ -2673,13 +2713,34 @@ def home():
 
         // Disable mouse interaction during loading
         let loadingComplete = false;
-        setTimeout(() => {
+        
+        // Start typewriter after animation completes
+        async function startTypewriter() {
+            // Wait for the loading animation to finish
+            await new Promise(resolve => setTimeout(resolve, (revolutionDuration + 1) * 1000));
+            
             loadingComplete = true;
+            
+            // Show hidden elements
             hiddenElements.forEach((el) => {
                 el.style.opacity = "1";
             });
             main_txt.style.opacity = "0";
-        }, (revolutionDuration + 1) * 1000);
+            
+            // Start typewriter effect
+            const welcomeText = document.querySelector('.welcome-text');
+            const typewriterLine = welcomeText.querySelector('.typewriter-line');
+            
+            // Remove hide-text class and start typing
+            welcomeText.classList.remove('hide-text');
+            await typeWriter(typewriterLine, typewriterLine.textContent, 80);
+        }
+
+        // Call loading animation and typewriter when page loads
+        window.addEventListener("load", () => {
+            initLoadingAnimation();
+            startTypewriter();
+        });
 
         // GSAP mouse following
         if (typeof gsap !== 'undefined') {
@@ -2855,8 +2916,7 @@ def home():
         });
     </script>
     '''
-    return content
-                       
+    return content                    
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
