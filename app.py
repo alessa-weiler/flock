@@ -110,6 +110,11 @@ def login_required(f):
     return decorated_function
 
 # ============================================================================
+# PAGE TRANSITIONS
+# ============================================================================
+
+
+# ============================================================================
 # USER AUTHENTICATION SYSTEM
 # ============================================================================
 
@@ -1935,6 +1940,8 @@ def get_base_styles() -> str:
         background: linear-gradient(90deg, transparent, var(--color-sage), transparent);
     }
     
+    
+    
     .logo {
         font-family: 'Clash Display', 'Satoshi', sans-serif;
         font-size: 1.75rem;
@@ -2192,7 +2199,8 @@ def get_base_styles() -> str:
     '''
 
 def render_template_with_header(title: str, content: str, user_info: Dict = None, minimal_nav: bool = False) -> str:
-    """Render template with consistent header"""
+    """Enhanced render template with transition support"""
+    
     # Add notification badge for contact requests (only if logged in)
     notification_badge = ""
     user_nav = ""
@@ -2236,7 +2244,7 @@ def render_template_with_header(title: str, content: str, user_info: Dict = None
                 <a href="/register" class="btn btn-primary">Sign Up</a>
             </div>
         '''
-    
+
     return f'''
     <!DOCTYPE html>
     <html>
