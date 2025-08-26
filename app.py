@@ -2223,7 +2223,7 @@ def render_template_with_header(title: str, content: str, user_info: Dict = None
             user_nav = f'''
                 <div class="user-info">
                     <span>{user_info.get('first_name', user_info.get('email', 'User'))}</span>
-                    <a href="/edit-profile" class="btn btn-secondary" style="padding: 8px 16px; font-size: 14px;">✏️ Edit Profile</a>
+                    <a href="/edit-profile" class="btn btn-secondary" style="padding: 8px 16px; font-size: 14px;"> Edit Profile</a>
                     <a href="/contact-requests" class="btn btn-secondary">Requests{notification_badge}</a>
                     <a href="/logout" class="btn btn-secondary">Logout</a>
                 </div>
