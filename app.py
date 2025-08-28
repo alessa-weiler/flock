@@ -2453,14 +2453,261 @@ email_followup = EmailFollowupSystem(user_auth)
 # ============================================================================
 
 @app.route('/')
+@app.route('/')
 def home():
     """Landing page explaining dinner simulation concept"""
     if 'user_id' in session:
         return redirect('/dashboard')
     
     content = '''
-    # [CSS styling for responsive design]
-    
+    <style>
+        .landing-container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 2rem;
+            min-height: 80vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+
+        .hero-section {
+            background: var(--color-white);
+            border-radius: 24px;
+            padding: 4rem 3rem;
+            box-shadow: 
+                0 1px 3px rgba(0,0,0,0.04),
+                0 8px 24px rgba(0,0,0,0.08),
+                0 24px 48px rgba(0,0,0,0.04);
+            position: relative;
+            overflow: hidden;
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .hero-section::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--color-sage), transparent);
+        }
+
+        .hero-title {
+            font-family: 'Clash Display', 'Satoshi', sans-serif;
+            font-size: clamp(2.5rem, 6vw, 4rem);
+            font-weight: 600;
+            margin-bottom: 1.5rem;
+            color: var(--color-charcoal);
+            letter-spacing: -0.02em;
+            line-height: 1.1;
+        }
+
+        .hero-subtitle {
+            font-size: clamp(1.125rem, 3vw, 1.375rem);
+            line-height: 1.6;
+            color: var(--color-emerald);
+            margin-bottom: 2rem;
+            font-weight: 500;
+        }
+
+        .hero-description {
+            font-size: clamp(1rem, 2.5vw, 1.125rem);
+            line-height: 1.7;
+            color: var(--color-gray-600);
+            margin-bottom: 3rem;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 2rem;
+            margin: 3rem 0;
+            max-width: 700px;
+        }
+
+        .feature-card {
+            background: var(--color-gray-50);
+            padding: 2rem 1.5rem;
+            border-radius: 16px;
+            border-left: 4px solid var(--color-sage);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .feature-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.08);
+        }
+
+        .feature-icon {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+            display: block;
+        }
+
+        .feature-title {
+            font-family: 'Clash Display', 'Satoshi', sans-serif;
+            font-size: 1.125rem;
+            font-weight: 600;
+            color: var(--color-charcoal);
+            margin-bottom: 0.75rem;
+        }
+
+        .feature-description {
+            font-size: 0.875rem;
+            line-height: 1.5;
+            color: var(--color-gray-600);
+        }
+
+        .cta-buttons {
+            display: flex;
+            gap: 1.5rem;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-top: 2rem;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 1rem 2rem;
+            border-radius: 50px;
+            font-weight: 600;
+            font-size: 1rem;
+            text-decoration: none;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border: none;
+            cursor: pointer;
+            font-family: 'Satoshi', sans-serif;
+            white-space: nowrap;
+            min-width: 180px;
+            justify-content: center;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--color-emerald), var(--color-sage));
+            color: white;
+            box-shadow: 0 4px 16px rgba(22, 122, 96, 0.3);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(22, 122, 96, 0.4);
+        }
+
+        .btn-secondary {
+            background: var(--color-white);
+            color: var(--color-gray-600);
+            border: 1px solid var(--color-gray-600);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        }
+
+        .btn-secondary:hover {
+            background: var(--color-gray-50);
+            border-color: var(--color-emerald);
+            color: var(--color-emerald);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+        }
+
+        .testimonial {
+            background: linear-gradient(135deg, var(--color-lavender), var(--color-sage));
+            padding: 2rem;
+            border-radius: 16px;
+            margin: 3rem 0;
+            color: var(--color-charcoal);
+            font-style: italic;
+            font-size: 1.125rem;
+            line-height: 1.6;
+            position: relative;
+        }
+
+        .testimonial::before {
+            content: '"';
+            font-size: 4rem;
+            font-family: 'Clash Display', serif;
+            position: absolute;
+            top: -0.5rem;
+            left: 1rem;
+            color: var(--color-charcoal);
+            opacity: 0.3;
+        }
+
+        /* Mobile Responsive */
+        @media (max-width: 768px) {
+            .landing-container {
+                padding: 1rem;
+            }
+
+            .hero-section {
+                padding: 2.5rem 2rem;
+            }
+
+            .features-grid {
+                grid-template-columns: 1fr;
+                gap: 1.5rem;
+            }
+
+            .cta-buttons {
+                flex-direction: column;
+                align-items: center;
+                gap: 1rem;
+            }
+
+            .btn {
+                width: 100%;
+                max-width: 280px;
+            }
+
+            .testimonial {
+                padding: 1.5rem;
+                font-size: 1rem;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .hero-section {
+                padding: 2rem 1.5rem;
+            }
+
+            .feature-card {
+                padding: 1.5rem 1rem;
+            }
+        }
+
+        /* Animation for elements */
+        .hero-section {
+            animation: fadeInUp 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .feature-card {
+            animation: fadeInUp 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .feature-card:nth-child(1) { animation-delay: 0.1s; }
+        .feature-card:nth-child(2) { animation-delay: 0.2s; }
+        .feature-card:nth-child(3) { animation-delay: 0.3s; }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
+
     <div class="landing-container">
         <div class="hero-section">
             <h1 class="hero-title">Connect</h1>
@@ -2507,7 +2754,8 @@ def home():
         </div>
     </div>
     '''
-    return render_template_with_header("home", content, user_info)
+    
+    return render_template_with_header("Connect - Skip the Small Talk", content)
 
 @app.route('/choose-agent')
 def choose_agent():
