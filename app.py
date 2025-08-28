@@ -2507,13 +2507,13 @@ def home():
         </div>
     </div>
     '''
-    return content
+    return render_template_with_header("home", content, user_info)
 
 @app.route('/choose-agent')
 def choose_agent():
     """Landing page with 3D animated spheres - Mobile Responsive"""
-    if 'user_id' in session:
-        return redirect('/dashboard')
+    #if 'user_id' in session:
+    #    return redirect('/dashboard')
     
     content = '''
     <style>
@@ -3610,7 +3610,7 @@ def register():
     </div>
     '''
     
-    return content
+    return render_template_with_header("home", content)
 
 @app.route('/login', methods=['GET', 'POST'])
 def user_login():
