@@ -2454,7 +2454,7 @@ email_followup = EmailFollowupSystem(user_auth)
 
 @app.route('/')
 def home():
-    """Landing page with 3D animated spheres"""
+    """Landing page with 3D animated spheres - Mobile Responsive"""
     if 'user_id' in session:
         return redirect('/dashboard')
     
@@ -2468,6 +2468,7 @@ def home():
             overflow-x: hidden;
             margin: 0;
             padding: 0;
+            touch-action: manipulation; /* Prevents zoom on double tap */
         }
 
         .page-content {
@@ -2486,6 +2487,7 @@ def home():
             top: 0;
             left: 0;
             z-index: -1;
+            touch-action: none; /* Allows touch events for canvas */
         }
 
         .mouse-effect {
@@ -2494,6 +2496,7 @@ def home():
             top: 0px;
             left: 0px;
             z-index: 1000;
+            pointer-events: none;
         }
 
         .typewriter {
@@ -2555,10 +2558,10 @@ def home():
             left: 50%;
             transform: translate(-50%, -50%);
             font-family: "Clash Display", sans-serif;
-            font-size: clamp(80px, 10vw, 160px);
+            font-size: clamp(60px, 15vw, 160px); /* Increased minimum size for mobile */
             font-weight: 700;
             text-transform: uppercase;
-            letter-spacing: -4px;
+            letter-spacing: -2px;
             z-index: -1;
             transition: opacity 0.5s ease-in-out;
             background: linear-gradient(135deg, var(--color-emerald), var(--color-sage), var(--color-lavender));
@@ -2581,20 +2584,21 @@ def home():
 
         .welcome-text {
             position: fixed;
-            top: 10%;
+            top: 15%; /* Moved down slightly for mobile */
             left: 50%;
             transform: translateX(-50%);
             text-align: center;
             z-index: 10;
             color: var(--color-charcoal);
             font-family: "Satoshi", sans-serif;
-            font-size: 1.2rem;
+            font-size: clamp(1rem, 3vw, 1.2rem); /* Responsive font size */
             font-weight: 500;
+            padding: 0 1rem; /* Add horizontal padding */
         }
 
         .welcome-text .login-link {
-            margin-top: 0.5rem;
-            font-size: 1rem;
+            margin-top: 1rem;
+            font-size: clamp(0.9rem, 2.5vw, 1rem);
         }
 
         .welcome-text .login-link a {
@@ -2602,69 +2606,135 @@ def home():
             text-decoration: none;
             font-weight: 600;
             transition: color 0.3s ease;
+            padding: 0.5rem 1rem; /* Add touch-friendly padding */
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
         }
 
-        .welcome-text .login-link a:hover {
+        .welcome-text .login-link a:hover,
+        .welcome-text .login-link a:active {
             color: var(--color-sage);
+            background: rgba(255, 255, 255, 0.2);
         }
 
         .instruction-text {
             position: fixed;
             bottom: 2rem;
-            right: 2rem;
-            background: rgba(255, 255, 255, 0.9);
+            left: 50%; /* Center on mobile instead of right */
+            transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.95);
             backdrop-filter: blur(10px);
-            padding: 1rem 1.5rem;
-            border-radius: 16px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-            font-size: 0.875rem;
+            padding: 1.5rem 2rem;
+            border-radius: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+            font-size: clamp(0.875rem, 2.5vw, 1rem);
             color: var(--color-gray-600);
-            max-width: 200px;
+            max-width: calc(100vw - 2rem); /* Responsive width */
             text-align: center;
-            animation: pulse 2s ease-in-out infinite;
+            animation: pulse 3s ease-in-out infinite;
             z-index: 5;
+            font-weight: 500;
         }
 
         @keyframes pulse {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.05); }
+            0%, 100% { transform: translateX(-50%) scale(1); }
+            50% { transform: translateX(-50%) scale(1.02); }
         }
 
         .instruction-text::before {
             content: '✨';
             display: block;
-            font-size: 1.5rem;
-            margin-bottom: 0.5rem;
+            font-size: 2rem;
+            margin-bottom: 0.75rem;
         }
 
-        /* Responsive design */
+        /* Mobile-specific styles */
         @media (max-width: 768px) {
             .main-txt {
-                font-size: 60px;
+                font-size: clamp(48px, 12vw, 80px);
+                letter-spacing: -1px;
             }
 
             .welcome-text {
-                top: 8%;
-                font-size: 1rem;
-                padding: 0 1rem;
+                top: 12%;
+                font-size: clamp(1.1rem, 4vw, 1.3rem);
+                padding: 0 1.5rem;
+            }
+
+            .welcome-text .login-link {
+                margin-top: 1.25rem;
+            }
+
+            .welcome-text .login-link a {
+                padding: 0.75rem 1.5rem;
+                font-size: clamp(1rem, 3vw, 1.1rem);
+                border-radius: 12px;
             }
 
             .instruction-text {
-                position: relative;
-                bottom: auto;
-                right: auto;
-                margin: 2rem auto 0;
+                position: fixed;
+                bottom: 1rem;
+                left: 1rem;
+                right: 1rem;
+                transform: none;
                 max-width: none;
+                padding: 1.25rem 1.5rem;
+                font-size: 1rem;
+            }
+
+            .instruction-text::before {
+                font-size: 1.75rem;
+                margin-bottom: 0.5rem;
             }
 
             .mouse-effect {
-                display: none;
+                display: none; /* Hide mouse effects on mobile */
             }
         }
 
         @media (max-width: 480px) {
             .welcome-text {
-                font-size: 0.9rem;
+                top: 10%;
+                font-size: clamp(1.2rem, 5vw, 1.4rem);
+            }
+            
+            .main-txt {
+                font-size: clamp(40px, 14vw, 70px);
+            }
+
+            .instruction-text {
+                bottom: 0.5rem;
+                left: 0.5rem;
+                right: 0.5rem;
+                padding: 1rem 1.25rem;
+                border-radius: 16px;
+            }
+        }
+
+        /* High DPI displays */
+        @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+            .main-txt {
+                -webkit-font-smoothing: antialiased;
+                -moz-osx-font-smoothing: grayscale;
+            }
+        }
+
+        /* Landscape mobile orientation */
+        @media (max-width: 768px) and (orientation: landscape) {
+            .welcome-text {
+                top: 8%;
+                font-size: clamp(0.9rem, 3vw, 1.1rem);
+            }
+            
+            .instruction-text {
+                bottom: 0.5rem;
+                padding: 1rem 1.25rem;
+                font-size: 0.875rem;
+            }
+            
+            .main-txt {
+                font-size: clamp(36px, 10vw, 60px);
             }
         }
     </style>
@@ -2683,17 +2753,24 @@ def home():
         
         <div class="welcome-text hide-text">
             <div class="typewriter-line">choose your agent to begin</div>
+            <div class="login-link">
+                <a href="/login">Already have an account?</a>
+            </div>
         </div>
         
         <div class="instruction-text hide-text">
-            <strong>click any floating sphere</strong><br>
-            to begin shaping your agent to be simulation-ready
+            <strong>Tap any floating sphere</strong><br>
+            to begin shaping your agent
         </div>
         
         <canvas class="webgl" id="webgl"></canvas>
     </div>
 
     <script>
+        // Detect if we're on a mobile device
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+
         // Scene setup
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(
@@ -2702,39 +2779,39 @@ def home():
             0.1,
             1000
         );
-        camera.position.z = 24;
+        camera.position.z = isMobile ? 28 : 24; // Pull back slightly on mobile
 
         const renderer = new THREE.WebGLRenderer({
             canvas: document.querySelector("#webgl"),
             antialias: true,
-            alpha: true
+            alpha: true,
+            powerPreference: "high-performance" // Better for mobile
         });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(window.devicePixelRatio);
-        renderer.shadowMap.enabled = true;
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Limit pixel ratio for performance
+        renderer.shadowMap.enabled = !isMobile; // Disable shadows on mobile for performance
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-        // Default material (visible pink/coral color like your image)
+        // Materials - simpler on mobile for performance
         const defaultMaterial = new THREE.MeshPhongMaterial({ 
             color: "#ffb3ba",
-            shininess: 30,
+            shininess: isMobile ? 10 : 30,
             transparent: false
         });
 
-        // Hover material (darker pink)
         const hoverMaterial = new THREE.MeshPhongMaterial({ 
             color: "#ff9aa2",
-            shininess: 50,
+            shininess: isMobile ? 20 : 50,
             transparent: false
         });
 
-        // Click material (bright pink)
         const clickMaterial = new THREE.MeshPhongMaterial({ 
             color: "#ff6b7d",
-            shininess: 100,
+            shininess: isMobile ? 30 : 100,
             transparent: false
         });
 
+        // Sphere data - same as before
         const radii = [
             1, 0.6, 0.8, 0.4, 0.9, 0.7, 0.9, 0.3, 0.2, 0.5, 0.6, 0.4, 0.5, 0.6, 0.7, 0.3, 0.4, 0.8, 0.7, 0.5,
             0.4, 0.6, 0.35, 0.38, 0.9, 0.3, 0.6, 0.4, 0.2, 0.35, 0.5, 0.15, 0.2, 0.25, 0.4, 0.8, 0.76, 0.8, 1, 0.8,
@@ -2776,8 +2853,8 @@ def home():
         let hoveredSphere = null;
 
         positions.forEach((pos, index) => {
-            const radius = radii[index];
-            const geometry = new THREE.SphereGeometry(radius, 32, 32);
+            const radius = radii[index] * (isMobile ? 1.2 : 1); // Slightly larger spheres on mobile for easier tapping
+            const geometry = new THREE.SphereGeometry(radius, isMobile ? 16 : 32, isMobile ? 16 : 32); // Lower poly on mobile
             const sphere = new THREE.Mesh(geometry, defaultMaterial.clone());
             sphere.position.set(pos.x, pos.y, pos.z);
             sphere.userData = { 
@@ -2786,28 +2863,37 @@ def home():
                 isHovered: false,
                 isClicked: false 
             };
-            sphere.castShadow = true;
-            sphere.receiveShadow = true;
+            if (!isMobile) {
+                sphere.castShadow = true;
+                sphere.receiveShadow = true;
+            }
             spheres.push(sphere);
             group.add(sphere);
         });
 
         scene.add(group);
 
-        // Lighting
-        const ambientLight = new THREE.AmbientLight(0xffffff, 1);
+        // Lighting - simplified for mobile
+        const ambientLight = new THREE.AmbientLight(0xffffff, isMobile ? 1.2 : 1);
         scene.add(ambientLight);
 
-        const spotLight = new THREE.SpotLight(0xffffff, 0.52);
-        spotLight.position.set(14, 24, 30);
-        spotLight.castShadow = true;
-        scene.add(spotLight);
+        if (!isMobile) {
+            const spotLight = new THREE.SpotLight(0xffffff, 0.52);
+            spotLight.position.set(14, 24, 30);
+            spotLight.castShadow = true;
+            scene.add(spotLight);
 
-        const directionalLight1 = new THREE.DirectionalLight(0xffffff, 0.2);
-        directionalLight1.position.set(0, -4, 0);
-        scene.add(directionalLight1);
+            const directionalLight1 = new THREE.DirectionalLight(0xffffff, 0.2);
+            directionalLight1.position.set(0, -4, 0);
+            scene.add(directionalLight1);
+        } else {
+            // Simpler lighting for mobile
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+            directionalLight.position.set(10, 10, 5);
+            scene.add(directionalLight);
+        }
 
-        // Mouse interaction
+        // Mouse/Touch interaction
         const raycaster = new THREE.Raycaster();
         const mouse = new THREE.Vector2();
         const tempVector = new THREE.Vector3();
@@ -2816,7 +2902,7 @@ def home():
         const initY = -25;
         const revolutionRadius = 4;
         const revolutionDuration = 2;
-        const breathingAmplitude = 0.1;
+        const breathingAmplitude = isMobile ? 0.05 : 0.1; // Reduce animation intensity on mobile
         const breathingSpeed = 0.002;
 
         // Initialize spheres below screen
@@ -2847,7 +2933,7 @@ def home():
 
         function initLoadingAnimation() {
             spheres.forEach((sphere, i) => {
-                const delay = i * 0.02;
+                const delay = i * (isMobile ? 0.015 : 0.02); // Faster on mobile
                 
                 if (typeof gsap !== 'undefined') {
                     gsap.timeline()
@@ -2890,7 +2976,7 @@ def home():
             el.style.opacity = "0";
         });
 
-        // Disable mouse interaction during loading
+        // Disable interaction during loading
         let loadingComplete = false;
         
         // Start typewriter after animation completes
@@ -2921,8 +3007,8 @@ def home():
             startTypewriter();
         });
 
-        // GSAP mouse following
-        if (typeof gsap !== 'undefined') {
+        // Enhanced mouse/touch following with mobile support
+        if (typeof gsap !== 'undefined' && !isMobile) {
             gsap.set(".circle", { xPercent: -50, yPercent: -50 });
             gsap.set(".circle-follow", { xPercent: -50, yPercent: -50 });
 
@@ -2932,7 +3018,7 @@ def home():
             let xFollow = gsap.quickTo(".circle-follow", "x", { duration: 0.6, ease: "power3" }),
                 yFollow = gsap.quickTo(".circle-follow", "y", { duration: 0.6, ease: "power3" });
 
-            // Mouse move handler
+            // Mouse move handler for desktop
             function onMouseMove(event) {
                 if (!loadingComplete) return;
 
@@ -2943,23 +3029,33 @@ def home():
 
                 mouse_effect.style.opacity = "1";
 
-                mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-                mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+                handleInteraction(event.clientX, event.clientY, false);
+            }
 
-                raycaster.setFromCamera(mouse, camera);
-                const intersects = raycaster.intersectObjects(spheres);
+            window.addEventListener("mousemove", onMouseMove);
+        }
 
-                // Reset previous hovered sphere
+        // Universal interaction handler for both mouse and touch
+        function handleInteraction(clientX, clientY, isClick) {
+            if (!loadingComplete) return;
+
+            mouse.x = (clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(spheres);
+
+            if (!isClick) {
+                // Hover logic for desktop
                 if (hoveredSphere && !intersects.find(intersect => intersect.object === hoveredSphere)) {
                     hoveredSphere.material = defaultMaterial.clone();
                     hoveredSphere.userData.isHovered = false;
                     hoveredSphere = null;
                 }
 
-                if (intersects.length > 0) {
+                if (intersects.length > 0 && !isMobile) {
                     const newHoveredSphere = intersects[0].object;
                     
-                    // Only change material if not clicked
                     if (!newHoveredSphere.userData.isClicked && newHoveredSphere !== hoveredSphere) {
                         if (hoveredSphere) {
                             hoveredSphere.material = defaultMaterial.clone();
@@ -2971,59 +3067,111 @@ def home():
                         hoveredSphere = newHoveredSphere;
                     }
 
-                    // Apply force for movement
+                    // Apply force for movement (reduced on mobile)
                     const force = new THREE.Vector3();
                     force.subVectors(intersects[0].point, newHoveredSphere.position)
                          .normalize()
-                         .multiplyScalar(0.2);
+                         .multiplyScalar(isMobile ? 0.1 : 0.2);
                     forces.set(newHoveredSphere.uuid, force);
                 }
-            }
-
-            window.addEventListener("mousemove", onMouseMove);
-        }
-
-        // Click handler for spheres
-        function onMouseClick(event) {
-            if (!loadingComplete) return;
-
-            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-
-            raycaster.setFromCamera(mouse, camera);
-            const intersects = raycaster.intersectObjects(spheres);
-
-            if (intersects.length > 0) {
-                const clickedSphere = intersects[0].object;
-                clickedSphere.material = clickMaterial.clone();
-                clickedSphere.userData.isClicked = true;
-                
-                // Add click animation
-                if (typeof gsap !== 'undefined') {
-                    gsap.to(clickedSphere.scale, {
-                        duration: 0.1,
-                        x: 0.8, y: 0.8, z: 0.8,
-                        ease: "power2.out",
-                        onComplete: () => {
-                            gsap.to(clickedSphere.scale, {
-                                duration: 0.2,
-                                x: 1.2, y: 1.2, z: 1.2,
-                                ease: "power2.out",
-                                onComplete: () => {
-                                    // Redirect to registration
-                                    window.location.href = '/register';
-                                }
-                            });
-                        }
-                    });
+            } else {
+                // Click/tap logic
+                if (intersects.length > 0) {
+                    const clickedSphere = intersects[0].object;
+                    clickedSphere.material = clickMaterial.clone();
+                    clickedSphere.userData.isClicked = true;
+                    
+                    // Add click animation with haptic feedback on mobile
+                    if (isTouch && navigator.vibrate) {
+                        navigator.vibrate(50); // Short vibration for tactile feedback
+                    }
+                    
+                    if (typeof gsap !== 'undefined') {
+                        gsap.to(clickedSphere.scale, {
+                            duration: 0.1,
+                            x: 0.8, y: 0.8, z: 0.8,
+                            ease: "power2.out",
+                            onComplete: () => {
+                                gsap.to(clickedSphere.scale, {
+                                    duration: 0.2,
+                                    x: 1.2, y: 1.2, z: 1.2,
+                                    ease: "power2.out",
+                                    onComplete: () => {
+                                        // Add a slight delay for mobile to show the animation
+                                        setTimeout(() => {
+                                            window.location.href = '/register';
+                                        }, isMobile ? 200 : 0);
+                                    }
+                                });
+                            }
+                        });
+                    } else {
+                        // Fallback without GSAP
+                        setTimeout(() => {
+                            window.location.href = '/register';
+                        }, 300);
+                    }
                 }
             }
         }
 
-        window.addEventListener("click", onMouseClick);
+        // Touch event handlers for mobile
+        if (isTouch) {
+            let touchStartTime = 0;
+            let lastTouchX = 0;
+            let lastTouchY = 0;
 
-        // Collision detection
+            function onTouchStart(event) {
+                if (!loadingComplete) return;
+                event.preventDefault(); // Prevent default touch behavior
+                
+                touchStartTime = Date.now();
+                const touch = event.touches[0];
+                lastTouchX = touch.clientX;
+                lastTouchY = touch.clientY;
+            }
+
+            function onTouchMove(event) {
+                if (!loadingComplete) return;
+                event.preventDefault();
+                
+                const touch = event.touches[0];
+                handleInteraction(touch.clientX, touch.clientY, false);
+            }
+
+            function onTouchEnd(event) {
+                if (!loadingComplete) return;
+                event.preventDefault();
+                
+                const touchDuration = Date.now() - touchStartTime;
+                
+                // Only register as tap if it's a short touch (not a drag)
+                if (touchDuration < 300) {
+                    handleInteraction(lastTouchX, lastTouchY, true);
+                }
+            }
+
+            // Add touch event listeners
+            renderer.domElement.addEventListener('touchstart', onTouchStart, { passive: false });
+            renderer.domElement.addEventListener('touchmove', onTouchMove, { passive: false });
+            renderer.domElement.addEventListener('touchend', onTouchEnd, { passive: false });
+        }
+
+        // Mouse event handlers for desktop
+        if (!isMobile) {
+            function onMouseClick(event) {
+                if (!loadingComplete) return;
+                handleInteraction(event.clientX, event.clientY, true);
+            }
+
+            window.addEventListener("click", onMouseClick);
+        }
+
+        // Collision detection with performance optimization
         function handleCollisions() {
+            // Reduce collision checks on mobile for performance
+            const collisionPrecision = isMobile ? 0.6 : 1.0;
+            
             for (let i = 0; i < spheres.length; i++) {
                 const sphereA = spheres[i];
                 const radiusA = sphereA.userData.radius;
@@ -3033,13 +3181,13 @@ def home():
                     const radiusB = sphereB.userData.radius;
 
                     const distance = sphereA.position.distanceTo(sphereB.position);
-                    const minDistance = (radiusA + radiusB) * 1.2;
+                    const minDistance = (radiusA + radiusB) * 1.2 * collisionPrecision;
 
                     if (distance < minDistance) {
                         tempVector.subVectors(sphereB.position, sphereA.position);
                         tempVector.normalize();
 
-                        const pushStrength = (minDistance - distance) * 0.4;
+                        const pushStrength = (minDistance - distance) * (isMobile ? 0.2 : 0.4);
                         sphereA.position.sub(tempVector.multiplyScalar(pushStrength));
                         sphereB.position.add(tempVector.multiplyScalar(pushStrength));
                     }
@@ -3047,11 +3195,22 @@ def home():
             }
         }
 
-        function animate() {
+        // Optimized animation loop
+        let lastFrameTime = 0;
+        const targetFPS = isMobile ? 30 : 60; // Lower FPS on mobile for battery life
+        const frameInterval = 1000 / targetFPS;
+
+        function animate(currentTime) {
             requestAnimationFrame(animate);
 
+            // Frame rate limiting for mobile
+            if (currentTime - lastFrameTime < frameInterval) {
+                return;
+            }
+            lastFrameTime = currentTime;
+
             if (loadingComplete) {
-                // Breathing animation
+                // Breathing animation with reduced intensity on mobile
                 const time = Date.now() * breathingSpeed;
                 spheres.forEach((sphere, i) => {
                     const offset = i * 0.2;
@@ -3062,7 +3221,7 @@ def home():
                     const force = forces.get(sphere.uuid);
                     if (force) {
                         sphere.position.add(force);
-                        force.multiplyScalar(0.95);
+                        force.multiplyScalar(isMobile ? 0.98 : 0.95);
 
                         if (force.length() < 0.01) {
                             forces.delete(sphere.uuid);
@@ -3076,10 +3235,13 @@ def home():
                         originalPos.y + breathingY,
                         originalPos.z + breathingZ
                     );
-                    sphere.position.lerp(tempVector, 0.018);
+                    sphere.position.lerp(tempVector, isMobile ? 0.015 : 0.018);
                 });
 
-                handleCollisions();
+                // Reduce collision frequency on mobile
+                if (!isMobile || Math.random() < 0.5) {
+                    handleCollisions();
+                }
             }
 
             renderer.render(scene, camera);
@@ -3087,15 +3249,60 @@ def home():
 
         animate();
 
-        // Add resize handler
-        window.addEventListener("resize", () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
+        // Enhanced resize handler with mobile considerations
+        function onWindowResize() {
+            const newWidth = window.innerWidth;
+            const newHeight = window.innerHeight;
+            
+            camera.aspect = newWidth / newHeight;
             camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        });
+            
+            renderer.setSize(newWidth, newHeight);
+            
+            // Adjust camera position based on screen size
+            if (newWidth < 768) {
+                camera.position.z = 30;
+            } else if (newWidth < 1024) {
+                camera.position.z = 26;
+            } else {
+                camera.position.z = 24;
+            }
+        }
+
+        window.addEventListener("resize", onWindowResize);
+
+        // Optimize for mobile browsers
+        if (isMobile) {
+            // Reduce quality on low-end devices
+            if (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2) {
+                renderer.setPixelRatio(1);
+            }
+            
+            // Handle orientation changes
+            window.addEventListener("orientationchange", () => {
+                setTimeout(() => {
+                    onWindowResize();
+                }, 100);
+            });
+            
+            // Pause animation when page is hidden to save battery
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden) {
+                    renderer.setAnimationLoop(null);
+                } else {
+                    renderer.setAnimationLoop(animate);
+                }
+            });
+        }
+
+        // Preload next page for smoother transitions
+        const linkPreloader = document.createElement('link');
+        linkPreloader.rel = 'prefetch';
+        linkPreloader.href = '/register';
+        document.head.appendChild(linkPreloader);
     </script>
     '''
-    return content                    
+    return content
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -6631,44 +6838,231 @@ def complete_onboarding_enhanced():
         
         return redirect('/processing')
     
-    # Show completion page (enhanced version)
+    # Show completion page with dashboard aesthetic
     content = '''
-    <div class="container" style="max-width: 600px; text-align: center;">
-        <h1 style="font-size: 32px; font-weight: 600; color: #28a745; margin-bottom: 16px;">Profile Complete!</h1>
-        <div style="font-size: 18px; color: #666; margin-bottom: 30px;">Simulation ready</div>
+    <style>
+        @import url("https://fonts.googleapis.com/css2?family=Clash+Display:wght@200..700&display=swap");
+        @import url("https://fonts.googleapis.com/css2?family=Satoshi:wght@300..900&display=swap");
         
+        .completion-container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 2rem;
+            text-align: center;
+        }
+        
+        .completion-header {
+            text-align: center;
+            margin-bottom: 3rem;
+            padding: 2.5rem 2rem;
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .completion-title {
+            font-family: "Clash Display", sans-serif;
+            font-size: 2.5rem;
+            font-weight: 500;
+            margin: 0 0 1rem 0;
+            color: #2d2d2d;
+            letter-spacing: -0.02em;
+            background: linear-gradient(135deg, #6b9b99, #ff9500);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .completion-subtitle {
+            font-family: "Satoshi", sans-serif;
+            font-size: 1.125rem;
+            line-height: 1.6;
+            color: #6b9b99;
+            margin: 0 0 1rem 0;
+        }
+        
+        .block-list-section {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(20px);
+            border-radius: 24px;
+            padding: 2.5rem;
+            margin: 2rem 0;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            text-align: left;
+            transition: all 0.3s ease;
+        }
+        
+        .block-list-section:hover {
+            transform: translateY(-4px);
+            border-color: rgba(107, 155, 153, 0.3);
+        }
+        
+        .block-list-title {
+            font-family: "Clash Display", sans-serif;
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #2d2d2d;
+            margin-bottom: 1rem;
+        }
+        
+        .block-list-description {
+            font-family: "Satoshi", sans-serif;
+            font-size: 0.875rem;
+            color: #6b9b99;
+            margin-bottom: 1.5rem;
+            line-height: 1.6;
+        }
+        
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+        
+        .form-label {
+            font-family: "Satoshi", sans-serif;
+            display: block;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 0.75rem;
+            opacity: 0.8;
+            font-weight: 600;
+            color: #2d2d2d;
+        }
+        
+        .form-textarea {
+            font-family: "Satoshi", sans-serif;
+            width: 100%;
+            padding: 1rem 1.25rem;
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 16px;
+            color: #2d2d2d;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            box-sizing: border-box;
+            resize: vertical;
+            min-height: 80px;
+        }
+        
+        .form-textarea:focus {
+            outline: none;
+            border-color: rgba(107, 155, 153, 0.3);
+            background: rgba(255, 255, 255, 0.9);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(107, 155, 153, 0.15);
+        }
+        
+        .form-textarea::placeholder {
+            color: rgba(45, 45, 45, 0.5);
+            font-family: "Satoshi", sans-serif;
+        }
+        
+        .launch-button {
+            font-family: "Satoshi", sans-serif;
+            background: linear-gradient(135deg, #6b9b99, #ff9500);
+            color: white;
+            border: none;
+            padding: 1.25rem 2.5rem;
+            border-radius: 50px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 4px 16px rgba(107, 155, 153, 0.3);
+            margin-top: 2rem;
+        }
+        
+        .launch-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(107, 155, 153, 0.4);
+        }
+        
+        .launch-button:active {
+            transform: translateY(-1px);
+        }
+        
+        @media (max-width: 768px) {
+            .completion-container {
+                padding: 1rem;
+            }
+            
+            .completion-header {
+                padding: 1.5rem 1rem;
+            }
+            
+            .completion-title {
+                font-size: 1.75rem;
+            }
+            
+            .block-list-section {
+                padding: 1.5rem;
+            }
+            
+            .launch-button {
+                width: 100%;
+                padding: 1.5rem 2rem;
+            }
+        }
+        
+        /* Animation for form elements */
+        .form-group {
+            animation: slideInUp 0.5s ease forwards;
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        
+        .form-group:nth-child(1) { animation-delay: 0.1s; }
+        .form-group:nth-child(2) { animation-delay: 0.2s; }
+        .form-group:nth-child(3) { animation-delay: 0.3s; }
+        
+        @keyframes slideInUp {
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
+    
+    <div class="completion-container">
+        <div class="completion-header">
+            <h1 class="completion-title">Profile Complete!</h1>
+            <p class="completion-subtitle">Your agent is ready to find amazing connections</p>
+        </div>
         
         <form method="POST">
-            <div style="background: #f8f9fa; padding: 30px; border-radius: 8px; margin: 30px 0; text-align: left;">
-                <h3 style="font-size: 18px; font-weight: 600; color: black; margin-bottom: 15px;">Block List (Optional)</h3>
-                <div style="font-size: 14px; color: #666; margin-bottom: 20px;">
-                    Exclude specific people from matching. This data is kept completely private and helps improve AI accuracy.
-                </div>
+            <div class="block-list-section">
+                <h3 class="block-list-title">Privacy Controls</h3>
+                <p class="block-list-description">
+                    Optionally exclude specific people from matching. This data is kept completely private and helps improve matching accuracy.
+                </p>
                 
-                <div style="margin-bottom: 20px;">
-                    <label style="display: block; color: black; margin-bottom: 8px; font-weight: 500; font-size: 14px;">Email addresses to exclude</label>
+                <div class="form-group">
+                    <label class="form-label">Email addresses to exclude</label>
                     <textarea name="blocked_emails"
                               placeholder="Enter email addresses separated by commas"
-                              style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; height: 60px; resize: vertical; background: #f4e8ee;"></textarea>
+                              class="form-textarea"></textarea>
                 </div>
                 
-                <div style="margin-bottom: 20px;">
-                    <label style="display: block; color: black; margin-bottom: 8px; font-weight: 500; font-size: 14px;">Names to exclude</label>
+                <div class="form-group">
+                    <label class="form-label">Names to exclude</label>
                     <textarea name="blocked_names"
                               placeholder="Enter full names separated by commas"
-                              style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; height: 60px; resize: vertical; background: #f4e8ee;"></textarea>
+                              class="form-textarea"></textarea>
                 </div>
                 
-                <div style="margin-bottom: 20px;">
-                    <label style="display: block; color: black; margin-bottom: 8px; font-weight: 500; font-size: 14px;">Phone numbers to exclude</label>
+                <div class="form-group">
+                    <label class="form-label">Phone numbers to exclude</label>
                     <textarea name="blocked_phones"
                               placeholder="Enter phone numbers separated by commas"
-                              style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; height: 60px; resize: vertical; background: #f4e8ee;"></textarea>
+                              class="form-textarea"></textarea>
                 </div>
             </div>
             
-            <button type="submit" style="background: #f4e8ee; color: #f4e8ee; border: none; padding: 18px 36px; border-radius: 8px; font-size: 18px; font-weight: 600; cursor: pointer; margin-top: 20px;">
-                 Launch Simulation & Get Matches
+            <button type="submit" class="launch-button">
+                Launch Agent & Find Matches
             </button>
         </form>
     </div>
