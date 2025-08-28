@@ -3402,7 +3402,7 @@ def choose_agent():
                                     onComplete: () => {
                                         // Add a slight delay for mobile to show the animation
                                         setTimeout(() => {
-                                            window.location.href = '/register';
+                                            window.location.href = '/profile-setup';
                                         }, isMobile ? 200 : 0);
                                     }
                                 });
@@ -3411,7 +3411,7 @@ def choose_agent():
                     } else {
                         // Fallback without GSAP
                         setTimeout(() => {
-                            window.location.href = '/register';
+                            window.location.href = '/profile-setup';
                         }, 300);
                     }
                 }
@@ -3601,7 +3601,7 @@ def choose_agent():
         // Preload next page for smoother transitions
         const linkPreloader = document.createElement('link');
         linkPreloader.rel = 'prefetch';
-        linkPreloader.href = '/register';
+        linkPreloader.href = '/profile-setup';
         document.head.appendChild(linkPreloader);
     </script>
     '''
@@ -5706,7 +5706,7 @@ def render_new_profile_dashboard() -> str:
         </div>
         
         <div style="text-align: center;">
-            <a href="/profile-setup" class="btn btn-primary" style="padding: 16px 32px; font-size: 16px;">
+            <a href="/choose-agent" class="btn btn-primary" style="padding: 16px 32px; font-size: 16px;">
                 Create Your Profile (5 minutes)
             </a>
         </div>
