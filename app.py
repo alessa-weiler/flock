@@ -7,6 +7,7 @@ os.environ['MKL_NUM_THREADS'] = '1'
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
+
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -2451,7 +2452,7 @@ email_followup = EmailFollowupSystem(user_auth)
 # ROUTES - AUTHENTICATION
 # ============================================================================
 
-@app.route('/')
+
 @app.route('/')
 def home():
     """Landing page explaining dinner simulation concept"""
@@ -2754,28 +2755,25 @@ def home():
     </div>
     '''
     
-    return render_template_with_header("Connect - Skip the Small Talk", content)
+    return render_template_with_header("home", content)
 
-@app.route('/choose-agent')
-# Mobile-Responsive Three.js Components Fix
-# Apply these changes to your Flask routes
-
-# 1. Fix for /choose-agent route - Add mobile touch controls
 @app.route('/choose-agent')
 def choose_agent():
-    """Landing page with mobile-responsive 3D spheres"""
+    """Landing page with 3D animated spheres - Mobile Responsive"""
+    #if 'user_id' in session:
+    #    return redirect('/dashboard')
+    
     content = '''
     <style>
         @import url("https://fonts.googleapis.com/css2?family=Clash+Display:wght@200..700&display=swap");
         @import url("https://fonts.googleapis.com/css2?family=Satoshi:wght@300..900&display=swap");
 
-        /* MOBILE-FIRST RESPONSIVE DESIGN */
+        /* Override any existing styles for full page layout */
         html, body {
             overflow-x: hidden;
             margin: 0;
             padding: 0;
-            touch-action: manipulation;
-            -webkit-text-size-adjust: 100%;
+            touch-action: manipulation; /* Prevents zoom on double tap */
         }
 
         .page-content {
@@ -2783,15 +2781,80 @@ def choose_agent():
             min-height: 100vh;
             background: transparent;
         }
+        
+        /* Override any existing container backgrounds */
+        body, .container, .main-content, .content {
+            background: transparent !important;
+        }
 
         canvas {
             position: fixed;
             top: 0;
             left: 0;
             z-index: -1;
-            touch-action: none;
-            width: 100vw !important;
-            height: 100vh !important;
+            touch-action: none; /* Allows touch events for canvas */
+        }
+
+        .mouse-effect {
+            opacity: 0;
+            position: fixed;
+            top: 0px;
+            left: 0px;
+            z-index: 1000;
+            pointer-events: none;
+        }
+
+        .typewriter {
+            overflow: hidden;
+            white-space: nowrap;
+            border-right: 2px solid var(--color-emerald, #10b981);
+            animation: blink-caret 1s step-end infinite;
+        }
+
+        .typewriter-line {
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .typewriter-line.active {
+            opacity: 1;
+        }
+
+        @keyframes blink-caret {
+            from, to { 
+                border-color: transparent; 
+            }
+            50% { 
+                border-color: var(--color-emerald, #10b981); 
+            }
+        }
+
+        .circle {
+            position: absolute;
+            background-color: var(--color-emerald);
+            width: 10px;
+            height: 10px;
+            left: 0px;
+            top: 0px;
+            border-radius: 100%;
+            z-index: 111111;
+            user-select: none;
+            pointer-events: none;
+            transition: all 0.05s;
+        }
+
+        .circle-follow {
+            position: absolute;
+            border: 1px solid var(--color-emerald);
+            width: 40px;
+            height: 40px;
+            left: 0px;
+            top: 0px;
+            border-radius: 100%;
+            z-index: 111111;
+            user-select: none;
+            pointer-events: none;
+            transition: all 0.1s;
         }
 
         .main-txt {
@@ -2800,7 +2863,7 @@ def choose_agent():
             left: 50%;
             transform: translate(-50%, -50%);
             font-family: "Clash Display", sans-serif;
-            font-size: clamp(48px, 12vw, 160px); /* Better mobile scaling */
+            font-size: clamp(60px, 15vw, 160px); /* Increased minimum size for mobile */
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: -2px;
@@ -2812,31 +2875,58 @@ def choose_agent():
             -webkit-text-fill-color: transparent;
             background-clip: text;
             animation: gradientShift 4s ease-in-out infinite;
-            text-align: center;
-            width: 90vw; /* Ensure text stays within viewport */
-            max-width: 800px;
+        }
+
+        @keyframes gradientShift {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+
+        .hide-text {
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out;
         }
 
         .welcome-text {
             position: fixed;
-            top: 15%;
+            top: 15%; /* Moved down slightly for mobile */
             left: 50%;
             transform: translateX(-50%);
             text-align: center;
             z-index: 10;
             color: var(--color-charcoal);
             font-family: "Satoshi", sans-serif;
-            font-size: clamp(1rem, 3.5vw, 1.2rem);
+            font-size: clamp(1rem, 3vw, 1.2rem); /* Responsive font size */
             font-weight: 500;
-            padding: 0 1rem;
-            width: 90vw;
-            max-width: 600px;
+            padding: 0 1rem; /* Add horizontal padding */
+        }
+
+        .welcome-text .login-link {
+            margin-top: 1rem;
+            font-size: clamp(0.9rem, 2.5vw, 1rem);
+        }
+
+        .welcome-text .login-link a {
+            color: var(--color-emerald);
+            text-decoration: none;
+            font-weight: 600;
+            transition: color 0.3s ease;
+            padding: 0.5rem 1rem; /* Add touch-friendly padding */
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        .welcome-text .login-link a:hover,
+        .welcome-text .login-link a:active {
+            color: var(--color-sage);
+            background: rgba(255, 255, 255, 0.2);
         }
 
         .instruction-text {
             position: fixed;
             bottom: 2rem;
-            left: 50%;
+            left: 50%; /* Center on mobile instead of right */
             transform: translateX(-50%);
             background: rgba(255, 255, 255, 0.95);
             backdrop-filter: blur(10px);
@@ -2845,12 +2935,16 @@ def choose_agent():
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
             font-size: clamp(0.875rem, 2.5vw, 1rem);
             color: var(--color-gray-600);
-            width: calc(100vw - 2rem);
-            max-width: 400px;
+            max-width: calc(100vw - 2rem); /* Responsive width */
             text-align: center;
             animation: pulse 3s ease-in-out infinite;
             z-index: 5;
             font-weight: 500;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: translateX(-50%) scale(1); }
+            50% { transform: translateX(-50%) scale(1.02); }
         }
 
         .instruction-text::before {
@@ -2860,37 +2954,78 @@ def choose_agent():
             margin-bottom: 0.75rem;
         }
 
-        /* MOBILE-SPECIFIC STYLES */
+        /* Mobile-specific styles */
         @media (max-width: 768px) {
             .main-txt {
-                font-size: clamp(36px, 10vw, 64px);
+                font-size: clamp(48px, 12vw, 80px);
                 letter-spacing: -1px;
-                line-height: 0.9;
             }
 
             .welcome-text {
                 top: 12%;
                 font-size: clamp(1.1rem, 4vw, 1.3rem);
+                padding: 0 1.5rem;
+            }
+
+            .welcome-text .login-link {
+                margin-top: 1.25rem;
+            }
+
+            .welcome-text .login-link a {
+                padding: 0.75rem 1.5rem;
+                font-size: clamp(1rem, 3vw, 1.1rem);
+                border-radius: 12px;
             }
 
             .instruction-text {
+                position: fixed;
                 bottom: 1rem;
                 left: 1rem;
                 right: 1rem;
                 transform: none;
-                width: calc(100vw - 2rem);
+                max-width: none;
                 padding: 1.25rem 1.5rem;
                 font-size: 1rem;
-                border-radius: 16px;
             }
 
             .instruction-text::before {
                 font-size: 1.75rem;
                 margin-bottom: 0.5rem;
             }
+
+            .mouse-effect {
+                display: none; /* Hide mouse effects on mobile */
+            }
         }
 
-        /* LANDSCAPE MOBILE */
+        @media (max-width: 480px) {
+            .welcome-text {
+                top: 10%;
+                font-size: clamp(1.2rem, 5vw, 1.4rem);
+            }
+            
+            .main-txt {
+                font-size: clamp(40px, 14vw, 70px);
+            }
+
+            .instruction-text {
+                bottom: 0.5rem;
+                left: 0.5rem;
+                right: 0.5rem;
+                padding: 1rem 1.25rem;
+                border-radius: 16px;
+            }
+        }
+
+        /* High DPI displays */
+        @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+            .main-txt {
+                -webkit-font-smoothing: antialiased;
+                -moz-osx-font-smoothing: grayscale;
+            }
+        }
+
+        /* Landscape mobile orientation */
         @media (max-width: 768px) and (orientation: landscape) {
             .welcome-text {
                 top: 8%;
@@ -2904,39 +3039,26 @@ def choose_agent():
             }
             
             .main-txt {
-                font-size: clamp(28px, 8vw, 48px);
-            }
-        }
-
-        /* TOUCH FEEDBACK */
-        .touch-feedback {
-            position: fixed;
-            width: 60px;
-            height: 60px;
-            border-radius: 50%;
-            background: radial-gradient(circle, rgba(22, 122, 96, 0.3), transparent);
-            pointer-events: none;
-            z-index: 1000;
-            transform: translate(-50%, -50%) scale(0);
-            animation: touchRipple 0.6s ease-out;
-        }
-
-        @keyframes touchRipple {
-            to {
-                transform: translate(-50%, -50%) scale(2);
-                opacity: 0;
+                font-size: clamp(36px, 10vw, 60px);
             }
         }
     </style>
     
+    <!-- Include required libraries -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
 
     <div class="page-content">
+        <div class="mouse-effect">
+            <div class="circle"></div>
+            <div class="circle-follow"></div>
+        </div>
+        
         <h1 class="main-txt">Connect</h1>
         
         <div class="welcome-text hide-text">
             <div class="typewriter-line">choose your agent to begin</div>
+            
         </div>
         
         <div class="instruction-text hide-text">
@@ -2948,11 +3070,11 @@ def choose_agent():
     </div>
 
     <script>
-        // MOBILE DETECTION AND OPTIMIZATION
+        // Detect if we're on a mobile device
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
         const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
-        // RESPONSIVE SCENE SETUP
+        // Scene setup
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(
             25,
@@ -2960,41 +3082,20 @@ def choose_agent():
             0.1,
             1000
         );
-        
-        // MOBILE CAMERA POSITIONING
-        if (window.innerWidth < 768) {
-            camera.position.z = 32; // Further back on mobile
-        } else if (window.innerWidth < 1024) {
-            camera.position.z = 28; // Medium distance on tablets
-        } else {
-            camera.position.z = 24; // Close on desktop
-        }
+        camera.position.z = isMobile ? 28 : 24; // Pull back slightly on mobile
 
         const renderer = new THREE.WebGLRenderer({
             canvas: document.querySelector("#webgl"),
-            antialias: !isMobile, // Disable antialiasing on mobile for performance
+            antialias: true,
             alpha: true,
-            powerPreference: "high-performance"
+            powerPreference: "high-performance" // Better for mobile
         });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Limit pixel ratio for performance
+        renderer.shadowMap.enabled = !isMobile; // Disable shadows on mobile for performance
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-        // RESPONSIVE RENDERER SETUP
-        function setupRenderer() {
-            const width = window.innerWidth;
-            const height = window.innerHeight;
-            const pixelRatio = Math.min(window.devicePixelRatio, isMobile ? 2 : 3);
-            
-            renderer.setSize(width, height);
-            renderer.setPixelRatio(pixelRatio);
-            renderer.shadowMap.enabled = !isMobile;
-            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-            
-            camera.aspect = width / height;
-            camera.updateProjectionMatrix();
-        }
-
-        setupRenderer();
-
-        // MOBILE-OPTIMIZED MATERIALS
+        // Materials - simpler on mobile for performance
         const defaultMaterial = new THREE.MeshPhongMaterial({ 
             color: "#ffb3ba",
             shininess: isMobile ? 10 : 30,
@@ -3013,29 +3114,50 @@ def choose_agent():
             transparent: false
         });
 
-        // SPHERE DATA (unchanged)
+        // Sphere data - same as before
         const radii = [
             1, 0.6, 0.8, 0.4, 0.9, 0.7, 0.9, 0.3, 0.2, 0.5, 0.6, 0.4, 0.5, 0.6, 0.7, 0.3, 0.4, 0.8, 0.7, 0.5,
-            // ... (keeping all original radii)
+            0.4, 0.6, 0.35, 0.38, 0.9, 0.3, 0.6, 0.4, 0.2, 0.35, 0.5, 0.15, 0.2, 0.25, 0.4, 0.8, 0.76, 0.8, 1, 0.8,
+            0.7, 0.8, 0.3, 0.5, 0.6, 0.55, 0.42, 0.75, 0.66, 0.6, 0.7, 0.5, 0.6, 0.35, 0.35, 0.35, 0.8, 0.6, 0.7, 0.8,
+            0.4, 0.89, 0.3, 0.3, 0.6, 0.4, 0.2, 0.52, 0.5, 0.15, 0.2, 0.25, 0.4, 0.8, 0.76, 0.8, 1, 0.8, 0.7, 0.8,
+            0.3, 0.5, 0.6, 0.8, 0.7, 0.75, 0.66, 0.6, 0.7, 0.5, 0.6, 0.35, 0.35, 0.35, 0.8, 0.6, 0.7, 0.8, 0.4, 0.89, 0.3
         ];
 
         const positions = [
-            { x: 0, y: 0, z: 0 }, { x: 1.2, y: 0.9, z: -0.5 }, { x: 1.8, y: -0.3, z: 0 },
-            // ... (keeping all original positions)
+            { x: 0, y: 0, z: 0 }, { x: 1.2, y: 0.9, z: -0.5 }, { x: 1.8, y: -0.3, z: 0 }, { x: -1, y: -1, z: 0 },
+            { x: -1, y: 1.62, z: 0 }, { x: -1.65, y: 0, z: -0.4 }, { x: -2.13, y: -1.54, z: -0.4 }, { x: 0.8, y: 0.94, z: 0.3 },
+            { x: 0.5, y: -1, z: 1.2 }, { x: -0.16, y: -1.2, z: 0.9 }, { x: 1.5, y: 1.2, z: 0.8 }, { x: 0.5, y: -1.58, z: 1.4 },
+            { x: -1.5, y: 1, z: 1.15 }, { x: -1.5, y: -1.5, z: 0.99 }, { x: -1.5, y: -1.5, z: -1.9 }, { x: 1.85, y: 0.8, z: 0.05 },
+            { x: 1.5, y: -1.2, z: -0.75 }, { x: 0.9, y: -1.62, z: 0.22 }, { x: 0.45, y: 2, z: 0.65 }, { x: 2.5, y: 1.22, z: -0.2 },
+            { x: 2.35, y: 0.7, z: 0.55 }, { x: -1.8, y: -0.35, z: 0.85 }, { x: -1.02, y: 0.2, z: 0.9 }, { x: 0.2, y: 1, z: 1 },
+            { x: -2.88, y: 0.7, z: 1 }, { x: -2, y: -0.95, z: 1.5 }, { x: -2.3, y: 2.4, z: -0.1 }, { x: -2.5, y: 1.9, z: 1.2 },
+            { x: -1.8, y: 0.37, z: 1.2 }, { x: -2.4, y: 1.42, z: 0.05 }, { x: -2.72, y: -0.9, z: 1.1 }, { x: -1.8, y: -1.34, z: 1.67 },
+            { x: -1.6, y: 1.66, z: 0.91 }, { x: -2.8, y: 1.58, z: 1.69 }, { x: -2.97, y: 2.3, z: 0.65 }, { x: 1.1, y: -0.2, z: -1.45 },
+            { x: -4, y: 1.78, z: 0.38 }, { x: 0.12, y: 1.4, z: -1.29 }, { x: -1.64, y: 1.4, z: -1.79 }, { x: -3.5, y: -0.58, z: 0.1 },
+            { x: -0.1, y: -1, z: -2 }, { x: -4.5, y: 0.55, z: -0.5 }, { x: -3.87, y: 0, z: 1 }, { x: -4.6, y: -0.1, z: 0.65 },
+            { x: -3, y: 1.5, z: -0.7 }, { x: -0.5, y: 0.2, z: -1.5 }, { x: -1.3, y: -0.45, z: -1.5 }, { x: -3.35, y: 0.25, z: -1.5 },
+            { x: -4.76, y: -1.26, z: 0.4 }, { x: -4.32, y: 0.85, z: 1.4 }, { x: -3.5, y: -1.82, z: 0.9 }, { x: -3.6, y: -0.6, z: 1.46 },
+            { x: -4.55, y: -1.5, z: 1.63 }, { x: -3.8, y: -1.15, z: 2.1 }, { x: -2.9, y: -0.25, z: 1.86 }, { x: -2.2, y: -0.4, z: 1.86 },
+            { x: -5.1, y: -0.24, z: 1.86 }, { x: -5.27, y: 1.24, z: 0.76 }, { x: -5.27, y: 2, z: -0.4 }, { x: -6.4, y: 0.4, z: 1 },
+            { x: -5.15, y: 0.95, z: 2 }, { x: -6.2, y: 0.5, z: -0.8 }, { x: -4, y: 0.08, z: 1.8 }, { x: 2, y: -0.95, z: 1.5 },
+            { x: 2.3, y: 2.4, z: -0.1 }, { x: 2.5, y: 1.9, z: 1.2 }, { x: 1.8, y: 0.37, z: 1.2 }, { x: 3.24, y: 0.6, z: 1.05 },
+            { x: 2.72, y: -0.9, z: 1.1 }, { x: 1.8, y: -1.34, z: 1.67 }, { x: 1.6, y: 1.99, z: 0.91 }, { x: 2.8, y: 1.58, z: 1.69 },
+            { x: 2.97, y: 2.3, z: 0.65 }, { x: -1.3, y: -0.2, z: -2.5 }, { x: 4, y: 1.78, z: 0.38 }, { x: 1.72, y: 1.4, z: -1.29 },
+            { x: 2.5, y: -1.2, z: -2 }, { x: 3.5, y: -0.58, z: 0.1 }, { x: 0.1, y: 0.4, z: -2.42 }, { x: 4.5, y: 0.55, z: -0.5 },
+            { x: 3.87, y: 0, z: 1 }, { x: 4.6, y: -0.1, z: 0.65 }, { x: 3, y: 1.5, z: -0.7 }, { x: 2.3, y: 0.6, z: -2.6 },
+            { x: 4, y: 1.5, z: -1.6 }, { x: 3.35, y: 0.25, z: -1.5 }, { x: 4.76, y: -1.26, z: 0.4 }, { x: 4.32, y: 0.85, z: 1.4 },
+            { x: 3.5, y: -1.82, z: 0.9 }, { x: 3.6, y: -0.6, z: 1.46 }, { x: 4.55, y: -1.5, z: 1.63 }, { x: 3.8, y: -1.15, z: 2.1 },
+            { x: 2.9, y: -0.25, z: 1.86 }, { x: 2.2, y: -0.4, z: 1.86 }, { x: 5.1, y: -0.24, z: 1.86 }, { x: 5.27, y: 1.24, z: 0.76 },
+            { x: 5.27, y: 2, z: -0.4 }, { x: 6.4, y: 0.4, z: 1 }, { x: 5.15, y: 0.95, z: 2 }, { x: 6.2, y: 0.5, z: -0.8 }, { x: 4, y: 0.08, z: 1.8 }
         ];
 
-        // CREATE SPHERES WITH MOBILE OPTIMIZATION
         const group = new THREE.Group();
         const spheres = [];
         let hoveredSphere = null;
 
         positions.forEach((pos, index) => {
-            const radius = radii[index] * (isMobile ? 1.4 : 1); // 40% larger on mobile
-            const geometry = new THREE.SphereGeometry(
-                radius, 
-                isMobile ? 12 : 32,  // Lower poly count on mobile
-                isMobile ? 12 : 32
-            );
+            const radius = radii[index] * (isMobile ? 1.2 : 1); // Slightly larger spheres on mobile for easier tapping
+            const geometry = new THREE.SphereGeometry(radius, isMobile ? 16 : 32, isMobile ? 16 : 32); // Lower poly on mobile
             const sphere = new THREE.Mesh(geometry, defaultMaterial.clone());
             sphere.position.set(pos.x, pos.y, pos.z);
             sphere.userData = { 
@@ -3044,20 +3166,18 @@ def choose_agent():
                 isHovered: false,
                 isClicked: false 
             };
-            
             if (!isMobile) {
                 sphere.castShadow = true;
                 sphere.receiveShadow = true;
             }
-            
             spheres.push(sphere);
             group.add(sphere);
         });
 
         scene.add(group);
 
-        // MOBILE-OPTIMIZED LIGHTING
-        const ambientLight = new THREE.AmbientLight(0xffffff, isMobile ? 1.4 : 1);
+        // Lighting - simplified for mobile
+        const ambientLight = new THREE.AmbientLight(0xffffff, isMobile ? 1.2 : 1);
         scene.add(ambientLight);
 
         if (!isMobile) {
@@ -3070,93 +3190,173 @@ def choose_agent():
             directionalLight1.position.set(0, -4, 0);
             scene.add(directionalLight1);
         } else {
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.6);
+            // Simpler lighting for mobile
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
             directionalLight.position.set(10, 10, 5);
             scene.add(directionalLight);
         }
 
-        // TOUCH INTERACTION SYSTEM
+        // Mouse/Touch interaction
         const raycaster = new THREE.Raycaster();
         const mouse = new THREE.Vector2();
+        const tempVector = new THREE.Vector3();
         const forces = new Map();
-        
-        // Increase raycaster threshold for mobile
-        raycaster.params.Points.threshold = isMobile ? 0.5 : 0.1;
 
-        function createTouchFeedback(x, y) {
-            const feedback = document.createElement('div');
-            feedback.className = 'touch-feedback';
-            feedback.style.left = x + 'px';
-            feedback.style.top = y + 'px';
-            document.body.appendChild(feedback);
-            
-            setTimeout(() => {
-                document.body.removeChild(feedback);
-            }, 600);
+        const initY = -25;
+        const revolutionRadius = 4;
+        const revolutionDuration = 2;
+        const breathingAmplitude = isMobile ? 0.05 : 0.1; // Reduce animation intensity on mobile
+        const breathingSpeed = 0.002;
+
+        // Initialize spheres below screen
+        spheres.forEach((sphere, i) => {
+            sphere.position.y = initY;
+        });
+
+        // Typewriter function
+        function typeWriter(element, text, speed = 100) {
+            return new Promise((resolve) => {
+                element.innerHTML = '';
+                element.classList.add('active', 'typewriter');
+                
+                let i = 0;
+                function type() {
+                    if (i < text.length) {
+                        element.innerHTML += text.charAt(i);
+                        i++;
+                        setTimeout(type, speed);
+                    } else {
+                        element.classList.remove('typewriter');
+                        resolve();
+                    }
+                }
+                type();
+            });
         }
 
-        // UNIVERSAL INTERACTION HANDLER
-        function handleInteraction(clientX, clientY, isClick = false) {
+        function initLoadingAnimation() {
+            spheres.forEach((sphere, i) => {
+                const delay = i * (isMobile ? 0.015 : 0.02); // Faster on mobile
+                
+                if (typeof gsap !== 'undefined') {
+                    gsap.timeline()
+                        .to(sphere.position, {
+                            duration: revolutionDuration / 2,
+                            y: revolutionRadius,
+                            ease: "power1.out",
+                            onUpdate: function () {
+                                const progress = this.progress();
+                                sphere.position.z = sphere.userData.originalPosition.z + Math.sin(progress * Math.PI) * revolutionRadius;
+                            },
+                            delay: delay
+                        })
+                        .to(sphere.position, {
+                            duration: revolutionDuration / 2,
+                            y: initY / 5,
+                            ease: "power1.out",
+                            onUpdate: function () {
+                                const progress = this.progress();
+                                sphere.position.z = sphere.userData.originalPosition.z - Math.sin(progress * Math.PI) * revolutionRadius;
+                            }
+                        })
+                        .to(sphere.position, {
+                            duration: 0.6,
+                            x: sphere.userData.originalPosition.x,
+                            y: sphere.userData.originalPosition.y,
+                            z: sphere.userData.originalPosition.z,
+                            ease: "power1.out"
+                        });
+                }
+            });
+        }
+
+        const hiddenElements = document.querySelectorAll(".hide-text");
+        const main_txt = document.querySelector(".main-txt");
+        const mouse_effect = document.querySelector(".mouse-effect");
+
+        // Initially ensure elements are hidden
+        hiddenElements.forEach((el) => {
+            el.style.opacity = "0";
+        });
+
+        // Disable interaction during loading
+        let loadingComplete = false;
+        
+        // Start typewriter after animation completes
+        async function startTypewriter() {
+            // Wait for the loading animation to finish
+            await new Promise(resolve => setTimeout(resolve, (revolutionDuration + 1) * 1000));
+            
+            loadingComplete = true;
+            
+            // Show hidden elements
+            hiddenElements.forEach((el) => {
+                el.style.opacity = "1";
+            });
+            main_txt.style.opacity = "0";
+            
+            // Start typewriter effect
+            const welcomeText = document.querySelector('.welcome-text');
+            const typewriterLine = welcomeText.querySelector('.typewriter-line');
+            
+            // Remove hide-text class and start typing
+            welcomeText.classList.remove('hide-text');
+            await typeWriter(typewriterLine, typewriterLine.textContent, 80);
+        }
+
+        // Call loading animation and typewriter when page loads
+        window.addEventListener("load", () => {
+            initLoadingAnimation();
+            startTypewriter();
+        });
+
+        // Enhanced mouse/touch following with mobile support
+        if (typeof gsap !== 'undefined' && !isMobile) {
+            gsap.set(".circle", { xPercent: -50, yPercent: -50 });
+            gsap.set(".circle-follow", { xPercent: -50, yPercent: -50 });
+
+            let xTo = gsap.quickTo(".circle", "x", { duration: 0.6, ease: "power3" }),
+                yTo = gsap.quickTo(".circle", "y", { duration: 0.6, ease: "power3" });
+
+            let xFollow = gsap.quickTo(".circle-follow", "x", { duration: 0.6, ease: "power3" }),
+                yFollow = gsap.quickTo(".circle-follow", "y", { duration: 0.6, ease: "power3" });
+
+            // Mouse move handler for desktop
+            function onMouseMove(event) {
+                if (!loadingComplete) return;
+
+                xTo(event.clientX);
+                yTo(event.clientY);
+                xFollow(event.clientX);
+                yFollow(event.clientY);
+
+                mouse_effect.style.opacity = "1";
+
+                handleInteraction(event.clientX, event.clientY, false);
+            }
+
+            window.addEventListener("mousemove", onMouseMove);
+        }
+
+        // Universal interaction handler for both mouse and touch
+        function handleInteraction(clientX, clientY, isClick) {
             if (!loadingComplete) return;
 
-            // Convert screen coordinates to normalized device coordinates
             mouse.x = (clientX / window.innerWidth) * 2 - 1;
             mouse.y = -(clientY / window.innerHeight) * 2 + 1;
 
             raycaster.setFromCamera(mouse, camera);
             const intersects = raycaster.intersectObjects(spheres);
 
-            if (isClick && intersects.length > 0) {
-                const clickedSphere = intersects[0].object;
-                
-                // Visual feedback
-                clickedSphere.material = clickMaterial.clone();
-                clickedSphere.userData.isClicked = true;
-                
-                // Haptic feedback on mobile
-                if (isTouch && navigator.vibrate) {
-                    navigator.vibrate(50);
-                }
-                
-                // Touch visual feedback
-                createTouchFeedback(clientX, clientY);
-                
-                // Animation and navigation
-                if (typeof gsap !== 'undefined') {
-                    gsap.to(clickedSphere.scale, {
-                        duration: 0.1,
-                        x: 0.7, y: 0.7, z: 0.7,
-                        ease: "power2.out",
-                        onComplete: () => {
-                            gsap.to(clickedSphere.scale, {
-                                duration: 0.3,
-                                x: 1.3, y: 1.3, z: 1.3,
-                                ease: "power2.out",
-                                onComplete: () => {
-                                    setTimeout(() => {
-                                        window.location.href = '/profile-setup';
-                                    }, 200);
-                                }
-                            });
-                        }
-                    });
-                } else {
-                    setTimeout(() => {
-                        window.location.href = '/profile-setup';
-                    }, 300);
-                }
-                return;
-            }
-
-            // Hover logic for desktop only
-            if (!isMobile && !isClick) {
+            if (!isClick) {
+                // Hover logic for desktop
                 if (hoveredSphere && !intersects.find(intersect => intersect.object === hoveredSphere)) {
                     hoveredSphere.material = defaultMaterial.clone();
                     hoveredSphere.userData.isHovered = false;
                     hoveredSphere = null;
                 }
 
-                if (intersects.length > 0) {
+                if (intersects.length > 0 && !isMobile) {
                     const newHoveredSphere = intersects[0].object;
                     
                     if (!newHoveredSphere.userData.isClicked && newHoveredSphere !== hoveredSphere) {
@@ -3169,71 +3369,190 @@ def choose_agent():
                         newHoveredSphere.userData.isHovered = true;
                         hoveredSphere = newHoveredSphere;
                     }
+
+                    // Apply force for movement (reduced on mobile)
+                    const force = new THREE.Vector3();
+                    force.subVectors(intersects[0].point, newHoveredSphere.position)
+                         .normalize()
+                         .multiplyScalar(isMobile ? 0.1 : 0.2);
+                    forces.set(newHoveredSphere.uuid, force);
+                }
+            } else {
+                // Click/tap logic
+                if (intersects.length > 0) {
+                    const clickedSphere = intersects[0].object;
+                    clickedSphere.material = clickMaterial.clone();
+                    clickedSphere.userData.isClicked = true;
+                    
+                    // Add click animation with haptic feedback on mobile
+                    if (isTouch && navigator.vibrate) {
+                        navigator.vibrate(50); // Short vibration for tactile feedback
+                    }
+                    
+                    if (typeof gsap !== 'undefined') {
+                        gsap.to(clickedSphere.scale, {
+                            duration: 0.1,
+                            x: 0.8, y: 0.8, z: 0.8,
+                            ease: "power2.out",
+                            onComplete: () => {
+                                gsap.to(clickedSphere.scale, {
+                                    duration: 0.2,
+                                    x: 1.2, y: 1.2, z: 1.2,
+                                    ease: "power2.out",
+                                    onComplete: () => {
+                                        // Add a slight delay for mobile to show the animation
+                                        setTimeout(() => {
+                                            window.location.href = '/profile-setup';
+                                        }, isMobile ? 200 : 0);
+                                    }
+                                });
+                            }
+                        });
+                    } else {
+                        // Fallback without GSAP
+                        setTimeout(() => {
+                            window.location.href = '/profile-setup';
+                        }, 300);
+                    }
                 }
             }
         }
 
-        // TOUCH EVENT HANDLERS
-        let touchStartTime = 0;
-        let touchStartPos = { x: 0, y: 0 };
-
-        function onTouchStart(event) {
-            if (!loadingComplete) return;
-            event.preventDefault();
-            
-            touchStartTime = Date.now();
-            const touch = event.touches[0];
-            touchStartPos.x = touch.clientX;
-            touchStartPos.y = touch.clientY;
-        }
-
-        function onTouchMove(event) {
-            if (!loadingComplete) return;
-            event.preventDefault();
-            
-            const touch = event.touches[0];
-            const deltaX = Math.abs(touch.clientX - touchStartPos.x);
-            const deltaY = Math.abs(touch.clientY - touchStartPos.y);
-            
-            // If moved too much, it's not a tap
-            if (deltaX > 30 || deltaY > 30) {
-                touchStartTime = 0;
-            }
-        }
-
-        function onTouchEnd(event) {
-            if (!loadingComplete) return;
-            event.preventDefault();
-            
-            const touchDuration = Date.now() - touchStartTime;
-            
-            if (touchDuration > 0 && touchDuration < 500) {
-                handleInteraction(touchStartPos.x, touchStartPos.y, true);
-            }
-        }
-
-        // MOUSE EVENT HANDLERS (Desktop)
-        function onMouseClick(event) {
-            if (!loadingComplete || isMobile) return;
-            handleInteraction(event.clientX, event.clientY, true);
-        }
-
-        function onMouseMove(event) {
-            if (!loadingComplete || isMobile) return;
-            handleInteraction(event.clientX, event.clientY, false);
-        }
-
-        // EVENT LISTENERS
+        // Touch event handlers for mobile
         if (isTouch) {
+            let touchStartTime = 0;
+            let lastTouchX = 0;
+            let lastTouchY = 0;
+
+            function onTouchStart(event) {
+                if (!loadingComplete) return;
+                event.preventDefault(); // Prevent default touch behavior
+                
+                touchStartTime = Date.now();
+                const touch = event.touches[0];
+                lastTouchX = touch.clientX;
+                lastTouchY = touch.clientY;
+            }
+
+            function onTouchMove(event) {
+                if (!loadingComplete) return;
+                event.preventDefault();
+                
+                const touch = event.touches[0];
+                handleInteraction(touch.clientX, touch.clientY, false);
+            }
+
+            function onTouchEnd(event) {
+                if (!loadingComplete) return;
+                event.preventDefault();
+                
+                const touchDuration = Date.now() - touchStartTime;
+                
+                // Only register as tap if it's a short touch (not a drag)
+                if (touchDuration < 300) {
+                    handleInteraction(lastTouchX, lastTouchY, true);
+                }
+            }
+
+            // Add touch event listeners
             renderer.domElement.addEventListener('touchstart', onTouchStart, { passive: false });
             renderer.domElement.addEventListener('touchmove', onTouchMove, { passive: false });
             renderer.domElement.addEventListener('touchend', onTouchEnd, { passive: false });
-        } else {
-            window.addEventListener("click", onMouseClick);
-            window.addEventListener("mousemove", onMouseMove);
         }
 
-        // RESPONSIVE WINDOW RESIZE
+        // Mouse event handlers for desktop
+        if (!isMobile) {
+            function onMouseClick(event) {
+                if (!loadingComplete) return;
+                handleInteraction(event.clientX, event.clientY, true);
+            }
+
+            window.addEventListener("click", onMouseClick);
+        }
+
+        // Collision detection with performance optimization
+        function handleCollisions() {
+            // Reduce collision checks on mobile for performance
+            const collisionPrecision = isMobile ? 0.6 : 1.0;
+            
+            for (let i = 0; i < spheres.length; i++) {
+                const sphereA = spheres[i];
+                const radiusA = sphereA.userData.radius;
+
+                for (let j = i + 1; j < spheres.length; j++) {
+                    const sphereB = spheres[j];
+                    const radiusB = sphereB.userData.radius;
+
+                    const distance = sphereA.position.distanceTo(sphereB.position);
+                    const minDistance = (radiusA + radiusB) * 1.2 * collisionPrecision;
+
+                    if (distance < minDistance) {
+                        tempVector.subVectors(sphereB.position, sphereA.position);
+                        tempVector.normalize();
+
+                        const pushStrength = (minDistance - distance) * (isMobile ? 0.2 : 0.4);
+                        sphereA.position.sub(tempVector.multiplyScalar(pushStrength));
+                        sphereB.position.add(tempVector.multiplyScalar(pushStrength));
+                    }
+                }
+            }
+        }
+
+        // Optimized animation loop
+        let lastFrameTime = 0;
+        const targetFPS = isMobile ? 30 : 60; // Lower FPS on mobile for battery life
+        const frameInterval = 1000 / targetFPS;
+
+        function animate(currentTime) {
+            requestAnimationFrame(animate);
+
+            // Frame rate limiting for mobile
+            if (currentTime - lastFrameTime < frameInterval) {
+                return;
+            }
+            lastFrameTime = currentTime;
+
+            if (loadingComplete) {
+                // Breathing animation with reduced intensity on mobile
+                const time = Date.now() * breathingSpeed;
+                spheres.forEach((sphere, i) => {
+                    const offset = i * 0.2;
+                    const breathingY = Math.sin(time + offset) * breathingAmplitude;
+                    const breathingZ = Math.cos(time + offset) * breathingAmplitude * 0.5;
+
+                    // Apply forces and update positions
+                    const force = forces.get(sphere.uuid);
+                    if (force) {
+                        sphere.position.add(force);
+                        force.multiplyScalar(isMobile ? 0.98 : 0.95);
+
+                        if (force.length() < 0.01) {
+                            forces.delete(sphere.uuid);
+                        }
+                    }
+
+                    // Return to original position with breathing offset
+                    const originalPos = sphere.userData.originalPosition;
+                    tempVector.set(
+                        originalPos.x,
+                        originalPos.y + breathingY,
+                        originalPos.z + breathingZ
+                    );
+                    sphere.position.lerp(tempVector, isMobile ? 0.015 : 0.018);
+                });
+
+                // Reduce collision frequency on mobile
+                if (!isMobile || Math.random() < 0.5) {
+                    handleCollisions();
+                }
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        animate();
+
+        // Enhanced resize handler with mobile considerations
         function onWindowResize() {
             const newWidth = window.innerWidth;
             const newHeight = window.innerHeight;
@@ -3244,12 +3563,10 @@ def choose_agent():
             renderer.setSize(newWidth, newHeight);
             
             // Adjust camera position based on screen size
-            if (newWidth < 480) {
-                camera.position.z = 35;
-            } else if (newWidth < 768) {
-                camera.position.z = 32;
+            if (newWidth < 768) {
+                camera.position.z = 30;
             } else if (newWidth < 1024) {
-                camera.position.z = 28;
+                camera.position.z = 26;
             } else {
                 camera.position.z = 24;
             }
@@ -3257,56 +3574,13 @@ def choose_agent():
 
         window.addEventListener("resize", onWindowResize);
 
-        // PERFORMANCE OPTIMIZATION
-        let lastFrameTime = 0;
-        const targetFPS = isMobile ? 30 : 60;
-        const frameInterval = 1000 / targetFPS;
-
-        // ANIMATION LOOP (keeping original logic but with mobile optimizations)
-        let loadingComplete = false;
-        
-        function animate(currentTime) {
-            requestAnimationFrame(animate);
-
-            if (isMobile && currentTime - lastFrameTime < frameInterval) {
-                return;
-            }
-            lastFrameTime = currentTime;
-
-            if (loadingComplete) {
-                const time = Date.now() * 0.002;
-                const breathingAmplitude = isMobile ? 0.03 : 0.1;
-                
-                spheres.forEach((sphere, i) => {
-                    const offset = i * 0.2;
-                    const breathingY = Math.sin(time + offset) * breathingAmplitude;
-                    const breathingZ = Math.cos(time + offset) * breathingAmplitude * 0.5;
-
-                    const originalPos = sphere.userData.originalPosition;
-                    sphere.position.x = originalPos.x + Math.sin(time * 0.5 + offset) * 0.2;
-                    sphere.position.y = originalPos.y + breathingY;
-                    sphere.position.z = originalPos.z + breathingZ;
-                });
-            }
-
-            renderer.render(scene, camera);
-        }
-
-        // INITIALIZATION
-        window.addEventListener("load", () => {
-            setTimeout(() => {
-                loadingComplete = true;
-                document.querySelectorAll('.hide-text').forEach(el => {
-                    el.style.opacity = '1';
-                });
-                document.querySelector('.main-txt').style.opacity = '0';
-            }, 2000);
-        });
-
-        animate();
-
-        // MOBILE BROWSER OPTIMIZATIONS
+        // Optimize for mobile browsers
         if (isMobile) {
+            // Reduce quality on low-end devices
+            if (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2) {
+                renderer.setPixelRatio(1);
+            }
+            
             // Handle orientation changes
             window.addEventListener("orientationchange", () => {
                 setTimeout(() => {
@@ -3314,16 +3588,21 @@ def choose_agent():
                 }, 100);
             });
             
-            // Pause when page is hidden (battery saving)
+            // Pause animation when page is hidden to save battery
             document.addEventListener('visibilitychange', () => {
                 if (document.hidden) {
-                    // Reduce animation frame rate when hidden
-                    targetFPS = 10;
+                    renderer.setAnimationLoop(null);
                 } else {
-                    targetFPS = 30;
+                    renderer.setAnimationLoop(animate);
                 }
             });
         }
+
+        // Preload next page for smoother transitions
+        const linkPreloader = document.createElement('link');
+        linkPreloader.rel = 'prefetch';
+        linkPreloader.href = '/profile-setup';
+        document.head.appendChild(linkPreloader);
     </script>
     '''
     return content
