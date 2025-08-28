@@ -2454,6 +2454,63 @@ email_followup = EmailFollowupSystem(user_auth)
 
 @app.route('/')
 def home():
+    """Landing page explaining dinner simulation concept"""
+    if 'user_id' in session:
+        return redirect('/dashboard')
+    
+    content = '''
+    # [CSS styling for responsive design]
+    
+    <div class="landing-container">
+        <div class="hero-section">
+            <h1 class="hero-title">Connect</h1>
+            <p class="hero-subtitle">Skip the small talk. Find meaningful connections.</p>
+            
+            <p class="hero-description">
+                We simulate dinner parties to match you with people who truly get you. 
+                Our AI creates virtual social scenarios to find your perfect friendship compatibility 
+                before you even meet.
+            </p>
+
+            <div class="features-grid">
+                <div class="feature-card">
+                    <span class="feature-icon">🍽️</span>
+                    <h3 class="feature-title">Dinner Simulation</h3>
+                    <p class="feature-description">AI agents simulate dinner conversations to test real compatibility</p>
+                </div>
+                
+                <div class="feature-card">
+                    <span class="feature-icon">🧠</span>
+                    <h3 class="feature-title">Deep Matching</h3>
+                    <p class="feature-description">Beyond interests - we match personalities, values, and communication styles</p>
+                </div>
+                
+                <div class="feature-card">
+                    <span class="feature-icon">⚡</span>
+                    <h3 class="feature-title">Skip Small Talk</h3>
+                    <p class="feature-description">Meet knowing you're already compatible for meaningful conversation</p>
+                </div>
+            </div>
+
+            <div class="testimonial">
+                Finally, a way to find people I can have real conversations with from day one. No more awkward first meetups wondering if we'll click.
+            </div>
+
+            <div class="cta-buttons">
+                <a href="/register" class="btn btn-primary">
+                    Start Here
+                </a>
+                <a href="/login" class="btn btn-secondary">
+                    Already have an account?
+                </a>
+            </div>
+        </div>
+    </div>
+    '''
+    return content
+
+@app.route('/choose-agent')
+def choose_agent():
     """Landing page with 3D animated spheres - Mobile Responsive"""
     if 'user_id' in session:
         return redirect('/dashboard')
@@ -2753,9 +2810,7 @@ def home():
         
         <div class="welcome-text hide-text">
             <div class="typewriter-line">choose your agent to begin</div>
-            <div class="login-link">
-                <a href="/login">Already have an account?</a>
-            </div>
+            
         </div>
         
         <div class="instruction-text hide-text">
@@ -3316,8 +3371,8 @@ def register():
         phone = request.form.get('phone', '').strip()
         
         # Validation
-        existing_user = user_auth.get_user_by_email(email)  # You'll need to add this method
-        existing_phone_user = user_auth.get_user_by_phone(phone)  # You'll need to add this method
+        existing_user = user_auth.get_user_by_email(email)
+        existing_phone_user = user_auth.get_user_by_phone(phone)
         if existing_phone_user:
             flash('Phone number already exists. Please sign in here.', 'error')
             return redirect('/login')
@@ -3339,12 +3394,12 @@ def register():
                 session['user_id'] = result['user_id']
                 session['user_email'] = email
                 session['user_name'] = first_name
-                flash('Account created successfully! Let\'s create your profile.', 'success')
-                return redirect('/profile-setup')
+                flash('Account created successfully! Choose your agent to begin.', 'success')
+                return redirect('/choose-agent')  # Changed from /profile-setup
             else:
                 flash(result['error'], 'error')
     
-    # Get flash messages and convert to HTML
+    # Registration form HTML (same as before)
     flash_html = ""
     messages = get_flashed_messages(with_categories=True)
     if messages:
@@ -3353,7 +3408,6 @@ def register():
             flash_html += f'<div class="flash-{category}">{message}</div>'
         flash_html += '</div>'
     
-    # Registration form with aesthetic design
     content = f'''
     <style>
         body {{
@@ -3480,7 +3534,6 @@ def register():
             color: #ff9500;
         }}
         
-        /* Flash message styling */
         .flash-messages {{
             margin-bottom: 24px;
         }}
@@ -5324,7 +5377,7 @@ def render_no_matches_dashboard() -> str:
                 animateScale(cube.scale, targetScale, 100, () => {
                     animateScale(cube.scale, { x: 1.1, y: 1.1, z: 1.1 }, 100, () => {
                         animateScale(cube.scale, originalScale, 100, () => {
-                            window.location.href = '/profile-setup';
+                            window.location.href = '/choose-agent';
                         });
                     });
                 });
