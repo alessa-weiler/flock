@@ -7,7 +7,13 @@ os.environ['MKL_NUM_THREADS'] = '1'
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
-
+import os
+import base64
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+import secrets
+import hashlib
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -110,12 +116,58 @@ def login_required(f):
     return decorated_function
 
 # ============================================================================
-# PAGE TRANSITIONS
+# DATA ANONYMIZATION
 # ============================================================================
-
+class DataEncryption:
+    """Handles all encryption and anonymization for user data"""
+    
+    def __init__(self):
+        self.master_key = self._get_or_create_master_key()
+        self.fernet = Fernet(self.master_key)
+    
+    def _get_or_create_master_key(self):
+        """Get master encryption key from environment or create new one"""
+        key_env = os.environ.get('ENCRYPTION_MASTER_KEY')
+        if key_env:
+            return key_env.encode()
+        
+        # Generate new key if none exists
+        password = os.environ.get('ENCRYPTION_PASSWORD', 'default-change-in-production')
+        salt = os.environ.get('ENCRYPTION_SALT', 'default-salt-change-in-production').encode()
+        
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=salt,
+            iterations=100000,
+        )
+        key = base64.urlsafe_b64encode(kdf.derive(password.encode()))
+        return key
+    
+    def encrypt_sensitive_data(self, data: str) -> str:
+        """Encrypt sensitive data like email, phone, personal info"""
+        if not data:
+            return data
+        return self.fernet.encrypt(data.encode()).decode()
+    
+    def decrypt_sensitive_data(self, encrypted_data: str) -> str:
+        """Decrypt sensitive data"""
+        if not encrypted_data:
+            return encrypted_data
+        return self.fernet.decrypt(encrypted_data.encode()).decode()
+    
+    def hash_for_matching(self, data: str) -> str:
+        """Create one-way hash for matching purposes (cannot be reversed)"""
+        if not data:
+            return data
+        return hashlib.sha256(f"{data}_{os.environ.get('HASH_SALT', 'default-salt')}".encode()).hexdigest()
+    
+    def generate_anonymous_id(self) -> str:
+        """Generate anonymous ID for user"""
+        return secrets.token_urlsafe(16)
 
 # ============================================================================
-# USER AUTHENTICATION SYSTEM
+# USER AUTHENTICATION SYSTEM + ANONYMIZATION + COMPLIANCE
 # ============================================================================
 
 class UserAuthSystem:
@@ -123,28 +175,48 @@ class UserAuthSystem:
     
     def __init__(self):
         self.init_user_database()
-    
+        self.encryption = data_encryption
     def init_user_database(self):
         """Initialize user accounts database with all required tables"""
         conn = sqlite3.connect('users.db')
         cursor = conn.cursor()
         
-        # Users table
+        # Enhanced users table with encryption
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                email TEXT UNIQUE NOT NULL,
+                anonymous_id TEXT UNIQUE NOT NULL,
+                email_hash TEXT UNIQUE NOT NULL,
+                email_encrypted TEXT NOT NULL,
                 password_hash TEXT NOT NULL,
-                first_name TEXT,
-                last_name TEXT,
-                phone TEXT,
+                first_name_encrypted TEXT,
+                last_name_encrypted TEXT,
+                phone_encrypted TEXT,
+                phone_hash TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 last_login TIMESTAMP,
                 is_active BOOLEAN DEFAULT 1,
                 profile_completed BOOLEAN DEFAULT 0,
-                profile_date TIMESTAMP
+                profile_date TIMESTAMP,
+                data_consent BOOLEAN DEFAULT 0,
+                data_consent_date TIMESTAMP
             )
         ''')
+
+
+        # Data processing log
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS data_processing_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                anonymous_id TEXT NOT NULL,
+                action TEXT NOT NULL,
+                purpose TEXT NOT NULL,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                ip_hash TEXT,
+                user_agent_hash TEXT
+            )
+        ''')
+
         # Add new columns for enhanced profile features
         try:
             cursor.execute('ALTER TABLE users ADD COLUMN bio TEXT')
@@ -183,13 +255,14 @@ class UserAuthSystem:
     
         # User profiles table
         cursor.execute('''
-            CREATE TABLE IF NOT EXISTS user_profiles (
+            CREATE TABLE IF NOT EXISTS anonymous_profiles (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                profile_data TEXT NOT NULL,
+                anonymous_id TEXT NOT NULL,
+                profile_data_encrypted TEXT NOT NULL,
+                profile_hash TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users (id)
+                FOREIGN KEY (anonymous_id) REFERENCES users (anonymous_id)
             )
         ''')
         
@@ -277,30 +350,60 @@ class UserAuthSystem:
         print("✓ User authentication database initialized")
     
     def create_user(self, email: str, password: str, first_name: str = None, 
-                   last_name: str = None, phone: str = None) -> Dict[str, Any]:
-        """Create new user account"""
+                   last_name: str = None, phone: str = None, data_consent: bool = False) -> Dict[str, Any]:
+        """Create user with encryption and anonymization"""
         try:
+            # if not data_consent:
+            #     return {'success': False, 'error': 'Data processing consent required'}
+            
             conn = sqlite3.connect('users.db')
             cursor = conn.cursor()
             
-            # Check if email already exists
-            cursor.execute('SELECT id FROM users WHERE email = ?', (email,))
+            # Create hashes for duplicate checking
+            email_hash = self.encryption.hash_for_matching(email.lower().strip())
+            phone_hash = self.encryption.hash_for_matching(phone) if phone else None
+            
+            # Check if email/phone already exists
+            cursor.execute('SELECT id FROM users WHERE email_hash = ? OR phone_hash = ?', 
+                          (email_hash, phone_hash))
             if cursor.fetchone():
                 conn.close()
-                return {'success': False, 'error': 'Email already registered'}
+                return {'success': False, 'error': 'Email or phone already registered'}
             
-            # Create password hash and insert user
+            # Generate anonymous ID
+            anonymous_id = self.encryption.generate_anonymous_id()
+            
+            # Encrypt sensitive data
+            email_encrypted = self.encryption.encrypt_sensitive_data(email)
+            first_name_encrypted = self.encryption.encrypt_sensitive_data(first_name) if first_name else None
+            last_name_encrypted = self.encryption.encrypt_sensitive_data(last_name) if last_name else None
+            phone_encrypted = self.encryption.encrypt_sensitive_data(phone) if phone else None
+            
+            # Create password hash
             password_hash = generate_password_hash(password)
+            
+            # Insert user
             cursor.execute('''
-                INSERT INTO users (email, password_hash, first_name, last_name, phone)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (email, password_hash, first_name, last_name, phone))
+                INSERT INTO users (
+                    anonymous_id, email_hash, email_encrypted, password_hash,
+                    first_name_encrypted, last_name_encrypted, phone_encrypted, phone_hash,
+                    data_consent, data_consent_date
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ''', (
+                anonymous_id, email_hash, email_encrypted, password_hash,
+                first_name_encrypted, last_name_encrypted, phone_encrypted, phone_hash,
+                data_consent
+            ))
             
             user_id = cursor.lastrowid
+            
+            # Log data processing
+            self._log_data_processing(cursor, anonymous_id, 'user_creation', 'account_setup')
+            
             conn.commit()
             conn.close()
             
-            return {'success': True, 'user_id': user_id}
+            return {'success': True, 'user_id': user_id, 'anonymous_id': anonymous_id}
             
         except Exception as e:
             print(f"Error creating user: {e}")
@@ -426,16 +529,29 @@ class UserAuthSystem:
             print(f"Error getting user by phone: {e}")
             return None
     def save_user_profile(self, user_id: int, profile_data: Dict[str, Any]) -> bool:
-        """Save user profile data"""
+        """Save encrypted and anonymized profile data"""
         try:
             conn = sqlite3.connect('users.db')
             cursor = conn.cursor()
             
-            # Save/update profile
+            # Get anonymous ID
+            cursor.execute('SELECT anonymous_id FROM users WHERE id = ?', (user_id,))
+            result = cursor.fetchone()
+            if not result:
+                return False
+            
+            anonymous_id = result[0]
+            
+            # Anonymize and encrypt profile data
+            anonymized_profile = self._anonymize_profile_data(profile_data)
+            encrypted_profile = self.encryption.encrypt_sensitive_data(json.dumps(anonymized_profile))
+            profile_hash = self.encryption.hash_for_matching(json.dumps(anonymized_profile, sort_keys=True))
+            
+            # Save to anonymous profiles table
             cursor.execute('''
-                INSERT OR REPLACE INTO user_profiles (user_id, profile_data, updated_at)
-                VALUES (?, ?, CURRENT_TIMESTAMP)
-            ''', (user_id, json.dumps(profile_data)))
+                INSERT OR REPLACE INTO anonymous_profiles (anonymous_id, profile_data_encrypted, profile_hash, updated_at)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            ''', (anonymous_id, encrypted_profile, profile_hash))
             
             # Update user record
             cursor.execute('''
@@ -444,6 +560,9 @@ class UserAuthSystem:
                 WHERE id = ?
             ''', (user_id,))
             
+            # Log data processing
+            self._log_data_processing(cursor, anonymous_id, 'profile_update', 'matching_algorithm')
+            
             conn.commit()
             conn.close()
             return True
@@ -451,7 +570,29 @@ class UserAuthSystem:
         except Exception as e:
             print(f"Error saving profile: {e}")
             return False
-    
+    def _anonymize_profile_data(self, profile_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Remove or hash identifying information from profile data"""
+        anonymized = profile_data.copy()
+        
+        # Remove direct identifiers
+        anonymized.pop('full_name', None)
+        anonymized.pop('email', None)
+        anonymized.pop('phone', None)
+        
+        # Generalize location data
+        if 'postcode' in anonymized:
+            # Keep only first part of postcode (e.g., "SW3" from "SW3 4HN")
+            postcode = anonymized['postcode']
+            if len(postcode) > 3:
+                anonymized['postcode_area'] = postcode[:3]
+            anonymized.pop('postcode', None)
+        
+        # Hash any remaining potentially identifying data
+        if 'unique_interest' in anonymized:
+            # Keep the data but flag it as sensitive
+            anonymized['unique_interest_hash'] = self.encryption.hash_for_matching(anonymized['unique_interest'])
+        
+        return anonymized
     def get_user_profile(self, user_id: int) -> Optional[Dict[str, Any]]:
         """Get user profile data"""
         try:
@@ -472,7 +613,12 @@ class UserAuthSystem:
         except Exception as e:
             print(f"Error getting profile: {e}")
             return None
-    
+    def _log_data_processing(self, cursor, anonymous_id: str, action: str, purpose: str):
+        """Log data processing activities for compliance"""
+        cursor.execute('''
+            INSERT INTO data_processing_log (anonymous_id, action, purpose)
+            VALUES (?, ?, ?)
+        ''', (anonymous_id, action, purpose))
     def save_user_matches(self, user_id: int, matches: List[Dict[str, Any]]) -> bool:
         """Save user matches to database"""
         try:
@@ -1046,6 +1192,106 @@ class UserAuthSystem:
         except Exception as e:
             print(f"Error cleaning up expired tokens: {e}")
 
+class GDPRCompliance:
+    """Handle GDPR compliance features"""
+    
+    def __init__(self, user_auth_system):
+        self.user_auth = user_auth_system
+        self.encryption = data_encryption
+    
+    def export_user_data(self, user_id: int) -> Dict[str, Any]:
+        """Export all user data in readable format (GDPR Article 15)"""
+        try:
+            conn = sqlite3.connect('users.db')
+            cursor = conn.cursor()
+            
+            # Get user data
+            cursor.execute('''
+                SELECT anonymous_id, email_encrypted, first_name_encrypted, 
+                       last_name_encrypted, phone_encrypted, created_at, data_consent_date
+                FROM users WHERE id = ?
+            ''', (user_id,))
+            user_data = cursor.fetchone()
+            
+            if not user_data:
+                return {'error': 'User not found'}
+            
+            anonymous_id = user_data[0]
+            
+            # Decrypt personal data
+            decrypted_data = {
+                'email': self.encryption.decrypt_sensitive_data(user_data[1]) if user_data[1] else None,
+                'first_name': self.encryption.decrypt_sensitive_data(user_data[2]) if user_data[2] else None,
+                'last_name': self.encryption.decrypt_sensitive_data(user_data[3]) if user_data[3] else None,
+                'phone': self.encryption.decrypt_sensitive_data(user_data[4]) if user_data[4] else None,
+                'created_at': user_data[5],
+                'data_consent_date': user_data[6]
+            }
+            
+            # Get profile data
+            cursor.execute('SELECT profile_data_encrypted FROM anonymous_profiles WHERE anonymous_id = ?', 
+                          (anonymous_id,))
+            profile_result = cursor.fetchone()
+            if profile_result:
+                encrypted_profile = profile_result[0]
+                profile_json = self.encryption.decrypt_sensitive_data(encrypted_profile)
+                decrypted_data['profile'] = json.loads(profile_json)
+            
+            # Get processing log
+            cursor.execute('''
+                SELECT action, purpose, timestamp 
+                FROM data_processing_log 
+                WHERE anonymous_id = ? 
+                ORDER BY timestamp DESC
+            ''', (anonymous_id,))
+            processing_log = cursor.fetchall()
+            decrypted_data['processing_history'] = [
+                {'action': row[0], 'purpose': row[1], 'timestamp': row[2]}
+                for row in processing_log
+            ]
+            
+            conn.close()
+            return decrypted_data
+            
+        except Exception as e:
+            return {'error': f'Data export failed: {str(e)}'}
+    
+    def delete_user_data(self, user_id: int) -> Dict[str, Any]:
+        """Permanently delete all user data (GDPR Article 17)"""
+        try:
+            conn = sqlite3.connect('users.db')
+            cursor = conn.cursor()
+            
+            # Get anonymous ID
+            cursor.execute('SELECT anonymous_id FROM users WHERE id = ?', (user_id,))
+            result = cursor.fetchone()
+            if not result:
+                return {'success': False, 'error': 'User not found'}
+            
+            anonymous_id = result[0]
+            
+            # Delete all related data
+            cursor.execute('DELETE FROM anonymous_profiles WHERE anonymous_id = ?', (anonymous_id,))
+            cursor.execute('DELETE FROM data_processing_log WHERE anonymous_id = ?', (anonymous_id,))
+            cursor.execute('DELETE FROM user_matches WHERE user_id = ? OR matched_user_id = ?', 
+                          (user_id, user_id))
+            cursor.execute('DELETE FROM contact_requests WHERE requester_id = ? OR requested_id = ?', 
+                          (user_id, user_id))
+            cursor.execute('DELETE FROM users WHERE id = ?', (user_id,))
+            
+            # Log deletion
+            cursor.execute('''
+                INSERT INTO data_processing_log (anonymous_id, action, purpose)
+                VALUES (?, 'data_deletion', 'user_request')
+            ''', (anonymous_id,))
+            
+            conn.commit()
+            conn.close()
+            
+            return {'success': True, 'message': 'All user data permanently deleted'}
+            
+        except Exception as e:
+            return {'success': False, 'error': f'Deletion failed: {str(e)}'}
 
 # ============================================================================
 # EMAIL FOLLOW-UP SYSTEM
@@ -1462,16 +1708,15 @@ class MatchingSystem:
         
         personality_scores = []
         
-        # Decision-making compatibility (moderate differences are okay)
+        # Decision-making (moderate differences okay)
         decision_diff = abs(safe_numeric(user1.get('decision_making', 5)) - safe_numeric(user2.get('decision_making', 5)))
-        decision_score = max(0, 100 - (decision_diff * 8))
+        decision_score = 100 * max(0.2, 1 - (decision_diff / 8)**1.2)
         personality_scores.append(decision_score * 1.2)
         
-        # Social energy alignment (should be similar)
+        # Social energy (should align more closely)  
         social_diff = abs(safe_numeric(user1.get('social_energy', 5)) - safe_numeric(user2.get('social_energy', 5)))
-        social_score = max(0, 100 - (social_diff * 12))
+        social_score = 100 * max(0.1, 1 - (social_diff / 6)**2)
         personality_scores.append(social_score * 1.5)
-        
         # Communication depth (should align)
         comm_diff = abs(safe_numeric(user1.get('communication_depth', 5)) - safe_numeric(user2.get('communication_depth', 5)))
         comm_score = max(0, 100 - (comm_diff * 15))
@@ -1487,7 +1732,7 @@ class MatchingSystem:
         pace_score = max(0, 100 - (pace_diff * 12))
         personality_scores.append(pace_score * 1.3)
         
-        return sum(personality_scores) / len(personality_scores)
+        return min(100, sum(personality_scores) / len(personality_scores))
 
     
     def _calculate_values_score(self, user1: Dict, user2: Dict) -> float:
@@ -2434,7 +2679,10 @@ def render_template_with_header(title: str, content: str, user_info: Dict = None
     '''
 
 # Initialize systems
+data_encryption = DataEncryption()
 user_auth = UserAuthSystem()
+# Initialize GDPR compliance
+gdpr_compliance = GDPRCompliance(user_auth)
 #matching_system = MatchingSystem(API_KEY)
 try:
     enhanced_matching_system, interaction_tracker = integrate_enhanced_matching(app, user_auth, API_KEY)
@@ -3850,6 +4098,9 @@ def register():
             <button type="submit" class="register-button">
                 Create Account
             </button>
+            <div class="form-links" style="margin-top: 12px; font-size: 12px; color: #6b9b99;">
+                By creating an account, you agree to our <a href="/terms-of-service">Terms of Service</a> and <a href="/privacy-policy">Privacy Policy</a>.
+            </div>
         </form>
         
         <div class="form-links">
@@ -5905,7 +6156,7 @@ def edit_profile():
                 </div>
                 
                 <div style="margin-bottom: 20px;">
-                    <label style="display: block; margin-bottom: 8px; font-weight: 500;">Phone Number</label>
+                    <label style="display: block; margin-bottom: 8px; font-weight: 500;">Contact email/number</label>
                     <input type="tel" name="phone" value="{user_info.get('phone', '')}" required
                            style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; background: #f4e8ee;">
                     <div style="font-size: 12px; color: #666; margin-top: 4px;">Used for contact requests when matches want to connect</div>
@@ -8192,7 +8443,7 @@ def contact_requests_route():
                 <div class="privacy-notice">
                     <div class="privacy-icon">🔒</div>
                     <div class="privacy-text">
-                        <strong>If you accept:</strong> {req['other_user_name']} will receive your phone number: <strong>{user_info['phone']}</strong>
+                        <strong>If you accept:</strong> {req['other_user_name']} will receive your contact number/email: <strong>{user_info['phone']}</strong>
                     </div>
                 </div>
             </div>
@@ -8920,707 +9171,1138 @@ def init_database():
 # MAIN APPLICATION
 # ============================================================================
 
-@app.route('/test-live-matching/<int:user_id>')
-@login_required  
-def test_live_matching(user_id):
-    """Designer-quality live matching with beautiful typography and colors"""
-    if session.get('user_id') != user_id:
-        return redirect('/login')
+# @app.route('/test-live-matching/<int:user_id>')
+# @login_required  
+# def test_live_matching(user_id):
+#     """Designer-quality live matching with beautiful typography and colors"""
+#     if session.get('user_id') != user_id:
+#         return redirect('/login')
     
-    live_matching_html = f'''
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Live Agent Simulation</title>
-        <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=clash-display@400,500,600,700&display=swap" rel="stylesheet">
-        <style>
-            * {{
-                margin: 0;
-                padding: 0;
-                box-sizing: border-box;
-            }}
+#     live_matching_html = f'''
+#     <!DOCTYPE html>
+#     <html lang="en">
+#     <head>
+#         <meta charset="UTF-8">
+#         <meta name="viewport" content="width=device-width, initial-scale=1.0">
+#         <title>Live Agent Simulation</title>
+#         <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=clash-display@400,500,600,700&display=swap" rel="stylesheet">
+#         <style>
+#             * {{
+#                 margin: 0;
+#                 padding: 0;
+#                 box-sizing: border-box;
+#             }}
             
-            :root {{
-                --color-cream: #f1ece0;
-                --color-emerald: #167a60;
-                --color-sage: #c6e19b;
-                --color-lavender: #c2b7ef;
-                --color-charcoal: #2d2d2d;
-                --color-white: #ffffff;
-                --color-gray-50: #fafafa;
-                --color-gray-100: #f5f5f5;
-                --color-gray-200: #eeeeee;
-                --color-gray-600: #757575;
-                --color-gray-800: #424242;
-            }}
+#             :root {{
+#                 --color-cream: #f1ece0;
+#                 --color-emerald: #167a60;
+#                 --color-sage: #c6e19b;
+#                 --color-lavender: #c2b7ef;
+#                 --color-charcoal: #2d2d2d;
+#                 --color-white: #ffffff;
+#                 --color-gray-50: #fafafa;
+#                 --color-gray-100: #f5f5f5;
+#                 --color-gray-200: #eeeeee;
+#                 --color-gray-600: #757575;
+#                 --color-gray-800: #424242;
+#             }}
             
-            body {{
-                font-family: 'Satoshi', -apple-system, BlinkMacSystemFont, sans-serif;
-                background: linear-gradient(135deg, var(--color-cream) 0%, var(--color-gray-50) 100%);
-                color: var(--color-charcoal);
-                min-height: 100vh;
-                overflow-x: hidden;
-            }}
+#             body {{
+#                 font-family: 'Satoshi', -apple-system, BlinkMacSystemFont, sans-serif;
+#                 background: linear-gradient(135deg, var(--color-cream) 0%, var(--color-gray-50) 100%);
+#                 color: var(--color-charcoal);
+#                 min-height: 100vh;
+#                 overflow-x: hidden;
+#             }}
             
-            /* Typography Scale */
-            .text-display {{
-                font-family: 'Clash Display', 'Satoshi', sans-serif;
-                font-size: clamp(2.5rem, 5vw, 4rem);
-                font-weight: 600;
-                line-height: 1.1;
-                letter-spacing: -0.02em;
-            }}
+#             /* Typography Scale */
+#             .text-display {{
+#                 font-family: 'Clash Display', 'Satoshi', sans-serif;
+#                 font-size: clamp(2.5rem, 5vw, 4rem);
+#                 font-weight: 600;
+#                 line-height: 1.1;
+#                 letter-spacing: -0.02em;
+#             }}
             
-            .text-title {{
-                font-family: 'Clash Display', 'Satoshi', sans-serif;
-                font-size: clamp(1.5rem, 3vw, 2.25rem);
-                font-weight: 500;
-                line-height: 1.2;
-                letter-spacing: -0.01em;
-            }}
+#             .text-title {{
+#                 font-family: 'Clash Display', 'Satoshi', sans-serif;
+#                 font-size: clamp(1.5rem, 3vw, 2.25rem);
+#                 font-weight: 500;
+#                 line-height: 1.2;
+#                 letter-spacing: -0.01em;
+#             }}
             
-            .text-body-lg {{
-                font-size: 1.125rem;
-                line-height: 1.6;
-                font-weight: 400;
-            }}
+#             .text-body-lg {{
+#                 font-size: 1.125rem;
+#                 line-height: 1.6;
+#                 font-weight: 400;
+#             }}
             
-            .text-body {{
-                font-size: 1rem;
-                line-height: 1.5;
-                font-weight: 400;
-            }}
+#             .text-body {{
+#                 font-size: 1rem;
+#                 line-height: 1.5;
+#                 font-weight: 400;
+#             }}
             
-            .text-small {{
-                font-size: 0.875rem;
-                line-height: 1.4;
-                font-weight: 400;
-            }}
+#             .text-small {{
+#                 font-size: 0.875rem;
+#                 line-height: 1.4;
+#                 font-weight: 400;
+#             }}
             
-            .text-micro {{
-                font-size: 0.75rem;
-                line-height: 1.3;
-                font-weight: 500;
-                letter-spacing: 0.05em;
-                text-transform: uppercase;
-            }}
+#             .text-micro {{
+#                 font-size: 0.75rem;
+#                 line-height: 1.3;
+#                 font-weight: 500;
+#                 letter-spacing: 0.05em;
+#                 text-transform: uppercase;
+#             }}
             
-            /* Layout */
-            .container {{
-                max-width: 1200px;
-                margin: 0 auto;
-                padding: 2rem;
-            }}
+#             /* Layout */
+#             .container {{
+#                 max-width: 1200px;
+#                 margin: 0 auto;
+#                 padding: 2rem;
+#             }}
             
-            .header {{
-                text-align: center;
-                margin-bottom: 3rem;
-                position: relative;
-            }}
+#             .header {{
+#                 text-align: center;
+#                 margin-bottom: 3rem;
+#                 position: relative;
+#             }}
             
-            .header::before {{
-                content: '';
-                position: absolute;
-                top: -1rem;
-                left: 50%;
-                transform: translateX(-50%);
-                width: 60px;
-                height: 4px;
-                background: linear-gradient(90deg, var(--color-emerald), var(--color-sage));
-                border-radius: 2px;
-            }}
+#             .header::before {{
+#                 content: '';
+#                 position: absolute;
+#                 top: -1rem;
+#                 left: 50%;
+#                 transform: translateX(-50%);
+#                 width: 60px;
+#                 height: 4px;
+#                 background: linear-gradient(90deg, var(--color-emerald), var(--color-sage));
+#                 border-radius: 2px;
+#             }}
             
-            .test-badge {{
-                display: inline-flex;
-                align-items: center;
-                gap: 0.5rem;
-                background: var(--color-lavender);
-                color: var(--color-charcoal);
-                padding: 0.5rem 1rem;
-                border-radius: 50px;
-                font-weight: 600;
-                margin-top: 1rem;
-                font-size: 0.875rem;
-            }}
+#             .test-badge {{
+#                 display: inline-flex;
+#                 align-items: center;
+#                 gap: 0.5rem;
+#                 background: var(--color-lavender);
+#                 color: var(--color-charcoal);
+#                 padding: 0.5rem 1rem;
+#                 border-radius: 50px;
+#                 font-weight: 600;
+#                 margin-top: 1rem;
+#                 font-size: 0.875rem;
+#             }}
             
-            .test-badge::before {{
-                content: '✦';
-                font-size: 1rem;
-            }}
+#             .test-badge::before {{
+#                 content: '✦';
+#                 font-size: 1rem;
+#             }}
             
-            /* Simulation Container */
-            .simulation-container {{
-                background: var(--color-white);
-                border-radius: 24px;
-                padding: 2rem;
-                box-shadow: 
-                    0 1px 3px rgba(0,0,0,0.04),
-                    0 8px 24px rgba(0,0,0,0.08),
-                    0 24px 48px rgba(0,0,0,0.04);
-                backdrop-filter: blur(20px);
-                position: relative;
-                overflow: hidden;
-            }}
+#             /* Simulation Container */
+#             .simulation-container {{
+#                 background: var(--color-white);
+#                 border-radius: 24px;
+#                 padding: 2rem;
+#                 box-shadow: 
+#                     0 1px 3px rgba(0,0,0,0.04),
+#                     0 8px 24px rgba(0,0,0,0.08),
+#                     0 24px 48px rgba(0,0,0,0.04);
+#                 backdrop-filter: blur(20px);
+#                 position: relative;
+#                 overflow: hidden;
+#             }}
             
-            .simulation-container::before {{
-                content: '';
-                position: absolute;
-                top: 0;
-                left: 0;
-                right: 0;
-                height: 1px;
-                background: linear-gradient(90deg, transparent, var(--color-sage), transparent);
-            }}
+#             .simulation-container::before {{
+#                 content: '';
+#                 position: absolute;
+#                 top: 0;
+#                 left: 0;
+#                 right: 0;
+#                 height: 1px;
+#                 background: linear-gradient(90deg, transparent, var(--color-sage), transparent);
+#             }}
             
-            /* Phase Indicator */
-            .phase {{
-                text-align: center;
-                padding: 1.5rem 2rem;
-                background: linear-gradient(135deg, var(--color-emerald), var(--color-sage));
-                color: white;
-                border-radius: 16px;
-                margin-bottom: 2rem;
-                font-weight: 500;
-                font-size: 1.125rem;
-                position: relative;
-                overflow: hidden;
-            }}
+#             /* Phase Indicator */
+#             .phase {{
+#                 text-align: center;
+#                 padding: 1.5rem 2rem;
+#                 background: linear-gradient(135deg, var(--color-emerald), var(--color-sage));
+#                 color: white;
+#                 border-radius: 16px;
+#                 margin-bottom: 2rem;
+#                 font-weight: 500;
+#                 font-size: 1.125rem;
+#                 position: relative;
+#                 overflow: hidden;
+#             }}
             
-            .phase::before {{
-                content: '';
-                position: absolute;
-                top: 0;
-                left: -100%;
-                width: 100%;
-                height: 100%;
-                background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
-                animation: shimmer 3s ease-in-out infinite;
-            }}
+#             .phase::before {{
+#                 content: '';
+#                 position: absolute;
+#                 top: 0;
+#                 left: -100%;
+#                 width: 100%;
+#                 height: 100%;
+#                 background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+#                 animation: shimmer 3s ease-in-out infinite;
+#             }}
             
-            @keyframes shimmer {{
-                0% {{ left: -100%; }}
-                50% {{ left: 100%; }}
-                100% {{ left: 100%; }}
-            }}
+#             @keyframes shimmer {{
+#                 0% {{ left: -100%; }}
+#                 50% {{ left: 100%; }}
+#                 100% {{ left: 100%; }}
+#             }}
             
-            /* Legend */
-            .legend {{
-                display: flex;
-                justify-content: center;
-                gap: 2rem;
-                margin: 2rem 0;
-                flex-wrap: wrap;
-            }}
+#             /* Legend */
+#             .legend {{
+#                 display: flex;
+#                 justify-content: center;
+#                 gap: 2rem;
+#                 margin: 2rem 0;
+#                 flex-wrap: wrap;
+#             }}
             
-            .legend-item {{
-                display: flex;
-                align-items: center;
-                gap: 0.75rem;
-                padding: 0.75rem 1.25rem;
-                background: var(--color-gray-50);
-                border-radius: 50px;
-                font-weight: 500;
-                font-size: 0.875rem;
-                color: var(--color-gray-800);
-                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            }}
+#             .legend-item {{
+#                 display: flex;
+#                 align-items: center;
+#                 gap: 0.75rem;
+#                 padding: 0.75rem 1.25rem;
+#                 background: var(--color-gray-50);
+#                 border-radius: 50px;
+#                 font-weight: 500;
+#                 font-size: 0.875rem;
+#                 color: var(--color-gray-800);
+#                 transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+#             }}
             
-            .legend-item:hover {{
-                background: var(--color-gray-100);
-                transform: translateY(-2px);
-            }}
+#             .legend-item:hover {{
+#                 background: var(--color-gray-100);
+#                 transform: translateY(-2px);
+#             }}
             
-            .legend-dot {{
-                width: 14px;
-                height: 14px;
-                border-radius: 50%;
-                border: 2px solid rgba(255,255,255,0.8);
-                box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-            }}
+#             .legend-dot {{
+#                 width: 14px;
+#                 height: 14px;
+#                 border-radius: 50%;
+#                 border: 2px solid rgba(255,255,255,0.8);
+#                 box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+#             }}
             
-            /* Simulation Area */
-            .simulation-area {{
-                width: 100%;
-                height: 600px;
-                background: var(--color-cream);
-                border-radius: 16px;
-                position: relative;
-                overflow: hidden;
-                border: 1px solid rgba(0,0,0,0.06);
-                box-shadow: inset 0 2px 8px rgba(0,0,0,0.04);
-            }}
+#             /* Simulation Area */
+#             .simulation-area {{
+#                 width: 100%;
+#                 height: 600px;
+#                 background: var(--color-cream);
+#                 border-radius: 16px;
+#                 position: relative;
+#                 overflow: hidden;
+#                 border: 1px solid rgba(0,0,0,0.06);
+#                 box-shadow: inset 0 2px 8px rgba(0,0,0,0.04);
+#             }}
             
-            /* Enhanced Dots */
-            .dot {{
-                position: absolute;
-                border-radius: 50%;
-                transition: all 1.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-                cursor: pointer;
-                z-index: 10;
-            }}
+#             /* Enhanced Dots */
+#             .dot {{
+#                 position: absolute;
+#                 border-radius: 50%;
+#                 transition: all 1.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+#                 cursor: pointer;
+#                 z-index: 10;
+#             }}
             
-            .dot.you {{
-                width: 16px;
-                height: 16px;
-                background: radial-gradient(circle at 30% 30%, var(--color-charcoal), #1a1a1a);
-                border: 3px solid var(--color-white);
-                box-shadow: 
-                    0 0 0 2px var(--color-charcoal),
-                    0 4px 12px rgba(45, 45, 45, 0.4),
-                    0 0 24px rgba(45, 45, 45, 0.2);
-                z-index: 20;
-            }}
+#             .dot.you {{
+#                 width: 16px;
+#                 height: 16px;
+#                 background: radial-gradient(circle at 30% 30%, var(--color-charcoal), #1a1a1a);
+#                 border: 3px solid var(--color-white);
+#                 box-shadow: 
+#                     0 0 0 2px var(--color-charcoal),
+#                     0 4px 12px rgba(45, 45, 45, 0.4),
+#                     0 0 24px rgba(45, 45, 45, 0.2);
+#                 z-index: 20;
+#             }}
             
-            .dot.other {{
-                width: 10px;
-                height: 10px;
-                background: radial-gradient(circle at 30% 30%, var(--color-emerald), #0f5942);
-                border: 2px solid rgba(255, 255, 255, 0.6);
-                box-shadow: 
-                    0 2px 8px rgba(22, 122, 96, 0.3),
-                    0 0 16px rgba(22, 122, 96, 0.1);
-            }}
+#             .dot.other {{
+#                 width: 10px;
+#                 height: 10px;
+#                 background: radial-gradient(circle at 30% 30%, var(--color-emerald), #0f5942);
+#                 border: 2px solid rgba(255, 255, 255, 0.6);
+#                 box-shadow: 
+#                     0 2px 8px rgba(22, 122, 96, 0.3),
+#                     0 0 16px rgba(22, 122, 96, 0.1);
+#             }}
             
-            .dot:hover {{
-                transform: scale(1.4);
-                z-index: 30;
-            }}
+#             .dot:hover {{
+#                 transform: scale(1.4);
+#                 z-index: 30;
+#             }}
             
-            .dot.you:hover {{
-                box-shadow: 
-                    0 0 0 2px var(--color-charcoal),
-                    0 6px 20px rgba(45, 45, 45, 0.5),
-                    0 0 32px rgba(45, 45, 45, 0.3);
-            }}
+#             .dot.you:hover {{
+#                 box-shadow: 
+#                     0 0 0 2px var(--color-charcoal),
+#                     0 6px 20px rgba(45, 45, 45, 0.5),
+#                     0 0 32px rgba(45, 45, 45, 0.3);
+#             }}
             
-            /* Stats Panel */
-            .stats {{
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-                gap: 1.5rem;
-                margin: 2rem 0;
-            }}
+#             /* Stats Panel */
+#             .stats {{
+#                 display: grid;
+#                 grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+#                 gap: 1.5rem;
+#                 margin: 2rem 0;
+#             }}
             
-            .stat {{
-                text-align: center;
-                padding: 1.5rem 1rem;
-                background: linear-gradient(135deg, var(--color-gray-50), var(--color-white));
-                border-radius: 16px;
-                border: 1px solid rgba(0,0,0,0.04);
-                position: relative;
-                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            }}
+#             .stat {{
+#                 text-align: center;
+#                 padding: 1.5rem 1rem;
+#                 background: linear-gradient(135deg, var(--color-gray-50), var(--color-white));
+#                 border-radius: 16px;
+#                 border: 1px solid rgba(0,0,0,0.04);
+#                 position: relative;
+#                 transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+#             }}
             
-            .stat:hover {{
-                transform: translateY(-4px);
-                box-shadow: 0 8px 32px rgba(0,0,0,0.08);
-            }}
+#             .stat:hover {{
+#                 transform: translateY(-4px);
+#                 box-shadow: 0 8px 32px rgba(0,0,0,0.08);
+#             }}
             
-            .stat-value {{
-                font-family: 'Clash Display', 'Satoshi', sans-serif;
-                font-size: 2rem;
-                font-weight: 600;
-                color: var(--color-charcoal);
-                margin-bottom: 0.25rem;
-                line-height: 1;
-            }}
+#             .stat-value {{
+#                 font-family: 'Clash Display', 'Satoshi', sans-serif;
+#                 font-size: 2rem;
+#                 font-weight: 600;
+#                 color: var(--color-charcoal);
+#                 margin-bottom: 0.25rem;
+#                 line-height: 1;
+#             }}
             
-            .stat-label {{
-                font-size: 0.75rem;
-                font-weight: 600;
-                color: var(--color-gray-600);
-                text-transform: uppercase;
-                letter-spacing: 0.05em;
-            }}
+#             .stat-label {{
+#                 font-size: 0.75rem;
+#                 font-weight: 600;
+#                 color: var(--color-gray-600);
+#                 text-transform: uppercase;
+#                 letter-spacing: 0.05em;
+#             }}
             
-            /* Navigation */
-            .back-nav {{
-                position: fixed;
-                top: 2rem;
-                left: 2rem;
-                z-index: 1000;
-            }}
+#             /* Navigation */
+#             .back-nav {{
+#                 position: fixed;
+#                 top: 2rem;
+#                 left: 2rem;
+#                 z-index: 1000;
+#             }}
             
-            .back-btn {{
-                display: flex;
-                align-items: center;
-                gap: 0.5rem;
-                background: var(--color-white);
-                color: var(--color-charcoal);
-                padding: 0.75rem 1.25rem;
-                border-radius: 50px;
-                text-decoration: none;
-                font-weight: 500;
-                font-size: 0.875rem;
-                box-shadow: 
-                    0 1px 3px rgba(0,0,0,0.04),
-                    0 4px 16px rgba(0,0,0,0.08);
-                backdrop-filter: blur(20px);
-                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-                border: 1px solid rgba(0,0,0,0.06);
-            }}
+#             .back-btn {{
+#                 display: flex;
+#                 align-items: center;
+#                 gap: 0.5rem;
+#                 background: var(--color-white);
+#                 color: var(--color-charcoal);
+#                 padding: 0.75rem 1.25rem;
+#                 border-radius: 50px;
+#                 text-decoration: none;
+#                 font-weight: 500;
+#                 font-size: 0.875rem;
+#                 box-shadow: 
+#                     0 1px 3px rgba(0,0,0,0.04),
+#                     0 4px 16px rgba(0,0,0,0.08);
+#                 backdrop-filter: blur(20px);
+#                 transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+#                 border: 1px solid rgba(0,0,0,0.06);
+#             }}
             
-            .back-btn:hover {{
-                transform: translateY(-2px);
-                box-shadow: 
-                    0 2px 8px rgba(0,0,0,0.08),
-                    0 8px 24px rgba(0,0,0,0.12);
-            }}
+#             .back-btn:hover {{
+#                 transform: translateY(-2px);
+#                 box-shadow: 
+#                     0 2px 8px rgba(0,0,0,0.08),
+#                     0 8px 24px rgba(0,0,0,0.12);
+#             }}
             
-            /* Completion Message */
-            .completion-message {{
-                background: linear-gradient(135deg, var(--color-sage), var(--color-lavender));
-                color: var(--color-charcoal);
-                padding: 2.5rem 2rem;
-                border-radius: 20px;
-                text-align: center;
-                margin-top: 2rem;
-                display: none;
-                position: relative;
-                overflow: hidden;
-            }}
+#             /* Completion Message */
+#             .completion-message {{
+#                 background: linear-gradient(135deg, var(--color-sage), var(--color-lavender));
+#                 color: var(--color-charcoal);
+#                 padding: 2.5rem 2rem;
+#                 border-radius: 20px;
+#                 text-align: center;
+#                 margin-top: 2rem;
+#                 display: none;
+#                 position: relative;
+#                 overflow: hidden;
+#             }}
             
-            .completion-message.visible {{
-                display: block;
-                animation: slideUp 0.6s cubic-bezier(0.4, 0, 0.2, 1);
-            }}
+#             .completion-message.visible {{
+#                 display: block;
+#                 animation: slideUp 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+#             }}
             
-            @keyframes slideUp {{
-                from {{
-                    opacity: 0;
-                    transform: translateY(20px);
-                }}
-                to {{
-                    opacity: 1;
-                    transform: translateY(0);
-                }}
-            }}
+#             @keyframes slideUp {{
+#                 from {{
+#                     opacity: 0;
+#                     transform: translateY(20px);
+#                 }}
+#                 to {{
+#                     opacity: 1;
+#                     transform: translateY(0);
+#                 }}
+#             }}
             
-            .completion-message h3 {{
-                font-family: 'Clash Display', 'Satoshi', sans-serif;
-                font-size: 1.5rem;
-                font-weight: 600;
-                margin-bottom: 0.75rem;
-            }}
+#             .completion-message h3 {{
+#                 font-family: 'Clash Display', 'Satoshi', sans-serif;
+#                 font-size: 1.5rem;
+#                 font-weight: 600;
+#                 margin-bottom: 0.75rem;
+#             }}
             
-            .completion-message p {{
-                font-size: 1rem;
-                line-height: 1.6;
-                margin-bottom: 2rem;
-                opacity: 0.9;
-            }}
+#             .completion-message p {{
+#                 font-size: 1rem;
+#                 line-height: 1.6;
+#                 margin-bottom: 2rem;
+#                 opacity: 0.9;
+#             }}
             
-            .completion-buttons {{
-                display: flex;
-                gap: 1rem;
-                justify-content: center;
-                flex-wrap: wrap;
-            }}
+#             .completion-buttons {{
+#                 display: flex;
+#                 gap: 1rem;
+#                 justify-content: center;
+#                 flex-wrap: wrap;
+#             }}
             
-            .btn {{
-                display: inline-flex;
-                align-items: center;
-                gap: 0.5rem;
-                padding: 0.875rem 1.5rem;
-                border: none;
-                border-radius: 12px;
-                font-weight: 600;
-                font-size: 0.875rem;
-                text-decoration: none;
-                cursor: pointer;
-                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-                white-space: nowrap;
-            }}
+#             .btn {{
+#                 display: inline-flex;
+#                 align-items: center;
+#                 gap: 0.5rem;
+#                 padding: 0.875rem 1.5rem;
+#                 border: none;
+#                 border-radius: 12px;
+#                 font-weight: 600;
+#                 font-size: 0.875rem;
+#                 text-decoration: none;
+#                 cursor: pointer;
+#                 transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+#                 white-space: nowrap;
+#             }}
             
-            .btn-primary {{
-                background: var(--color-charcoal);
-                color: var(--color-white);
-                box-shadow: 0 4px 16px rgba(45, 45, 45, 0.2);
-            }}
+#             .btn-primary {{
+#                 background: var(--color-charcoal);
+#                 color: var(--color-white);
+#                 box-shadow: 0 4px 16px rgba(45, 45, 45, 0.2);
+#             }}
             
-            .btn-primary:hover {{
-                transform: translateY(-2px);
-                box-shadow: 0 6px 24px rgba(45, 45, 45, 0.3);
-            }}
+#             .btn-primary:hover {{
+#                 transform: translateY(-2px);
+#                 box-shadow: 0 6px 24px rgba(45, 45, 45, 0.3);
+#             }}
             
-            .btn-secondary {{
-                background: var(--color-white);
-                color: var(--color-charcoal);
-                box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
-            }}
+#             .btn-secondary {{
+#                 background: var(--color-white);
+#                 color: var(--color-charcoal);
+#                 box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+#             }}
             
-            .btn-secondary:hover {{
-                transform: translateY(-2px);
-                box-shadow: 0 6px 24px rgba(0, 0, 0, 0.15);
-            }}
+#             .btn-secondary:hover {{
+#                 transform: translateY(-2px);
+#                 box-shadow: 0 6px 24px rgba(0, 0, 0, 0.15);
+#             }}
             
-            /* Responsive Design */
-            @media (max-width: 768px) {{
-                .container {{
-                    padding: 1rem;
-                }}
+#             /* Responsive Design */
+#             @media (max-width: 768px) {{
+#                 .container {{
+#                     padding: 1rem;
+#                 }}
                 
-                .simulation-container {{
-                    padding: 1.5rem;
-                }}
+#                 .simulation-container {{
+#                     padding: 1.5rem;
+#                 }}
                 
-                .simulation-area {{
-                    height: 400px;
-                }}
+#                 .simulation-area {{
+#                     height: 400px;
+#                 }}
                 
-                .legend {{
-                    gap: 1rem;
-                }}
+#                 .legend {{
+#                     gap: 1rem;
+#                 }}
                 
-                .stats {{
-                    grid-template-columns: repeat(2, 1fr);
-                    gap: 1rem;
-                }}
+#                 .stats {{
+#                     grid-template-columns: repeat(2, 1fr);
+#                     gap: 1rem;
+#                 }}
                 
-                .completion-buttons {{
-                    flex-direction: column;
-                    align-items: center;
-                }}
-            }}
+#                 .completion-buttons {{
+#                     flex-direction: column;
+#                     align-items: center;
+#                 }}
+#             }}
             
-            /* Loading States */
-            .loading-pulse {{
-                animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-            }}
+#             /* Loading States */
+#             .loading-pulse {{
+#                 animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+#             }}
             
-            @keyframes pulse {{
-                0%, 100% {{
-                    opacity: 1;
-                }}
-                50% {{
-                    opacity: 0.7;
-                }}
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="back-nav">
-            <a href="/dashboard" class="back-btn">
-                ← Back to Dashboard
-            </a>
-        </div>
+#             @keyframes pulse {{
+#                 0%, 100% {{
+#                     opacity: 1;
+#                 }}
+#                 50% {{
+#                     opacity: 0.7;
+#                 }}
+#             }}
+#         </style>
+#     </head>
+#     <body>
+#         <div class="back-nav">
+#             <a href="/dashboard" class="back-btn">
+#                 ← Back to Dashboard
+#             </a>
+#         </div>
         
-        <div class="container">
-            <header class="header">
-                <h1 class="text-display">Live Agent Matching</h1>
-                <p class="text-body-lg" style="color: var(--color-gray-600); margin-top: 1rem;">
-                    Watch intelligent agents discover perfect compatibility clusters
-                </p>
-                <div class="test-badge">
-                    Test Simulation Mode
-                </div>
-            </header>
+#         <div class="container">
+#             <header class="header">
+#                 <h1 class="text-display">Live Agent Matching</h1>
+#                 <p class="text-body-lg" style="color: var(--color-gray-600); margin-top: 1rem;">
+#                     Watch intelligent agents discover perfect compatibility clusters
+#                 </p>
+#                 <div class="test-badge">
+#                     Test Simulation Mode
+#                 </div>
+#             </header>
             
-            <div class="simulation-container">
-                <div class="phase loading-pulse" id="phaseIndicator">
-                    Initializing intelligent agents...
-                </div>
+#             <div class="simulation-container">
+#                 <div class="phase loading-pulse" id="phaseIndicator">
+#                     Initializing intelligent agents...
+#                 </div>
                 
-                <div class="legend">
-                    <div class="legend-item">
-                        <div class="legend-dot" style="background: radial-gradient(circle at 30% 30%, var(--color-charcoal), #1a1a1a);"></div>
-                        <span>Your Agent</span>
-                    </div>
-                    <div class="legend-item">
-                        <div class="legend-dot" style="background: radial-gradient(circle at 30% 30%, var(--color-emerald), #0f5942);"></div>
-                        <span>Other Agents</span>
-                    </div>
-                </div>
+#                 <div class="legend">
+#                     <div class="legend-item">
+#                         <div class="legend-dot" style="background: radial-gradient(circle at 30% 30%, var(--color-charcoal), #1a1a1a);"></div>
+#                         <span>Your Agent</span>
+#                     </div>
+#                     <div class="legend-item">
+#                         <div class="legend-dot" style="background: radial-gradient(circle at 30% 30%, var(--color-emerald), #0f5942);"></div>
+#                         <span>Other Agents</span>
+#                     </div>
+#                 </div>
                 
-                <div class="simulation-area" id="simulationArea">
-                    <!-- Beautiful dots will appear here -->
-                </div>
+#                 <div class="simulation-area" id="simulationArea">
+#                     <!-- Beautiful dots will appear here -->
+#                 </div>
                 
-                <div class="stats">
-                    <div class="stat">
-                        <div class="stat-value" id="simulationStep">0</div>
-                        <div class="stat-label">Simulation Step</div>
-                    </div>
-                    <div class="stat">
-                        <div class="stat-value" id="agentsMoved">0</div>
-                        <div class="stat-label">Agents Moved</div>
-                    </div>
-                    <div class="stat">
-                        <div class="stat-value" id="avgSatisfaction">0%</div>
-                        <div class="stat-label">Cluster Satisfaction</div>
-                    </div>
-                    <div class="stat">
-                        <div class="stat-value" id="totalAgents">0</div>
-                        <div class="stat-label">Total Agents</div>
-                    </div>
-                </div>
+#                 <div class="stats">
+#                     <div class="stat">
+#                         <div class="stat-value" id="simulationStep">0</div>
+#                         <div class="stat-label">Simulation Step</div>
+#                     </div>
+#                     <div class="stat">
+#                         <div class="stat-value" id="agentsMoved">0</div>
+#                         <div class="stat-label">Agents Moved</div>
+#                     </div>
+#                     <div class="stat">
+#                         <div class="stat-value" id="avgSatisfaction">0%</div>
+#                         <div class="stat-label">Cluster Satisfaction</div>
+#                     </div>
+#                     <div class="stat">
+#                         <div class="stat-value" id="totalAgents">0</div>
+#                         <div class="stat-label">Total Agents</div>
+#                     </div>
+#                 </div>
                 
-                <div class="completion-message" id="completionMessage">
-                    <h3>🎉 Perfect Clusters Discovered!</h3>
-                    <p>Your intelligent agent has successfully identified its ideal compatibility cluster through advanced social simulation.</p>
-                    <div class="completion-buttons">
-                        <a href="/test-matching" class="btn btn-primary">
-                            ↻ Run Simulation Again
-                        </a>
-                        <a href="/dashboard" class="btn btn-secondary">
-                            → View Dashboard
-                        </a>
-                    </div>
-                </div>
-            </div>
-        </div>
+#                 <div class="completion-message" id="completionMessage">
+#                     <h3>🎉 Perfect Clusters Discovered!</h3>
+#                     <p>Your intelligent agent has successfully identified its ideal compatibility cluster through advanced social simulation.</p>
+#                     <div class="completion-buttons">
+#                         <a href="/test-matching" class="btn btn-primary">
+#                             ↻ Run Simulation Again
+#                         </a>
+#                         <a href="/dashboard" class="btn btn-secondary">
+#                             → View Dashboard
+#                         </a>
+#                     </div>
+#                 </div>
+#             </div>
+#         </div>
 
-        <script>
-            const USER_ID = {user_id};
-            let dots = new Map();
-            let updateInterval;
-            let agentsMetadata = {{}};
+#         <script>
+#             const USER_ID = {user_id};
+#             let dots = new Map();
+#             let updateInterval;
+#             let agentsMetadata = {{}};
             
-            const phaseMessages = {{
-                'data_collection': '📊 Analyzing user personality profiles...',
-                'filtering_users': '🎯 Identifying compatible candidates...',
-                'initializing_simulation': '🤖 Spawning intelligent agents...',
-                'running_simulation': '✨ Agents discovering optimal clusters...',
-                'generating_matches': '🔬 Calculating compatibility matrices...'
-            }};
+#             const phaseMessages = {{
+#                 'data_collection': '📊 Analyzing user personality profiles...',
+#                 'filtering_users': '🎯 Identifying compatible candidates...',
+#                 'initializing_simulation': '🤖 Spawning intelligent agents...',
+#                 'running_simulation': '✨ Agents discovering optimal clusters...',
+#                 'generating_matches': '🔬 Calculating compatibility matrices...'
+#             }};
             
-            function startRealTimeUpdates() {{
-                updateInterval = setInterval(fetchLiveStatus, 1000);
-                fetchLiveStatus();
-            }}
+#             function startRealTimeUpdates() {{
+#                 updateInterval = setInterval(fetchLiveStatus, 1000);
+#                 fetchLiveStatus();
+#             }}
             
-            function fetchLiveStatus() {{
-                fetch(`/api/test-processing-status/${{USER_ID}}`)
-                    .then(response => response.json())
-                    .then(data => {{
-                        updateVisualization(data);
-                    }})
-                    .catch(error => {{
-                        console.error('Simulation error:', error);
-                    }});
-            }}
+#             function fetchLiveStatus() {{
+#                 fetch(`/api/test-processing-status/${{USER_ID}}`)
+#                     .then(response => response.json())
+#                     .then(data => {{
+#                         updateVisualization(data);
+#                     }})
+#                     .catch(error => {{
+#                         console.error('Simulation error:', error);
+#                     }});
+#             }}
             
-            function updateVisualization(data) {{
-                // Update phase with smooth transitions
-                const phase = data.phase || 'initializing';
-                const phaseEl = document.getElementById('phaseIndicator');
-                phaseEl.textContent = phaseMessages[phase] || 'Processing simulation...';
+#             function updateVisualization(data) {{
+#                 // Update phase with smooth transitions
+#                 const phase = data.phase || 'initializing';
+#                 const phaseEl = document.getElementById('phaseIndicator');
+#                 phaseEl.textContent = phaseMessages[phase] || 'Processing simulation...';
                 
-                // Remove loading pulse when simulation starts
-                if (phase === 'running_simulation') {{
-                    phaseEl.classList.remove('loading-pulse');
-                }}
+#                 // Remove loading pulse when simulation starts
+#                 if (phase === 'running_simulation') {{
+#                     phaseEl.classList.remove('loading-pulse');
+#                 }}
                 
-                // Update stats with smooth counting animation
-                animateValue('simulationStep', data.simulation_step || 0);
-                animateValue('agentsMoved', data.agents_moved || 0);
-                animateValue('avgSatisfaction', data.avg_satisfaction || 0, '%');
+#                 // Update stats with smooth counting animation
+#                 animateValue('simulationStep', data.simulation_step || 0);
+#                 animateValue('agentsMoved', data.agents_moved || 0);
+#                 animateValue('avgSatisfaction', data.avg_satisfaction || 0, '%');
                 
-                // Initialize beautiful dots
-                if (data.agents_metadata && Object.keys(agentsMetadata).length === 0) {{
-                    console.log('🎨 Creating beautiful agent visualization...');
-                    agentsMetadata = data.agents_metadata;
-                    initializeDesignerDots();
-                    document.getElementById('totalAgents').textContent = Object.keys(agentsMetadata).length;
-                }}
+#                 // Initialize beautiful dots
+#                 if (data.agents_metadata && Object.keys(agentsMetadata).length === 0) {{
+#                     console.log('🎨 Creating beautiful agent visualization...');
+#                     agentsMetadata = data.agents_metadata;
+#                     initializeDesignerDots();
+#                     document.getElementById('totalAgents').textContent = Object.keys(agentsMetadata).length;
+#                 }}
                 
-                // Smooth dot position updates
-                if (data.agents_positions) {{
-                    updateDotPositions(data.agents_positions);
-                }}
+#                 // Smooth dot position updates
+#                 if (data.agents_positions) {{
+#                     updateDotPositions(data.agents_positions);
+#                 }}
                 
-                // Elegant completion
-                if (data.status === 'completed') {{
-                    showCompletion();
-                }}
-            }}
+#                 // Elegant completion
+#                 if (data.status === 'completed') {{
+#                     showCompletion();
+#                 }}
+#             }}
             
-            function animateValue(elementId, targetValue, suffix = '') {{
-                const element = document.getElementById(elementId);
-                const currentValue = parseInt(element.textContent) || 0;
+#             function animateValue(elementId, targetValue, suffix = '') {{
+#                 const element = document.getElementById(elementId);
+#                 const currentValue = parseInt(element.textContent) || 0;
                 
-                if (currentValue !== targetValue) {{
-                    const increment = (targetValue - currentValue) / 10;
-                    let current = currentValue;
+#                 if (currentValue !== targetValue) {{
+#                     const increment = (targetValue - currentValue) / 10;
+#                     let current = currentValue;
                     
-                    const timer = setInterval(() => {{
-                        current += increment;
-                        if ((increment > 0 && current >= targetValue) || 
-                            (increment < 0 && current <= targetValue)) {{
-                            current = targetValue;
-                            clearInterval(timer);
-                        }}
-                        element.textContent = Math.round(current) + suffix;
-                    }}, 50);
-                }}
-            }}
+#                     const timer = setInterval(() => {{
+#                         current += increment;
+#                         if ((increment > 0 && current >= targetValue) || 
+#                             (increment < 0 && current <= targetValue)) {{
+#                             current = targetValue;
+#                             clearInterval(timer);
+#                         }}
+#                         element.textContent = Math.round(current) + suffix;
+#                     }}, 50);
+#                 }}
+#             }}
             
-            function initializeDesignerDots() {{
-                const area = document.getElementById('simulationArea');
-                area.innerHTML = '';
-                dots.clear();
+#             function initializeDesignerDots() {{
+#                 const area = document.getElementById('simulationArea');
+#                 area.innerHTML = '';
+#                 dots.clear();
                 
-                Object.entries(agentsMetadata).forEach(([agentId, metadata]) => {{
-                    const dot = document.createElement('div');
-                    dot.className = `dot ${{metadata.type === 'user' ? 'you' : 'other'}}`;
-                    dot.id = `dot-${{agentId}}`;
-                    dot.title = metadata.type === 'user' ? 'Your Intelligent Agent' : `Agent: ${{metadata.name}}`;
+#                 Object.entries(agentsMetadata).forEach(([agentId, metadata]) => {{
+#                     const dot = document.createElement('div');
+#                     dot.className = `dot ${{metadata.type === 'user' ? 'you' : 'other'}}`;
+#                     dot.id = `dot-${{agentId}}`;
+#                     dot.title = metadata.type === 'user' ? 'Your Intelligent Agent' : `Agent: ${{metadata.name}}`;
                     
-                    // Start in center with stagger effect
-                    const delay = Math.random() * 200;
-                    dot.style.transitionDelay = delay + 'ms';
-                    dot.style.left = '400px';
-                    dot.style.top = '300px';
+#                     // Start in center with stagger effect
+#                     const delay = Math.random() * 200;
+#                     dot.style.transitionDelay = delay + 'ms';
+#                     dot.style.left = '400px';
+#                     dot.style.top = '300px';
                     
-                    area.appendChild(dot);
-                    dots.set(parseInt(agentId), dot);
-                }});
+#                     area.appendChild(dot);
+#                     dots.set(parseInt(agentId), dot);
+#                 }});
                 
-                console.log('✨ Created', dots.size, 'beautiful agent dots');
-            }}
+#                 console.log('✨ Created', dots.size, 'beautiful agent dots');
+#             }}
             
-            function updateDotPositions(positions) {{
-                Object.entries(positions).forEach(([agentId, posData]) => {{
-                    const dot = dots.get(parseInt(agentId));
-                    if (dot) {{
-                        const x = Math.max(8, Math.min(792, posData.x));
-                        const y = Math.max(8, Math.min(592, posData.y));
+#             function updateDotPositions(positions) {{
+#                 Object.entries(positions).forEach(([agentId, posData]) => {{
+#                     const dot = dots.get(parseInt(agentId));
+#                     if (dot) {{
+#                         const x = Math.max(8, Math.min(792, posData.x));
+#                         const y = Math.max(8, Math.min(592, posData.y));
                         
-                        dot.style.left = x + 'px';
-                        dot.style.top = y + 'px';
-                    }}
-                }});
-            }}
+#                         dot.style.left = x + 'px';
+#                         dot.style.top = y + 'px';
+#                     }}
+#                 }});
+#             }}
             
-            function showCompletion() {{
-                clearInterval(updateInterval);
-                document.getElementById('phaseIndicator').textContent = '🎉 Simulation complete! Perfect clusters discovered.';
-                document.getElementById('phaseIndicator').classList.remove('loading-pulse');
-                document.getElementById('completionMessage').classList.add('visible');
+#             function showCompletion() {{
+#                 clearInterval(updateInterval);
+#                 document.getElementById('phaseIndicator').textContent = '🎉 Simulation complete! Perfect clusters discovered.';
+#                 document.getElementById('phaseIndicator').classList.remove('loading-pulse');
+#                 document.getElementById('completionMessage').classList.add('visible');
                 
-                console.log('🎊 Beautiful simulation completed!');
-            }}
+#                 console.log('🎊 Beautiful simulation completed!');
+#             }}
             
-            // Initialize when page loads
-            document.addEventListener('DOMContentLoaded', () => {{
-                console.log('🚀 Starting designer simulation...');
-                startRealTimeUpdates();
-            }});
+#             // Initialize when page loads
+#             document.addEventListener('DOMContentLoaded', () => {{
+#                 console.log('🚀 Starting designer simulation...');
+#                 startRealTimeUpdates();
+#             }});
             
-            // Cleanup
-            window.addEventListener('beforeunload', () => {{
-                if (updateInterval) clearInterval(updateInterval);
-            }});
-        </script>
-    </body>
-    </html>
+#             // Cleanup
+#             window.addEventListener('beforeunload', () => {{
+#                 if (updateInterval) clearInterval(updateInterval);
+#             }});
+#         </script>
+#     </body>
+#     </html>
+#     '''
+    
+#     return render_template_string(live_matching_html, user_id=user_id)
+
+@app.route('/privacy-policy')
+def privacy_policy():
+    """Privacy policy page"""
+    content = '''
+    <div class="container">
+        <h1>Privacy Policy</h1>
+        <p><em>Last updated: [Current Date]</em></p>
+        
+        <h2>Data We Collect</h2>
+        <ul>
+            <li>Contact information (email, phone) - encrypted</li>
+            <li>Profile responses - anonymized and encrypted</li>
+            <li>Usage analytics - anonymized</li>
+        </ul>
+        
+        <h2>How We Protect Your Data</h2>
+        <ul>
+            <li>All personal data is encrypted using AES-256</li>
+            <li>Profile data is anonymized for matching</li>
+            <li>We never share personal information with third parties</li>
+            <li>You can export or delete your data at any time</li>
+        </ul>
+        
+        <h2>Your Rights</h2>
+        <ul>
+            <li><a href="/privacy/export-data">Export your data</a></li>
+            <li><a href="/privacy/delete-account">Delete your account</a></li>
+            <li>Contact us with privacy concerns</li>
+        </ul>
+    </div>
     '''
     
-    return render_template_string(live_matching_html, user_id=user_id)
+    return render_template_with_header("Privacy Policy", content)
 
-
+@app.route('/terms-of-service')
+def terms_of_service():
+    """Terms of Service page with UK legal framework"""
+    
+    from datetime import date
+    current_date = date.today().strftime("%B %d, %Y")
+    
+    content = f'''
+    <style>
+        .terms-container {{
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 2rem;
+            font-family: 'Satoshi', -apple-system, BlinkMacSystemFont, sans-serif;
+            line-height: 1.6;
+            color: var(--color-charcoal);
+        }}
+        
+        .terms-header {{
+            text-align: center;
+            margin-bottom: 3rem;
+            padding: 2rem;
+            background: var(--color-white);
+            border-radius: 16px;
+            border-left: 4px solid var(--color-emerald);
+        }}
+        
+        .terms-title {{
+            font-family: 'Clash Display', 'Satoshi', sans-serif;
+            font-size: 2.5rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            color: var(--color-charcoal);
+        }}
+        
+        .last-updated {{
+            font-style: italic;
+            color: var(--color-gray-600);
+            margin-bottom: 2rem;
+        }}
+        
+        .terms-content {{
+            background: var(--color-white);
+            border-radius: 16px;
+            padding: 2.5rem;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+        }}
+        
+        .section-title {{
+            font-family: 'Clash Display', 'Satoshi', sans-serif;
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin: 2rem 0 1rem 0;
+            color: var(--color-emerald);
+            border-bottom: 2px solid var(--color-sage);
+            padding-bottom: 0.5rem;
+        }}
+        
+        .subsection-title {{
+            font-weight: 600;
+            margin: 1.5rem 0 0.75rem 0;
+            color: var(--color-charcoal);
+            font-size: 1.125rem;
+        }}
+        
+        .terms-content p {{
+            margin-bottom: 1rem;
+        }}
+        
+        .terms-content ul, .terms-content ol {{
+            margin: 1rem 0 1rem 2rem;
+        }}
+        
+        .terms-content li {{
+            margin-bottom: 0.5rem;
+        }}
+        
+        .important-notice {{
+            background: linear-gradient(135deg, var(--color-sage), var(--color-lavender));
+            padding: 1.5rem;
+            border-radius: 12px;
+            margin: 2rem 0;
+            border-left: 4px solid var(--color-emerald);
+        }}
+        
+        .contact-section {{
+            background: var(--color-gray-50);
+            padding: 2rem;
+            border-radius: 12px;
+            margin-top: 3rem;
+            text-align: center;
+        }}
+        
+        .back-link {{
+            display: inline-block;
+            background: var(--color-emerald);
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 500;
+            margin-top: 2rem;
+            transition: all 0.3s ease;
+        }}
+        
+        .back-link:hover {{
+            background: #0f5942;
+            transform: translateY(-1px);
+        }}
+        
+        strong {{
+            color: var(--color-emerald);
+        }}
+        
+        em {{
+            color: var(--color-gray-600);
+        }}
+    </style>
+    
+    <div class="terms-container">
+        <div class="terms-header">
+            <h1 class="terms-title">Terms of Service</h1>
+            <p class="last-updated">Last updated: {current_date}</p>
+        </div>
+        
+        <div class="terms-content">
+            <div class="important-notice">
+                <strong>Important:</strong> By using Connect, you agree to these Terms of Service and our Privacy Policy. 
+                Please read them carefully before creating an account.
+            </div>
+            
+            <h2 class="section-title">1. About These Terms</h2>
+            <p>
+                These terms of service ("Terms") govern your use of the Connect friendship matching platform ("Service") 
+                operated by [Your Company Name] ("we", "us", or "our"), a company registered in England and Wales.
+            </p>
+            <p>
+                By accessing or using Connect, you agree to be bound by these Terms. If you disagree with any part of 
+                these terms, you may not access the Service.
+            </p>
+            
+            <h2 class="section-title">2. Description of Service</h2>
+            <p>
+                Connect is a friendship matching platform that uses artificial intelligence and personality analysis to help users 
+                find compatible friendships. Our Service includes:
+            </p>
+            <ul>
+                <li>Personality and compatibility assessment tools</li>
+                <li>AI-powered matching algorithms based on compatibility factors</li>
+                <li>Secure contact exchange between matched users</li>
+                <li>Profile management and comprehensive privacy controls</li>
+            </ul>
+            
+            <h2 class="section-title">3. User Accounts and Eligibility</h2>
+            
+            <div class="subsection-title">3.1 Age Requirements</div>
+            <p>
+                You must be at least 18 years old to use Connect. By creating an account, you represent and warrant 
+                that you are at least 18 years of age and have the legal capacity to enter into these Terms.
+            </p>
+            
+            <div class="subsection-title">3.2 Account Information</div>
+            <p>When creating an account, you agree to:</p>
+            <ul>
+                <li>Provide accurate, current, and complete information during registration</li>
+                <li>Maintain and promptly update your information to keep it accurate and complete</li>
+                <li>Maintain the security and confidentiality of your password and account credentials</li>
+                <li>Accept responsibility for all activities that occur under your account</li>
+                <li>Notify us immediately of any unauthorised use of your account</li>
+            </ul>
+            
+            <div class="subsection-title">3.3 Account Limitations</div>
+            <p>
+                You may only maintain one active account on Connect. Creating multiple accounts is prohibited and 
+                may result in suspension of all associated accounts.
+            </p>
+            
+            <h2 class="section-title">4. User Conduct and Acceptable Use</h2>
+            
+            <div class="subsection-title">4.1 Prohibited Activities</div>
+            <p>You agree not to use Connect to:</p>
+            <ul>
+                <li>Engage in any unlawful activities or violate applicable laws and regulations</li>
+                <li>Harass, abuse, threaten, or intimidate other users</li>
+                <li>Impersonate any person or entity, or falsely represent your affiliation with any person or entity</li>
+                <li>Provide false, misleading, or deceptive information in your profile or communications</li>
+                <li>Send spam, unsolicited advertisements, or commercial communications</li>
+                <li>Attempt to gain unauthorised access to other user accounts, our systems, or networks</li>
+                <li>Use automated software, bots, or scripts to access or interact with the Service</li>
+                <li>Collect or harvest personal information about other users without consent</li>
+                <li>Engage in any form of discrimination based on protected characteristics</li>
+            </ul>
+            
+            <div class="subsection-title">4.2 Profile Content Standards</div>
+            <p>All profile content must comply with UK law and must not contain:</p>
+            <ul>
+                <li>Hate speech, discriminatory language, or content that promotes prejudice</li>
+                <li>Defamatory, libellous, or false statements about individuals or organisations</li>
+                <li>Personal information of third parties without their explicit consent</li>
+                <li>Content that infringes intellectual property rights</li>
+                <li>Promotional material, advertisements, or links to external commercial websites</li>
+                <li>Content that violates any person's privacy or data protection rights</li>
+            </ul>
+            
+            <h2 class="section-title">5. Data Protection and Privacy</h2>
+            
+            <div class="subsection-title">5.1 GDPR Compliance</div>
+            <p>
+                We process your personal data in accordance with the General Data Protection Regulation (GDPR) 
+                and the Data Protection Act 2018. Our data practices are detailed in our Privacy Policy.
+            </p>
+            
+            <div class="subsection-title">5.2 Data Security Measures</div>
+            <p>
+                We implement appropriate technical and organisational measures to protect your personal data, 
+                including encryption, anonymisation, and secure storage. However, no method of data transmission 
+                or storage is completely secure, and we cannot guarantee absolute security.
+            </p>
+            
+            <div class="subsection-title">5.3 Your Data Rights</div>
+            <p>Under UK data protection law, you have the right to:</p>
+            <ul>
+                <li>Access your personal data and obtain copies</li>
+                <li>Rectify inaccurate or incomplete data</li>
+                <li>Erase your personal data in certain circumstances</li>
+                <li>Restrict processing of your data</li>
+                <li>Data portability where technically feasible</li>
+                <li>Object to processing based on legitimate interests</li>
+            </ul>
+            
+            <h2 class="section-title">6. Matching Algorithm and Service Limitations</h2>
+            
+            <div class="subsection-title">6.1 Algorithm Functionality</div>
+            <p>
+                Our AI matching system analyses personality traits, values, and preferences to suggest compatible connections. 
+                The system is designed to improve over time but has inherent limitations.
+            </p>
+            
+            <div class="subsection-title">6.2 No Guarantees</div>
+            <p>We expressly disclaim any warranties or guarantees regarding:</p>
+            <ul>
+                <li>The accuracy or reliability of matching predictions</li>
+                <li>The success or longevity of friendships formed through the platform</li>
+                <li>The behaviour or character of other users</li>
+                <li>The outcome of meetings between matched users</li>
+            </ul>
+            
+            <h2 class="section-title">7. Safety and Meeting Guidelines</h2>
+            
+            <div class="subsection-title">7.1 Personal Safety</div>
+            <p>We strongly recommend that when meeting matches in person, you:</p>
+            <ul>
+                <li>Meet initially in public, well-lit locations with good mobile reception</li>
+                <li>Inform a trusted friend or family member of your plans and expected return</li>
+                <li>Trust your instincts and leave immediately if you feel uncomfortable</li>
+                <li>Avoid sharing personal details like your home address or workplace initially</li>
+                <li>Consider arranging your own transportation to and from meetings</li>
+            </ul>
+            
+            <div class="subsection-title">7.2 Reporting and Safety Features</div>
+            <p>
+                If you experience harassment, inappropriate behaviour, or safety concerns, report the incident 
+                immediately using our reporting tools or by contacting us directly. We investigate all reports 
+                and may suspend or terminate accounts that violate our community standards.
+            </p>
+            
+            <h2 class="section-title">8. Intellectual Property Rights</h2>
+            <p>
+                The Service, including its software, algorithms, design, content, and functionality, is owned by us 
+                and is protected by copyright, trademark, and other intellectual property laws of England and Wales 
+                and international treaties. You may not reproduce, distribute, modify, or create derivative works 
+                without our express written consent.
+            </p>
+            
+            <h2 class="section-title">9. Service Availability and Modifications</h2>
+            
+            <div class="subsection-title">9.1 Service Availability</div>
+            <p>
+                We aim to provide reliable service but cannot guarantee uninterrupted availability. We may 
+                temporarily suspend the Service for maintenance, updates, or technical issues. We are not liable 
+                for any inconvenience or losses resulting from service interruptions.
+            </p>
+            
+            <div class="subsection-title">9.2 Changes to Terms</div>
+            <p>
+                We reserve the right to modify these Terms at any time. We will provide reasonable notice of 
+                material changes via email or prominent platform notification. Your continued use of the Service 
+                after such notice constitutes acceptance of the modified Terms.
+            </p>
+            
+            <h2 class="section-title">10. Account Suspension and Termination</h2>
+            
+            <div class="subsection-title">10.1 Termination by You</div>
+            <p>
+                You may terminate your account at any time using the account deletion feature in your settings. 
+                Upon termination, your personal data will be deleted in accordance with our Privacy Policy.
+            </p>
+            
+            <div class="subsection-title">10.2 Termination by Us</div>
+            <p>We may suspend or terminate your account immediately if you:</p>
+            <ul>
+                <li>Materially breach these Terms of Service</li>
+                <li>Engage in conduct that harms other users or damages our reputation</li>
+                <li>Provide false information during registration or use of the Service</li>
+                <li>Attempt to circumvent our security measures or access controls</li>
+                <li>Violate applicable laws while using our Service</li>
+            </ul>
+            
+            <h2 class="section-title">11. Limitation of Liability and Disclaimers</h2>
+            
+            <div class="subsection-title">11.1 Service Provided "As Is"</div>
+            <p>
+                Connect is provided on an "as is" and "as available" basis. To the fullest extent permitted by 
+                English law, we disclaim all warranties, whether express or implied, including warranties of 
+                merchantability, fitness for a particular purpose, and non-infringement.
+            </p>
+            
+            <div class="subsection-title">11.2 Exclusion of Liability</div>
+            <p>
+                Subject to applicable consumer protection laws, we exclude liability for any indirect, 
+                incidental, special, consequential, or punitive damages, including but not limited to:
+            </p>
+            <ul>
+                <li>Loss of profits, revenue, data, or business opportunities</li>
+                <li>Emotional distress or reputational damage</li>
+                <li>Damages resulting from interactions with other users</li>
+                <li>Technical failures or data breaches beyond our reasonable control</li>
+            </ul>
+            
+            <div class="subsection-title">11.3 Consumer Rights</div>
+            <p>
+                Nothing in these Terms excludes or limits our liability for death or personal injury caused by 
+                our negligence, fraud, fraudulent misrepresentation, or any other liability that cannot be 
+                excluded under English law. Your statutory consumer rights remain unaffected.
+            </p>
+            
+            <h2 class="section-title">12. Indemnification</h2>
+            <p>
+                You agree to indemnify and hold harmless Connect, its officers, directors, employees, and agents 
+                from any claims, damages, losses, liabilities, costs, or expenses (including reasonable legal fees) 
+                arising from your use of the Service, violation of these Terms, or infringement of any rights of 
+                another person or entity.
+            </p>
+            
+            <h2 class="section-title">13. Governing Law and Dispute Resolution</h2>
+            
+            <div class="subsection-title">13.1 Governing Law</div>
+            <p>
+                These Terms are governed by and construed in accordance with the laws of England and Wales, 
+                without regard to conflict of law principles.
+            </p>
+            
+            <div class="subsection-title">13.2 Jurisdiction</div>
+            <p>
+                Any disputes arising from these Terms or your use of the Service shall be subject to the 
+                exclusive jurisdiction of the courts of England and Wales. You agree to submit to the 
+                personal jurisdiction of such courts.
+            </p>
+            
+            <div class="subsection-title">13.3 Alternative Dispute Resolution</div>
+            <p>
+                Before pursuing formal legal proceedings, we encourage users to contact us directly to resolve 
+                disputes amicably. We are committed to addressing legitimate concerns promptly and fairly.
+            </p>
+            
+            <h2 class="section-title">14. Severability and Entire Agreement</h2>
+            <p>
+                If any provision of these Terms is deemed invalid or unenforceable by a court of competent 
+                jurisdiction, the remaining provisions shall remain in full force and effect. These Terms, 
+                together with our Privacy Policy, constitute the entire agreement between you and Connect 
+                regarding the use of our Service.
+            </p>
+            
+            <h2 class="section-title">15. Contact Information</h2>
+            <p>
+                For questions about these Terms of Service, please contact us:
+            </p>
+            <ul>
+                <li><strong>Email:</strong> legal@connect.com</li>
+                <li><strong>Post:</strong> [Your Company Name], [Your Business Address], England</li>
+                <li><strong>Company Registration:</strong> [Companies House Number]</li>
+            </ul>
+            
+            <p>
+                For data protection enquiries, you may also contact the Information Commissioner's Office (ICO) 
+                at ico.org.uk if you have concerns about how we handle your personal data.
+            </p>
+            
+            <div class="contact-section">
+                <p><strong>Questions about these terms?</strong></p>
+                <p>Our team is available to clarify any provisions or address your concerns.</p>
+                <a href="/dashboard" class="back-link">Back to Dashboard</a>
+            </div>
+        </div>
+    </div>
+    '''
+    
+    return render_template_with_header("Terms of Service", content)
 
 if __name__ == '__main__':
     # Initialize database

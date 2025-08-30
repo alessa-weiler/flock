@@ -393,17 +393,33 @@ class SocialPredictionNetwork:
             except (ValueError, TypeError):
                 return default
         
-        # Simple compatibility calculation with safe conversion
+        scores = []
+    
+        # Age compatibility (prefer similar ages)
         age_diff = abs(safe_numeric(user1_profile.get('age', 25)) - safe_numeric(user2_profile.get('age', 25)))
-        age_score = max(0, 1 - age_diff / 20)
+        age_score = max(0.1, 1 - (age_diff / 15)**2)  # More dramatic curve
+        scores.append(age_score)
         
+        # Social energy (allow for complementary differences)
         social_diff = abs(safe_numeric(user1_profile.get('social_energy', 5)) - safe_numeric(user2_profile.get('social_energy', 5)))
-        social_score = max(0, 1 - social_diff / 10)
+        social_score = max(0.2, 1 - (social_diff / 8)**1.5)  # Different curve
+        scores.append(social_score)
         
+        # Values alignment (should be similar)
         values_diff = abs(safe_numeric(user1_profile.get('personal_growth', 5)) - safe_numeric(user2_profile.get('personal_growth', 5)))
-        values_score = max(0, 1 - values_diff / 10)
+        values_score = max(0.1, 1 - (values_diff / 6)**2)
+        scores.append(values_score)
         
-        return (age_score + social_score + values_score) / 3
+        # Add more factors for variance
+        comm_diff = abs(safe_numeric(user1_profile.get('communication_depth', 5)) - safe_numeric(user2_profile.get('communication_depth', 5)))
+        comm_score = max(0.1, 1 - (comm_diff / 7)**1.8)
+        scores.append(comm_score)
+        
+        # Weight the scores differently
+        weights = [0.2, 0.3, 0.3, 0.2]
+        final_score = sum(score * weight for score, weight in zip(scores, weights))
+        
+        return min(0.95, max(0.1, final_score))  # Ensure reasonable range
     def _save_performance_metrics(self, accuracy: float, precision: float, 
                                  recall: float, data_size: int):
         """Save model performance metrics"""
@@ -1086,9 +1102,9 @@ class EnhancedMatchingSystem:
         if data_weight > 0.7:
             # High confidence neural analysis
             analyses = [
-                f"Our AI predicts a {neural_score*100:.0f}% compatibility based on learned patterns from successful connections. This match was identified through advanced social simulation where you naturally clustered together.",
+                f"Our algorithm predicts a {neural_score*100:.0f}% compatibility based on learned patterns from successful connections. This match was identified through advanced social simulation where you naturally clustered together.",
                 f"The neural network analysis suggests you share complementary interaction styles and values. After {simulation_results['total_steps']} simulation steps, you ended up in the same social cluster with {simulation_results['final_avg_satisfaction']:.1f} satisfaction.",
-                f"Based on thousands of successful friendship patterns, our AI identifies strong potential for meaningful connection. Your profiles suggest natural alignment in social preferences and communication styles.",
+                f"Based on thousands of successful friendship patterns, our algorithm identifies strong potential for meaningful connection. Your profiles suggest natural alignment in social preferences and communication styles.",
                 f"Advanced pattern recognition indicates you both have compatible approaches to friendship building. The social simulation shows you'd likely enjoy similar environments and interaction styles."
             ]
         else:
@@ -1098,9 +1114,9 @@ class EnhancedMatchingSystem:
             
             analyses = [
                 f"Your {personality_desc} personality traits and shared values around personal growth suggest great potential for meaningful friendship. Social simulation indicates natural compatibility.",
-                f"Both of you value authentic connections and have compatible approaches to life's challenges. The AI-assisted analysis shows strong alignment in friendship expectations.",
+                f"Both of you value authentic connections and have compatible approaches to life's challenges. The analysis shows strong alignment in friendship expectations.",
                 f"Your different strengths could complement each other beautifully - creating a balanced and supportive friendship dynamic based on simulation modeling.",
-                f"Similar lifestyle rhythms and social preferences suggest you'd enjoy spending time together, with AI prediction supporting long-term compatibility."
+                f"Similar lifestyle rhythms and social preferences suggest you'd enjoy spending time together, with predictions supporting long-term compatibility."
             ]
         
         return random.choice(analyses)
