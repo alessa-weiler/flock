@@ -3719,6 +3719,13 @@ def choose_agent():
             renderer.domElement.addEventListener('touchstart', onTouchStart, { passive: false });
             renderer.domElement.addEventListener('touchmove', onTouchMove, { passive: false });
             renderer.domElement.addEventListener('touchend', onTouchEnd, { passive: false });
+            document.addEventListener('touchstart', function(e) {
+                log('TOUCH START detected anywhere on page');
+            }, { passive: false });
+
+            document.addEventListener('touchend', function(e) {
+                log('TOUCH END detected anywhere on page');
+            }, { passive: false });
         }
 
         // Mouse event handlers for desktop
