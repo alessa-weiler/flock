@@ -3673,18 +3673,13 @@ def choose_agent():
             let lastTouchY = 0;
 
             function onTouchStart(event) {
-                log('🟢 Touch START detected');
-                if (!loadingComplete) {
-                    log('❌ Touch blocked - loading not complete');
-                    return;
-                }
-                event.preventDefault();
+                if (!loadingComplete) return;
+                event.preventDefault(); // Prevent default touch behavior
                 
                 touchStartTime = Date.now();
                 const touch = event.touches[0];
                 lastTouchX = touch.clientX;
                 lastTouchY = touch.clientY;
-                log(`Touch at: ${lastTouchX}, ${lastTouchY}`);
             }
 
             function onTouchMove(event) {
@@ -3696,22 +3691,14 @@ def choose_agent():
             }
 
             function onTouchEnd(event) {
-                log('🔴 Touch END detected');
-                if (!loadingComplete) {
-                    log('❌ Touch blocked - loading not complete');
-                    return;
-                }
+                if (!loadingComplete) return;
                 event.preventDefault();
                 
                 const touchDuration = Date.now() - touchStartTime;
-                log(`Touch duration: ${touchDuration}ms`);
                 
                 // Only register as tap if it's a short touch (not a drag)
                 if (touchDuration < 300) {
-                    log('✅ Registering as TAP');
                     handleInteraction(lastTouchX, lastTouchY, true);
-                } else {
-                    log('❌ Touch too long, ignoring');
                 }
             }
 
@@ -3719,13 +3706,24 @@ def choose_agent():
             renderer.domElement.addEventListener('touchstart', onTouchStart, { passive: false });
             renderer.domElement.addEventListener('touchmove', onTouchMove, { passive: false });
             renderer.domElement.addEventListener('touchend', onTouchEnd, { passive: false });
+            // Add error catching
+            window.onerror = function(msg, url, line) {
+                log('JS Error: ' + msg + ' at line ' + line);
+                return false;
+            };
+
+            // Test touch events immediately - before anything else
+            log('Adding basic touch test...');
+
             document.addEventListener('touchstart', function(e) {
-                log('TOUCH START detected anywhere on page');
-            }, { passive: false });
+                log('BASIC TOUCH START');
+            }, true);
 
             document.addEventListener('touchend', function(e) {
-                log('TOUCH END detected anywhere on page');
-            }, { passive: false });
+                log('BASIC TOUCH END');  
+            }, true);
+
+            log('Touch listeners added');
         }
 
         // Mouse event handlers for desktop
