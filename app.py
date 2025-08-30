@@ -3344,7 +3344,9 @@ def choose_agent():
         function log(message) {
             console.log(message);
             debugDiv.innerHTML = message;
+            log('Debug system working - isMobile: ' + isMobile + ', isTouch: ' + isTouch);
         }
+        log('Debug system working - isMobile: ' + isMobile + ', isTouch: ' + isTouch);
         // Scene setup
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(
