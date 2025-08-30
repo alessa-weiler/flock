@@ -3698,13 +3698,18 @@ def choose_agent():
             let lastTouchY = 0;
 
             function onTouchStart(event) {
-                if (!loadingComplete) return;
+                log('🟢 Touch START detected');
+                if (!loadingComplete) {
+                    log('❌ Touch blocked - loading not complete');
+                    return;
+                }
                 event.preventDefault(); // Prevent default touch behavior
                 
                 touchStartTime = Date.now();
                 const touch = event.touches[0];
                 lastTouchX = touch.clientX;
                 lastTouchY = touch.clientY;
+                log(`Touch at: ${lastTouchX}, ${lastTouchY}`);
             }
 
             function onTouchMove(event) {
@@ -3716,7 +3721,11 @@ def choose_agent():
             }
 
             function onTouchEnd(event) {
-                if (!loadingComplete) return;
+                log('🔴 Touch END detected');
+                if (!loadingComplete) {
+                    log('❌ Touch blocked - loading not complete');
+                    return;
+                }
                 event.preventDefault();
                 
                 const touchDuration = Date.now() - touchStartTime;
