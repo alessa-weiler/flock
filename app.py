@@ -3321,6 +3321,9 @@ def choose_agent():
         // Detect if we're on a mobile device
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
         const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+        console.log('isMobile:', isMobile);
+        console.log('isTouch:', isTouch);
+        console.log('User agent:', navigator.userAgent);
 
         // Scene setup
         const scene = new THREE.Scene();
