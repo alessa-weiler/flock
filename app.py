@@ -3673,13 +3673,18 @@ def choose_agent():
             let lastTouchY = 0;
 
             function onTouchStart(event) {
-                if (!loadingComplete) return;
-                event.preventDefault(); // Prevent default touch behavior
+                log('🟢 Touch START detected');
+                if (!loadingComplete) {
+                    log('❌ Touch blocked - loading not complete');
+                    return;
+                }
+                event.preventDefault();
                 
                 touchStartTime = Date.now();
                 const touch = event.touches[0];
                 lastTouchX = touch.clientX;
                 lastTouchY = touch.clientY;
+                log(`Touch at: ${lastTouchX}, ${lastTouchY}`);
             }
 
             function onTouchMove(event) {
@@ -3691,14 +3696,22 @@ def choose_agent():
             }
 
             function onTouchEnd(event) {
-                if (!loadingComplete) return;
+                log('🔴 Touch END detected');
+                if (!loadingComplete) {
+                    log('❌ Touch blocked - loading not complete');
+                    return;
+                }
                 event.preventDefault();
                 
                 const touchDuration = Date.now() - touchStartTime;
+                log(`Touch duration: ${touchDuration}ms`);
                 
                 // Only register as tap if it's a short touch (not a drag)
                 if (touchDuration < 300) {
+                    log('✅ Registering as TAP');
                     handleInteraction(lastTouchX, lastTouchY, true);
+                } else {
+                    log('❌ Touch too long, ignoring');
                 }
             }
 
