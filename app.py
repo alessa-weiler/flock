@@ -3414,16 +3414,9 @@ def choose_agent():
                 isHovered: false,
                 isClicked: false 
             };
-            if (isMobile) {
-                log('Mobile detected - forcing interactions enabled');
-                
-                setTimeout(() => {
-                    document.querySelectorAll(".hide-text").forEach((el) => {
-                        el.style.opacity = "1";
-                    });
-                    document.querySelector(".main-txt").style.opacity = "0";
-                    log('Mobile UI elements shown');
-                }, 1000);
+            if (!isMobile) {
+                sphere.castShadow = true;
+                sphere.receiveShadow = true;
             }
             spheres.push(sphere);
             group.add(sphere);
