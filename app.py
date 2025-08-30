@@ -3324,7 +3324,27 @@ def choose_agent():
         console.log('isMobile:', isMobile);
         console.log('isTouch:', isTouch);
         console.log('User agent:', navigator.userAgent);
+        const debugDiv = document.createElement('div');
+        debugDiv.id = 'debug';
+        debugDiv.style.cssText = `
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            background: red;
+            color: white;
+            padding: 10px;
+            z-index: 9999;
+            font-family: monospace;
+            font-size: 12px;
+            max-width: 300px;
+        `;
+        debugDiv.innerHTML = 'Debug: Starting...';
+        document.body.appendChild(debugDiv);
 
+        function log(message) {
+            console.log(message);
+            debugDiv.innerHTML = message;
+        }
         // Scene setup
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(
