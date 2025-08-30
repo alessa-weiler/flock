@@ -3321,32 +3321,7 @@ def choose_agent():
         // Detect if we're on a mobile device
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
         const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-        console.log('isMobile:', isMobile);
-        console.log('isTouch:', isTouch);
-        console.log('User agent:', navigator.userAgent);
-        const debugDiv = document.createElement('div');
-        debugDiv.id = 'debug';
-        debugDiv.style.cssText = `
-            position: fixed;
-            top: 10px;
-            left: 10px;
-            background: red;
-            color: white;
-            padding: 10px;
-            z-index: 9999;
-            font-family: monospace;
-            font-size: 12px;
-            max-width: 300px;
-        `;
-        debugDiv.innerHTML = 'Debug: Starting...';
-        document.body.appendChild(debugDiv);
-
-        function log(message) {
-            console.log(message);
-            debugDiv.innerHTML = message;
-            log('Debug system working - isMobile: ' + isMobile + ', isTouch: ' + isTouch);
-        }
-        log('Debug system working - isMobile: ' + isMobile + ', isTouch: ' + isTouch);
+        
         // Scene setup
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(
@@ -3698,18 +3673,13 @@ def choose_agent():
             let lastTouchY = 0;
 
             function onTouchStart(event) {
-                log('🟢 Touch START detected');
-                if (!loadingComplete) {
-                    log('❌ Touch blocked - loading not complete');
-                    return;
-                }
+                if (!loadingComplete) return;
                 event.preventDefault(); // Prevent default touch behavior
                 
                 touchStartTime = Date.now();
                 const touch = event.touches[0];
                 lastTouchX = touch.clientX;
                 lastTouchY = touch.clientY;
-                log(`Touch at: ${lastTouchX}, ${lastTouchY}`);
             }
 
             function onTouchMove(event) {
@@ -3721,11 +3691,7 @@ def choose_agent():
             }
 
             function onTouchEnd(event) {
-                log('🔴 Touch END detected');
-                if (!loadingComplete) {
-                    log('❌ Touch blocked - loading not complete');
-                    return;
-                }
+                if (!loadingComplete) return;
                 event.preventDefault();
                 
                 const touchDuration = Date.now() - touchStartTime;
