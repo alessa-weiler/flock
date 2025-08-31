@@ -7106,7 +7106,7 @@ def render_step_4_content(profile: Dict) -> str:
     sliders = [
         ('Personal growth priority', 'personal_growth', 'Self-improvement', 'Self-acceptance'),
         ('Success definition', 'success_definition', 'External achievements', 'Internal fulfillment'),
-        ('Community involvement', 'community_involvement', 'Highly engaged locally', 'Globally minded'),
+        ('Community involvement', 'community_involvement', 'Individualism', 'Collectivism'),
         ('Work-life philosophy', 'work_life_philosophy', 'Career-focused', 'Life-balance focused'),
         ('Future orientation', 'future_orientation', 'Detailed planning', 'Present-moment living')
     ]
