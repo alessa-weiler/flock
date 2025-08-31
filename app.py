@@ -444,14 +444,21 @@ class UserAuthSystem:
             conn = sqlite3.connect('users.db')
             cursor = conn.cursor()
             
+            # Hash the email for lookup
+            email_hash = self.encryption.hash_for_matching(email.lower().strip())
+            
             cursor.execute('''
-                SELECT id, password_hash, first_name, last_name, profile_completed
-                FROM users WHERE email = ? AND is_active = 1
-            ''', (email,))
+                SELECT id, password_hash, first_name_encrypted, last_name_encrypted, profile_completed
+                FROM users WHERE email_hash = ? AND is_active = 1
+            ''', (email_hash,))
             
             user = cursor.fetchone()
             
             if user and check_password_hash(user[1], password):
+                # Decrypt names for session
+                first_name = self.encryption.decrypt_sensitive_data(user[2]) if user[2] else None
+                last_name = self.encryption.decrypt_sensitive_data(user[3]) if user[3] else None
+                
                 # Update last login
                 cursor.execute('''
                     UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?
@@ -462,8 +469,8 @@ class UserAuthSystem:
                 return {
                     'success': True,
                     'user_id': user[0],
-                    'first_name': user[2],
-                    'last_name': user[3],
+                    'first_name': first_name,
+                    'last_name': last_name,
                     'profile_completed': bool(user[4])
                 }
             
@@ -473,7 +480,7 @@ class UserAuthSystem:
         except Exception as e:
             print(f"Error authenticating user: {e}")
             return {'success': False, 'error': 'Authentication failed'}
-    
+
     def get_user_info(self, user_id: int) -> Optional[Dict[str, Any]]:
         """Get user information"""
         try:
