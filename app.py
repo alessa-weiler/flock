@@ -188,18 +188,26 @@ class UserAuthSystem:
                 anonymous_id TEXT UNIQUE NOT NULL,
                 email_hash TEXT UNIQUE NOT NULL,
                 email_encrypted TEXT NOT NULL,
+                email TEXT,  -- Keep for backward compatibility during migration
                 password_hash TEXT NOT NULL,
                 first_name_encrypted TEXT,
                 last_name_encrypted TEXT,
+                first_name TEXT,  -- Keep for backward compatibility
+                last_name TEXT,   -- Keep for backward compatibility
                 phone_encrypted TEXT,
                 phone_hash TEXT,
+                phone TEXT,  -- Keep for backward compatibility
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 last_login TIMESTAMP,
                 is_active BOOLEAN DEFAULT 1,
                 profile_completed BOOLEAN DEFAULT 0,
                 profile_date TIMESTAMP,
                 data_consent BOOLEAN DEFAULT 0,
-                data_consent_date TIMESTAMP
+                data_consent_date TIMESTAMP,
+                min_age INTEGER DEFAULT 18,
+                max_age INTEGER DEFAULT 65,
+                bio TEXT,
+                profile_photo_url TEXT
             )
         ''')
 
@@ -217,6 +225,15 @@ class UserAuthSystem:
             )
         ''')
 
+        try:
+            cursor.execute('ALTER TABLE users ADD COLUMN min_age INTEGER DEFAULT 18')
+            cursor.execute('ALTER TABLE users ADD COLUMN max_age INTEGER DEFAULT 65')
+            print("✓ Step 1 complete: Added min_age and max_age columns")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e):
+                raise e
+            #print("✓ Step 1: Age columns already exist")
+        
         # Add new columns for enhanced profile features
         try:
             cursor.execute('ALTER TABLE users ADD COLUMN bio TEXT')
@@ -265,6 +282,17 @@ class UserAuthSystem:
                 FOREIGN KEY (anonymous_id) REFERENCES users (anonymous_id)
             )
         ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS user_profiles (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                profile_data TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (id),
+                UNIQUE(user_id)
+            )
+        ''')
         
         # User matches table
         cursor.execute('''
@@ -291,6 +319,7 @@ class UserAuthSystem:
                 FOREIGN KEY (matched_user_id) REFERENCES users (id)
             )
         ''')
+
         
         try:
             cursor.execute('ALTER TABLE user_matches ADD COLUMN matched_user_phone TEXT')
@@ -350,7 +379,7 @@ class UserAuthSystem:
         print("✓ User authentication database initialized")
     
     def create_user(self, email: str, password: str, first_name: str = None, 
-                   last_name: str = None, phone: str = None, data_consent: bool = False) -> Dict[str, Any]:
+                   last_name: str = None, phone: str = None, min_age: int = 18, max_age: int = 100, data_consent: bool = True) -> Dict[str, Any]:
         """Create user with encryption and anonymization"""
         try:
             # if not data_consent:
@@ -387,12 +416,12 @@ class UserAuthSystem:
                 INSERT INTO users (
                     anonymous_id, email_hash, email_encrypted, password_hash,
                     first_name_encrypted, last_name_encrypted, phone_encrypted, phone_hash,
-                    data_consent, data_consent_date
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    min_age, max_age, data_consent, data_consent_date
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             ''', (
                 anonymous_id, email_hash, email_encrypted, password_hash,
                 first_name_encrypted, last_name_encrypted, phone_encrypted, phone_hash,
-                data_consent
+                min_age, max_age, data_consent
             ))
             
             user_id = cursor.lastrowid
@@ -750,6 +779,78 @@ class UserAuthSystem:
             print(f"Error getting users for matching: {e}")
             return []
     
+    def get_age_filtered_users(self, user_id: int) -> List[Dict[str, Any]]:
+            """Get users filtered by mutual age compatibility"""
+            try:
+                conn = sqlite3.connect('users.db')
+                cursor = conn.cursor()
+                
+                # Get current user's age preferences
+                cursor.execute('SELECT min_age, max_age FROM users WHERE id = ?', (user_id,))
+                user_prefs = cursor.fetchone()
+                if not user_prefs:
+                    return []
+                
+                user_min_age, user_max_age = user_prefs
+                
+                # Get users who fit mutual age requirements
+                cursor.execute('''
+                    SELECT u.id, u.email, u.first_name, u.last_name, u.phone, 
+                        up.profile_data, u.min_age, u.max_age
+                    FROM users u
+                    JOIN user_profiles up ON u.id = up.user_id
+                    WHERE u.id != ? 
+                    AND u.is_active = 1 
+                    AND u.profile_completed = 1
+                    AND JSON_EXTRACT(up.profile_data, '$.age') BETWEEN ? AND ?
+                    AND ? BETWEEN u.min_age AND u.max_age
+                ''', (user_id, user_min_age, user_max_age, 
+                    user_id))  # Current user's age needs to be passed here
+                
+                # Actually, we need current user's age too:
+                cursor.execute('SELECT JSON_EXTRACT(profile_data, "$.age") FROM user_profiles WHERE user_id = ?', (user_id,))
+                current_user_age = cursor.fetchone()
+                if not current_user_age:
+                    return []
+                
+                current_user_age = int(current_user_age[0])
+                
+                # Redo query with current user's age
+                cursor.execute('''
+                    SELECT u.id, u.email, u.first_name, u.last_name, u.phone, up.profile_data
+                    FROM users u
+                    JOIN user_profiles up ON u.id = up.user_id
+                    WHERE u.id != ? 
+                    AND u.is_active = 1 
+                    AND u.profile_completed = 1
+                    AND CAST(JSON_EXTRACT(up.profile_data, '$.age') AS INTEGER) BETWEEN ? AND ?
+                    AND ? BETWEEN u.min_age AND u.max_age
+                ''', (user_id, user_min_age, user_max_age, current_user_age))
+                
+                users = cursor.fetchall()
+                conn.close()
+                
+                results = []
+                for user in users:
+                    try:
+                        profile_data = json.loads(user[5]) if user[5] else {}
+                        results.append({
+                            'user_id': user[0],
+                            'email': user[1],
+                            'first_name': user[2],
+                            'last_name': user[3], 
+                            'phone': user[4],
+                            'profile': profile_data
+                        })
+                    except json.JSONDecodeError:
+                        continue
+                
+                return results
+                
+            except Exception as e:
+                print(f"Error getting age-filtered users: {e}")
+                return []
+
     def get_random_users(self, limit=15, exclude_user_id=None):
         """Get random users for visualization"""
         try:
@@ -1907,7 +2008,7 @@ class MatchingSystem:
             return []
         
         # Get all other users for matching
-        all_users = self.user_auth.get_all_users_for_matching(user_id)
+        all_users = self.user_auth.get_age_filtered_users(user_id)
         print(f"Found {len(all_users)} potential matches")
         
         if not all_users:
@@ -2969,19 +3070,19 @@ def home():
 
             <div class="features-grid">
                 <div class="feature-card">
-                    <span class="feature-icon">🍽️</span>
+                    
                     <h3 class="feature-title">Dinner Simulation</h3>
                     <p class="feature-description">AI agents simulate dinner conversations to test real compatibility</p>
                 </div>
                 
                 <div class="feature-card">
-                    <span class="feature-icon">🧠</span>
+                    <
                     <h3 class="feature-title">Deep Matching</h3>
                     <p class="feature-description">Beyond interests - we match personalities, values, and communication styles</p>
                 </div>
                 
                 <div class="feature-card">
-                    <span class="feature-icon">⚡</span>
+                    
                     <h3 class="feature-title">Skip Small Talk</h3>
                     <p class="feature-description">Meet knowing you're already compatible for meaningful conversation</p>
                 </div>
@@ -3967,7 +4068,6 @@ def register():
         last_name = request.form.get('last_name', '').strip()
         phone = request.form.get('phone', '').strip()
         
-        # Validation
         existing_user = user_auth.get_user_by_email(email)
         existing_phone_user = user_auth.get_user_by_phone(phone)
         if existing_phone_user:
@@ -6852,6 +6952,23 @@ def render_step_1_content(profile: Dict) -> str:
                value="{profile.get('age', '')}" placeholder="Enter your age"
                class="form-input">
     </div>
+    
+    <div class="form-row">
+        <div class="form-group">
+            <label class="form-label">Minimum Age for Matches</label>
+            <input type="number" name="min_age" class="form-input" 
+                   value="22" min="18" max="100" required>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Maximum Age for Matches</label>
+            <input type="number" name="max_age" class="form-input" 
+                   value="35" min="18" max="100" required>
+        </div>
+    </div>
+    <div style="font-size: 12px; color: #6b9b99; margin-bottom: 16px; text-align: center;">
+        You'll only see matches within this age range, and they must also accept your age
+    </div>
+   
     
     <div class="form-group">
         <label class="form-label">Gender</label>
