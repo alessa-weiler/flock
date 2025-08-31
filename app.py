@@ -6787,7 +6787,7 @@ def edit_profile():
     </style>
     
     <div class="edit-profile-container">
-        {render_flash_messages()}
+        
         
         <div class="profile-header">
             <h1 class="profile-title">Edit Your Profile</h1>
@@ -6841,12 +6841,7 @@ def edit_profile():
                 </h2>
                 
                 <div class="form-grid">
-                    <div class="form-group">
-                        <label class="form-label" for="location">City/Area</label>
-                        <input type="text" name="location" id="location"
-                               value="{existing_profile.get('location', '')}" required
-                               class="form-input" placeholder="e.g., Central London">
-                    </div>
+                    
                     <div class="form-group">
                         <label class="form-label" for="postcode">Postcode</label>
                         <input type="text" name="postcode" id="postcode"
@@ -6883,27 +6878,13 @@ def edit_profile():
                     
                     <div class="photo-preview-container">
                         <div id="photo-preview">
-                            {render_photo_preview_enhanced(existing_profile.get('profile_photo_url', ''))}
+                            {render_photo_preview(existing_profile.get('profile_photo_url', ''))}
                         </div>
                     </div>
                 </div>
             </div>
             
-            <!-- Privacy Settings Section -->
-            <div class="privacy-section">
-                <h2 class="section-title">
-                    <span class="section-icon">🔒</span>
-                    Privacy & Sharing Settings
-                </h2>
-                
-                <p style="margin-bottom: 1.5rem; opacity: 0.9; line-height: 1.6;">
-                    Control what information is visible to your matches. You can always change these settings later.
-                </p>
-                
-                <div class="privacy-grid">
-                    {render_privacy_checkboxes(privacy_settings)}
-                </div>
-            </div>
+            
             
             <!-- Action Buttons -->
             <div class="action-buttons">
@@ -7010,6 +6991,32 @@ def render_photo_preview(photo_url: str) -> str:
         '''
     else:
         return '<div id="photo-preview"></div>'
+
+# def render_privacy_checkboxes(privacy_settings: dict) -> str:
+#     """Render privacy checkbox options"""
+#     checkboxes = [
+#         ('share_personality_scores', 'Share personality compatibility scores'),
+#         ('share_values_scores', 'Share values alignment scores'),
+#         ('share_lifestyle_info', 'Share lifestyle preferences'),
+#         ('share_social_preferences', 'Share social interaction styles'),
+#         ('share_contact_info', 'Allow contact information sharing'),
+#         ('share_detailed_analysis', 'Share detailed compatibility analysis'),
+#         ('share_bio', 'Show bio/personal description'),
+#         ('share_photo', 'Display profile photo'),
+#         ('share_exact_location', 'Share exact location (postcode)'),
+#         ('share_age', 'Display age information')
+#     ]
+    
+#     html = ""
+#     for name, label in checkboxes:
+#         checked = 'checked' if privacy_settings.get(name, True) else ''
+#         html += f'''
+#         <div class="privacy-item">
+#             <input type="checkbox" name="{name}" id="{name}" class="privacy-checkbox" {checked}>
+#             <label for="{name}" class="privacy-label">{label}</label>
+#         </div>
+#         '''
+#     return html
 
 def get_initials(name: str) -> str:
     """Get initials from name"""
