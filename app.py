@@ -6271,7 +6271,7 @@ def onboarding_step(step):
 @app.route('/edit-profile', methods=['GET', 'POST'])
 @login_required
 def edit_profile():
-    """Enhanced profile editing with privacy controls"""
+    """Enhanced profile editing with privacy controls matching dashboard aesthetic"""
     user_id = session['user_id']
     user_info = user_auth.get_user_info(user_id)
     
@@ -6336,135 +6336,657 @@ def edit_profile():
     privacy_settings = existing_profile.get('privacy_settings', {})
     
     content = f'''
-    <div class="container" style="max-width: 800px;">
-        <h1 style="font-size: 28px; text-align: center; margin-bottom: 32px;">Edit Your Profile</h1>
+    <style>
+        @import url("https://fonts.googleapis.com/css2?family=Clash+Display:wght@200..700&display=swap");
+        @import url("https://fonts.googleapis.com/css2?family=Satoshi:wght@300..900&display=swap");
+        
+        .edit-profile-container {{
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 2rem;
+            font-family: 'Satoshi', -apple-system, BlinkMacSystemFont, sans-serif;
+        }}
+        
+        .profile-header {{
+            text-align: center;
+            margin-bottom: 3rem;
+            padding: 2.5rem 2rem;
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            position: relative;
+        }}
+        
+        .profile-header::before {{
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--color-sage), transparent);
+        }}
+        
+        .profile-title {{
+            font-family: "Clash Display", sans-serif;
+            font-size: 2.5rem;
+            font-weight: 500;
+            margin: 0 0 1rem 0;
+            color: var(--color-charcoal);
+            letter-spacing: -0.02em;
+            background: linear-gradient(135deg, #2d2d2d, #6b9b99);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }}
+        
+        .profile-subtitle {{
+            font-family: "Satoshi", sans-serif;
+            font-size: 1.125rem;
+            line-height: 1.6;
+            color: #6b9b99;
+            margin: 0;
+        }}
+        
+        .form-section {{
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(20px);
+            border-radius: 24px;
+            padding: 2.5rem;
+            margin: 2rem 0;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: all 0.3s ease;
+        }}
+        
+        .form-section:hover {{
+            transform: translateY(-2px);
+            border-color: rgba(107, 155, 153, 0.3);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.08);
+        }}
+        
+        .section-title {{
+            font-family: "Clash Display", sans-serif;
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin: 0 0 1.5rem 0;
+            color: var(--color-charcoal);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }}
+        
+        .section-icon {{
+            font-size: 1.25rem;
+        }}
+        
+        .form-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 1.5rem;
+        }}
+        
+        .form-group {{
+            margin-bottom: 1.5rem;
+        }}
+        
+        .form-label {{
+            font-family: "Satoshi", sans-serif;
+            display: block;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 0.75rem;
+            opacity: 0.8;
+            font-weight: 600;
+            color: var(--color-charcoal);
+        }}
+        
+        .form-input, .form-textarea {{
+            font-family: "Satoshi", sans-serif;
+            width: 100%;
+            padding: 1rem 1.25rem;
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 16px;
+            color: var(--color-charcoal);
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            box-sizing: border-box;
+        }}
+        
+        .form-input:focus, .form-textarea:focus {{
+            outline: none;
+            border-color: rgba(107, 155, 153, 0.5);
+            background: rgba(255, 255, 255, 0.95);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(107, 155, 153, 0.15);
+        }}
+        
+        .form-input::placeholder, .form-textarea::placeholder {{
+            color: rgba(45, 45, 45, 0.5);
+        }}
+        
+        .form-textarea {{
+            resize: vertical;
+            min-height: 100px;
+            line-height: 1.6;
+        }}
+        
+        .form-help {{
+            font-size: 0.75rem;
+            color: rgba(107, 155, 153, 0.8);
+            margin-top: 0.5rem;
+            line-height: 1.4;
+        }}
+        
+        .photo-preview-container {{
+            margin-top: 1rem;
+            padding: 1rem;
+            background: rgba(107, 155, 153, 0.1);
+            border-radius: 12px;
+            border: 1px dashed rgba(107, 155, 153, 0.3);
+        }}
+        
+        .photo-preview {{
+            display: none;
+        }}
+        
+        .photo-preview.active {{
+            display: block;
+        }}
+        
+        .preview-image {{
+            width: 120px;
+            height: 120px;
+            object-fit: cover;
+            border-radius: 12px;
+            border: 2px solid rgba(107, 155, 153, 0.3);
+            display: block;
+            margin: 0 auto;
+        }}
+        
+        .preview-label {{
+            font-size: 0.75rem;
+            color: var(--color-gray-600);
+            text-align: center;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+        }}
+        
+        .preview-error {{
+            background: rgba(255, 149, 0, 0.1);
+            border: 1px solid rgba(255, 149, 0, 0.3);
+            color: #ff9500;
+            padding: 0.75rem;
+            border-radius: 8px;
+            font-size: 0.75rem;
+            text-align: center;
+        }}
+        
+        .privacy-section {{
+            background: linear-gradient(135deg, var(--color-sage), var(--color-lavender));
+            color: var(--color-charcoal);
+            padding: 2.5rem;
+            border-radius: 24px;
+            margin: 2rem 0;
+        }}
+        
+        .privacy-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }}
+        
+        .privacy-item {{
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 1rem;
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 12px;
+            backdrop-filter: blur(10px);
+        }}
+        
+        .privacy-checkbox {{
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(107, 155, 153, 0.5);
+            border-radius: 4px;
+            background: transparent;
+            cursor: pointer;
+            position: relative;
+            flex-shrink: 0;
+        }}
+        
+        .privacy-checkbox:checked {{
+            background: var(--color-emerald);
+            border-color: var(--color-emerald);
+        }}
+        
+        .privacy-checkbox:checked::after {{
+            content: '✓';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 12px;
+            font-weight: 600;
+        }}
+        
+        .privacy-label {{
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            line-height: 1.4;
+        }}
+        
+        .action-buttons {{
+            display: flex;
+            gap: 1.5rem;
+            justify-content: center;
+            margin: 3rem 0 2rem 0;
+            flex-wrap: wrap;
+        }}
+        
+        .btn {{
+            font-family: "Satoshi", sans-serif;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 1rem 2rem;
+            border-radius: 50px;
+            font-weight: 600;
+            font-size: 0.875rem;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            border: none;
+            cursor: pointer;
+            backdrop-filter: blur(10px);
+            white-space: nowrap;
+        }}
+        
+        .btn-primary {{
+            background: linear-gradient(135deg, #6b9b99, #ff9500);
+            color: white;
+            box-shadow: 0 4px 16px rgba(107, 155, 153, 0.3);
+        }}
+        
+        .btn-primary:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(107, 155, 153, 0.4);
+        }}
+        
+        .btn-secondary {{
+            background: rgba(255, 255, 255, 0.8);
+            color: #6b9b99;
+            border: 1px solid rgba(107, 155, 153, 0.3);
+        }}
+        
+        .btn-secondary:hover {{
+            background: rgba(255, 255, 255, 0.9);
+            transform: translateY(-2px);
+            border-color: #6b9b99;
+            box-shadow: 0 4px 12px rgba(107, 155, 153, 0.2);
+        }}
+        
+        .rematching-section {{
+            background: linear-gradient(135deg, var(--color-emerald), var(--color-sage));
+            color: white;
+            padding: 2.5rem;
+            border-radius: 24px;
+            text-align: center;
+            margin-top: 3rem;
+            position: relative;
+            overflow: hidden;
+        }}
+        
+        .rematching-section::before {{
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+            animation: shimmer 3s ease-in-out infinite;
+        }}
+        
+        @keyframes shimmer {{
+            0% {{ left: -100%; }}
+            50% {{ left: 100%; }}
+            100% {{ left: 100%; }}
+        }}
+        
+        .rematching-title {{
+            font-family: "Clash Display", sans-serif;
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+        }}
+        
+        .rematching-description {{
+            font-size: 1rem;
+            line-height: 1.6;
+            margin-bottom: 2rem;
+            opacity: 0.9;
+        }}
+        
+        .btn-rematch {{
+            background: rgba(255, 255, 255, 0.9);
+            color: var(--color-emerald);
+            padding: 1.25rem 2rem;
+            font-size: 1rem;
+            font-weight: 600;
+        }}
+        
+        .btn-rematch:hover {{
+            background: white;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(255, 255, 255, 0.3);
+        }}
+        
+        /* Flash Messages */
+        .flash-messages {{
+            margin-bottom: 2rem;
+        }}
+        
+        .flash-success {{
+            background: rgba(107, 155, 153, 0.9);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(107, 155, 153, 0.5);
+            color: white;
+            padding: 1rem 1.5rem;
+            border-radius: 12px;
+            margin-bottom: 1rem;
+            font-family: "Satoshi", sans-serif;
+            font-size: 0.875rem;
+        }}
+        
+        .flash-error {{
+            background: rgba(255, 149, 0, 0.9);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 149, 0, 0.5);
+            color: white;
+            padding: 1rem 1.5rem;
+            border-radius: 12px;
+            margin-bottom: 1rem;
+            font-family: "Satoshi", sans-serif;
+            font-size: 0.875rem;
+        }}
+        
+        /* Responsive Design */
+        @media (max-width: 768px) {{
+            .edit-profile-container {{
+                padding: 1rem;
+            }}
+            
+            .profile-header {{
+                padding: 1.5rem 1rem;
+            }}
+            
+            .profile-title {{
+                font-size: 1.75rem;
+            }}
+            
+            .form-section {{
+                padding: 1.5rem;
+            }}
+            
+            .form-grid {{
+                grid-template-columns: 1fr;
+                gap: 1rem;
+            }}
+            
+            .privacy-grid {{
+                grid-template-columns: 1fr;
+            }}
+            
+            .action-buttons {{
+                flex-direction: column;
+                align-items: center;
+                gap: 1rem;
+            }}
+            
+            .btn {{
+                width: 100%;
+                max-width: 280px;
+                justify-content: center;
+            }}
+        }}
+        
+        /* Animation for sections */
+        .form-section {{
+            animation: slideInUp 0.5s ease forwards;
+            opacity: 0;
+            transform: translateY(20px);
+        }}
+        
+        .form-section:nth-child(2) {{ animation-delay: 0.1s; }}
+        .form-section:nth-child(3) {{ animation-delay: 0.2s; }}
+        .form-section:nth-child(4) {{ animation-delay: 0.3s; }}
+        .form-section:nth-child(5) {{ animation-delay: 0.4s; }}
+        
+        @keyframes slideInUp {{
+            to {{
+                opacity: 1;
+                transform: translateY(0);
+            }}
+        }}
+    </style>
+    
+    <div class="edit-profile-container">
+        {render_flash_messages()}
+        
+        <div class="profile-header">
+            <h1 class="profile-title">Edit Your Profile</h1>
+            <p class="profile-subtitle">Update your information and privacy settings</p>
+        </div>
         
         <form method="POST" enctype="multipart/form-data">
             <!-- Basic Information Section -->
-            <div style="background: #f8f9fa; border-radius: 8px; padding: 25px; margin-bottom: 30px; border-left: 4px solid #167a60;">
-                <h3 style="margin-top: 0; color: #167a60;">Basic Information</h3>
+            <div class="form-section">
+                <h2 class="section-title">
+                    <span class="section-icon">👤</span>
+                    Basic Information
+                </h2>
                 
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
-                    <div>
-                        <label style="display: block; margin-bottom: 8px; font-weight: 500;">First Name</label>
-                        <input type="text" name="first_name" value="{user_info.get('first_name', '')}" required
-                               style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; background: #f4e8ee;">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label" for="first_name">First Name</label>
+                        <input type="text" name="first_name" id="first_name" 
+                               value="{user_info.get('first_name', '')}" required
+                               class="form-input" placeholder="Enter your first name">
                     </div>
-                    <div>
-                        <label style="display: block; margin-bottom: 8px; font-weight: 500;">Last Name</label>
-                        <input type="text" name="last_name" value="{user_info.get('last_name', '')}" required
-                               style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; background: #f4e8ee;">
+                    <div class="form-group">
+                        <label class="form-label" for="last_name">Last Name</label>
+                        <input type="text" name="last_name" id="last_name"
+                               value="{user_info.get('last_name', '')}" required
+                               class="form-input" placeholder="Enter your last name">
                     </div>
                 </div>
                 
-                <div style="margin-bottom: 20px;">
-                    <label style="display: block; margin-bottom: 8px; font-weight: 500;">Email Address</label>
-                    <input type="email" name="email" value="{user_info.get('email', '')}" required
-                           style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; background: #f4e8ee;">
+                <div class="form-group">
+                    <label class="form-label" for="email">Email Address</label>
+                    <input type="email" name="email" id="email"
+                           value="{user_info.get('email', '')}" required
+                           class="form-input" placeholder="your@email.com">
                 </div>
                 
-                <div style="margin-bottom: 20px;">
-                    <label style="display: block; margin-bottom: 8px; font-weight: 500;">Contact email/number</label>
-                    <input type="tel" name="phone" value="{user_info.get('phone', '')}" required
-                           style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; background: #f4e8ee;">
-                    <div style="font-size: 12px; color: #666; margin-top: 4px;">Used for contact requests when matches want to connect</div>
+                <div class="form-group">
+                    <label class="form-label" for="phone">Contact Number</label>
+                    <input type="tel" name="phone" id="phone"
+                           value="{user_info.get('phone', '')}" required
+                           class="form-input" placeholder="+44 7XXX XXXXXX">
+                    <div class="form-help">Used for contact requests when matches want to connect</div>
                 </div>
+            </div>
+            
+            <!-- Location Section -->
+            <div class="form-section">
+                <h2 class="section-title">
+                    <span class="section-icon">📍</span>
+                    Location
+                </h2>
                 
-                <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px; margin-bottom: 20px;">
-                    <div>
-                        <label style="display: block; margin-bottom: 8px; font-weight: 500;">Location (City/Area)</label>
-                        <input type="text" name="location" value="{existing_profile.get('location', '')}" required
-                               style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; background: #f4e8ee;">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label" for="location">City/Area</label>
+                        <input type="text" name="location" id="location"
+                               value="{existing_profile.get('location', '')}" required
+                               class="form-input" placeholder="e.g., Central London">
                     </div>
-                    <div>
-                        <label style="display: block; margin-bottom: 8px; font-weight: 500;">Postcode</label>
-                        <input type="text" name="postcode" value="{existing_profile.get('postcode', '')}" required
-                               style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; background: #f4e8ee;">
+                    <div class="form-group">
+                        <label class="form-label" for="postcode">Postcode</label>
+                        <input type="text" name="postcode" id="postcode"
+                               value="{existing_profile.get('postcode', '')}" required
+                               class="form-input" placeholder="e.g., SW3 4HN">
                     </div>
                 </div>
             </div>
             
-            <!-- Bio Section -->
-            <div style="background: #f8f9fa; border-radius: 8px; padding: 25px; margin-bottom: 30px; border-left: 4px solid #28a745;">
-                <h3 style="margin-top: 0; color: #28a745;">About You</h3>
+            <!-- Personal Details Section -->
+            <div class="form-section">
+                <h2 class="section-title">
+                    <span class="section-icon">✨</span>
+                    About You
+                </h2>
                 
-                <div style="margin-bottom: 20px;">
-                    <label style="display: block; margin-bottom: 8px; font-weight: 500;">Bio / Personal Description</label>
-                    <textarea name="bio" rows="4" placeholder="Tell potential matches about yourself, your interests, what you're looking for in a friendship..."
-                              style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; background: #f4e8ee; resize: vertical;">{existing_profile.get('bio', '')}</textarea>
-                    <div style="font-size: 12px; color: #666; margin-top: 4px;">This helps matches get to know you better before connecting</div>
+                <div class="form-group">
+                    <label class="form-label" for="bio">Bio / Personal Description</label>
+                    <textarea name="bio" id="bio" class="form-textarea"
+                              placeholder="Tell potential matches about yourself, your interests, what you're looking for in a friendship...">{existing_profile.get('bio', '')}</textarea>
+                    <div class="form-help">This helps matches get to know you better before connecting</div>
                 </div>
                 
-                <div style="margin-bottom: 20px;">
-                    <label style="display: block; margin-bottom: 8px; font-weight: 500;">Profile Photo URL (Optional)</label>
-                    <input type="url" name="profile_photo_url" value="{existing_profile.get('profile_photo_url', '')}"
+                <div class="form-group">
+                    <label class="form-label" for="profile_photo_url">Profile Photo URL (Optional)</label>
+                    <input type="url" name="profile_photo_url" id="profile_photo_url"
+                           value="{existing_profile.get('profile_photo_url', '')}"
+                           class="form-input" 
                            placeholder="https://example.com/your-photo.jpg"
-                           style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; background: #f4e8ee;">
-                    <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                           oninput="updatePhotoPreview()">
+                    <div class="form-help">
                         Upload your photo to a service like Imgur, Google Drive (public), or use a social media photo URL
                     </div>
-                    {render_photo_preview(existing_profile.get('profile_photo_url', ''))}
+                    
+                    <div class="photo-preview-container">
+                        <div id="photo-preview">
+                            {render_photo_preview_enhanced(existing_profile.get('profile_photo_url', ''))}
+                        </div>
+                    </div>
                 </div>
             </div>
             
+            <!-- Privacy Settings Section -->
+            <div class="privacy-section">
+                <h2 class="section-title">
+                    <span class="section-icon">🔒</span>
+                    Privacy & Sharing Settings
+                </h2>
+                
+                <p style="margin-bottom: 1.5rem; opacity: 0.9; line-height: 1.6;">
+                    Control what information is visible to your matches. You can always change these settings later.
+                </p>
+                
+                <div class="privacy-grid">
+                    {render_privacy_checkboxes(privacy_settings)}
+                </div>
+            </div>
             
             <!-- Action Buttons -->
-            <div style="display: flex; gap: 15px; justify-content: center; margin-top: 40px;">
-                <a href="/dashboard" class="btn btn-secondary" style="padding: 16px 32px;">Cancel</a>
-                <button type="submit" class="btn btn-primary" style="padding: 16px 32px; font-size: 16px;">
-                    Save Changes
+            <div class="action-buttons">
+                <a href="/dashboard" class="btn btn-secondary">Cancel Changes</a>
+                <button type="submit" class="btn btn-primary">
+                    Save Profile Updates
                 </button>
             </div>
         </form>
         
-        <!-- Re-run Matching Section -->
-        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #f4e8ee; padding: 25px; border-radius: 8px; margin-top: 40px; text-align: center;">
-            <h3 style="margin-top: 0; color: #f4e8ee;">Want New Matches?</h3>
-            <p style="margin-bottom: 20px; opacity: 0.9;">
-                If you've made significant changes to your profile, you can re-run the AI matching system to find new compatible users.
+        <!-- Re-matching Section -->
+        <div class="rematching-section">
+            <h3 class="rematching-title">Want Fresh Matches?</h3>
+            <p class="rematching-description">
+                If you've made significant changes to your profile, you can re-run the AI matching system 
+                to discover new compatible connections based on your updated preferences.
             </p>
-            
+            <a href="/choose-agent" class="btn btn-rematch">
+                Find New Matches
+            </a>
         </div>
     </div>
     
     <script>
-        // Photo preview functionality
         function updatePhotoPreview() {{
-            const url = document.querySelector('input[name="profile_photo_url"]').value;
+            const url = document.getElementById('profile_photo_url').value;
             const preview = document.getElementById('photo-preview');
             
-            if (url ) {{
+            if (!url.trim()) {{
+                preview.innerHTML = '';
+                return;
+            }}
+            
+            const isImageUrl = /\.(jpg|jpeg|png|gif|webp)$/i.test(url) || 
+                              url.includes('imgur.com') || 
+                              url.includes('drive.google.com');
+            
+            if (isImageUrl) {{
                 preview.innerHTML = `
-                    <div style="margin-top: 10px;">
-                        <div style="font-size: 12px; color: #666; margin-bottom: 5px;">Preview:</div>
-                        <img src="${{url}}" style="width: 100px; height: 100px; object-fit: cover; border-radius: 8px; border: 2px solid #ddd;" 
+                    <div class="photo-preview active">
+                        <div class="preview-label">Preview:</div>
+                        <img src="${{url}}" class="preview-image" 
                              onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
-                        <div style="display: none; padding: 10px; background: #f8d7da; color: #721c24; border-radius: 4px; font-size: 12px;">
+                        <div class="preview-error" style="display: none;">
                             Could not load image. Please check the URL.
                         </div>
                     </div>
                 `;
-            }} else if (url) {{
+            }} else {{
                 preview.innerHTML = `
-                    <div style="margin-top: 10px; padding: 8px; background: #fff3cd; color: #856404; border-radius: 4px; font-size: 12px;">
+                    <div class="preview-error">
                         Please enter a direct image URL (ending in .jpg, .png, etc.)
                     </div>
                 `;
-            }} else {{
-                preview.innerHTML = '';
             }}
         }}
         
-        // Add event listener to photo URL input
-        document.querySelector('input[name="profile_photo_url"]').addEventListener('input', updatePhotoPreview);
+        // Initialize preview on page load
+        document.addEventListener('DOMContentLoaded', () => {{
+            updatePhotoPreview();
+        }});
         
-        // Initial preview load
-        updatePhotoPreview();
+        // Enhanced form validation
+        document.querySelector('form').addEventListener('submit', function(e) {{
+            const requiredFields = ['first_name', 'last_name', 'email', 'phone', 'location', 'postcode'];
+            let isValid = true;
+            
+            requiredFields.forEach(field => {{
+                const input = document.getElementById(field);
+                if (!input.value.trim()) {{
+                    input.style.borderColor = 'rgba(255, 149, 0, 0.5)';
+                    input.style.background = 'rgba(255, 149, 0, 0.1)';
+                    isValid = false;
+                    
+                    setTimeout(() => {{
+                        input.style.borderColor = '';
+                        input.style.background = '';
+                    }}, 3000);
+                }}
+            }});
+            
+            if (!isValid) {{
+                e.preventDefault();
+                alert('Please fill in all required fields.');
+            }}
+        }});
     </script>
     '''
     
     return render_template_with_header("Edit Profile", content, user_info)
-
 
 def render_photo_preview(photo_url: str) -> str:
     """Render photo preview if URL exists"""
@@ -7001,10 +7523,14 @@ def render_step_1_content(profile: Dict) -> str:
     
     <div class="form-group">
         <label class="form-label">Location (City/Area)</label>
-        <input type="text" name="location" required
-               value="{profile.get('location', '')}"
-               placeholder="e.g., London, Manchester, Brighton"
-               class="form-input">
+        <select name="location" required class="form-input">
+            <option value="London" selected>London</option>
+        </select>
+        <p style="font-size: 0.9em; color: #666; margin-top: 5px;">
+            We're starting with London, feel free to drop us a message to 
+            <a href="mailto:alessa@pont-diagnostics.com">alessa@pont-diagnostics.com</a> 
+            if you want us to expand to your city!
+        </p>
     </div>
     
     <div class="form-group">
