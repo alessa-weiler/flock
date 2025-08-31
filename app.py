@@ -1145,7 +1145,7 @@ class UserAuthSystem:
     def send_password_reset_email(self, to_email: str, first_name: str, token: str):
         """Send password reset email"""
         try:
-            base_url = os.environ.get('BASE_URL', 'http://localhost:8080')
+            base_url = os.environ.get('BASE_URL', 'http://localhost:8050')
             reset_url = f"{base_url}/reset-password/{token}"
             
             subject = "Reset Your Connect Password"
@@ -1564,7 +1564,7 @@ class EmailFollowupSystem:
             subject = f"How did your meetup with {other_user_name} go?"
             
             # Get the base URL for your app
-            base_url = os.environ.get('BASE_URL', 'http://localhost:8080')
+            base_url = os.environ.get('BASE_URL', 'http://localhost:8050')
             yes_url = f"{base_url}/followup-response/{token}/yes"
             no_url = f"{base_url}/followup-response/{token}/no"
             
