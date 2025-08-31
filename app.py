@@ -557,8 +557,9 @@ class UserAuthSystem:
         except Exception as e:
             print(f"Error getting user by phone: {e}")
             return None
+    
     def save_user_profile(self, user_id: int, profile_data: Dict[str, Any]) -> bool:
-        """Save encrypted and anonymized profile data"""
+        """Save profile data to both encrypted and plain tables"""
         try:
             conn = sqlite3.connect('users.db')
             cursor = conn.cursor()
@@ -571,16 +572,21 @@ class UserAuthSystem:
             
             anonymous_id = result[0]
             
-            # Anonymize and encrypt profile data
+            # Save to anonymous profiles (encrypted) - existing code
             anonymized_profile = self._anonymize_profile_data(profile_data)
             encrypted_profile = self.encryption.encrypt_sensitive_data(json.dumps(anonymized_profile))
             profile_hash = self.encryption.hash_for_matching(json.dumps(anonymized_profile, sort_keys=True))
             
-            # Save to anonymous profiles table
             cursor.execute('''
                 INSERT OR REPLACE INTO anonymous_profiles (anonymous_id, profile_data_encrypted, profile_hash, updated_at)
                 VALUES (?, ?, ?, CURRENT_TIMESTAMP)
             ''', (anonymous_id, encrypted_profile, profile_hash))
+            
+            # ALSO save to user_profiles (plain) for matching system
+            cursor.execute('''
+                INSERT OR REPLACE INTO user_profiles (user_id, profile_data, updated_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+            ''', (user_id, json.dumps(profile_data)))
             
             # Update user record
             cursor.execute('''
@@ -599,6 +605,7 @@ class UserAuthSystem:
         except Exception as e:
             print(f"Error saving profile: {e}")
             return False
+    
     def _anonymize_profile_data(self, profile_data: Dict[str, Any]) -> Dict[str, Any]:
         """Remove or hash identifying information from profile data"""
         anonymized = profile_data.copy()
