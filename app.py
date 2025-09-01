@@ -1145,7 +1145,7 @@ class UserAuthSystem:
     def send_password_reset_email(self, to_email: str, first_name: str, token: str):
         """Send password reset email"""
         try:
-            base_url = os.environ.get('BASE_URL', 'http://localhost:8050')
+            base_url = os.environ.get('BASE_URL', 'http://localhost:8080')
             reset_url = f"{base_url}/reset-password/{token}"
             
             subject = "Reset Your Connect Password"
@@ -1564,7 +1564,7 @@ class EmailFollowupSystem:
             subject = f"How did your meetup with {other_user_name} go?"
             
             # Get the base URL for your app
-            base_url = os.environ.get('BASE_URL', 'http://localhost:8050')
+            base_url = os.environ.get('BASE_URL', 'http://localhost:8080')
             yes_url = f"{base_url}/followup-response/{token}/yes"
             no_url = f"{base_url}/followup-response/{token}/no"
             
@@ -11079,7 +11079,7 @@ if __name__ == '__main__':
     print("\n" + "="*60)
     print("💜 USER MATCHING PLATFORM")
     print("="*60)
-    print("🌐 URL: http://localhost:8050")
+    print("🌐 URL: http://localhost:8080")
     print("📝 Features: User profiles + AI matching + Block lists")
     print("🔒 Security: Full authentication + privacy controls")
     print("📊 Database: users.db")
@@ -11087,5 +11087,5 @@ if __name__ == '__main__':
     print("="*60 + "\n")
     
     # Run the app
-    port = int(os.environ.get('PORT', 8050))
+    port = int(os.environ.get('PORT', 8080))
     app.run(host='0.0.0.0', port=port, debug=True)
