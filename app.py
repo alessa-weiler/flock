@@ -6,6 +6,9 @@ os.environ['OMP_NUM_THREADS'] = '1'
 os.environ['MKL_NUM_THREADS'] = '1'
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ['CUDA_VISIBLE_DEVICES'] = ''
+import psycopg2
+from psycopg2.extras import RealDictCursor
+import urllib.parse
 
 import os
 import base64
@@ -167,6 +170,18 @@ class DataEncryption:
         return secrets.token_urlsafe(16)
 
 # ============================================================================
+# CONNECTING TO POSTGRESQL DATABASE
+# ============================================================================
+
+def get_db_connection():
+    """Get PostgreSQL database connection"""
+    database_url = os.environ.get('DATABASE_URL')
+    if not database_url:
+        raise Exception("DATABASE_URL environment variable not set")
+    
+    return psycopg2.connect(database_url, cursor_factory=RealDictCursor)
+
+# ============================================================================
 # USER AUTHENTICATION SYSTEM + ANONYMIZATION + COMPLIANCE
 # ============================================================================
 
@@ -176,15 +191,16 @@ class UserAuthSystem:
     def __init__(self):
         self.init_user_database()
         self.encryption = data_encryption
+    
     def init_user_database(self):
-        """Initialize user accounts database with all required tables"""
-        conn = sqlite3.connect('users.db')
+        """Initialize user accounts database with PostgreSQL"""
+        conn = get_db_connection()
         cursor = conn.cursor()
         
         # Enhanced users table with encryption
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 anonymous_id TEXT UNIQUE NOT NULL,
                 email_hash TEXT UNIQUE NOT NULL,
                 email_encrypted TEXT NOT NULL,
@@ -199,10 +215,10 @@ class UserAuthSystem:
                 phone TEXT,  -- Keep for backward compatibility
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 last_login TIMESTAMP,
-                is_active BOOLEAN DEFAULT 1,
-                profile_completed BOOLEAN DEFAULT 0,
+                is_active BOOLEAN DEFAULT TRUE,
+                profile_completed BOOLEAN DEFAULT FALSE,
                 profile_date TIMESTAMP,
-                data_consent BOOLEAN DEFAULT 0,
+                data_consent BOOLEAN DEFAULT FALSE,
                 data_consent_date TIMESTAMP,
                 min_age INTEGER DEFAULT 18,
                 max_age INTEGER DEFAULT 65,
@@ -211,11 +227,10 @@ class UserAuthSystem:
             )
         ''')
 
-
         # Data processing log
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS data_processing_log (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 anonymous_id TEXT NOT NULL,
                 action TEXT NOT NULL,
                 purpose TEXT NOT NULL,
@@ -225,55 +240,41 @@ class UserAuthSystem:
             )
         ''')
 
+        # Add new columns if they don't exist (PostgreSQL way)
         try:
-            cursor.execute('ALTER TABLE users ADD COLUMN min_age INTEGER DEFAULT 18')
-            cursor.execute('ALTER TABLE users ADD COLUMN max_age INTEGER DEFAULT 65')
-            print("✓ Step 1 complete: Added min_age and max_age columns")
-        except sqlite3.OperationalError as e:
-            if "duplicate column name" not in str(e):
-                raise e
-            #print("✓ Step 1: Age columns already exist")
-        
-        # Add new columns for enhanced profile features
-        try:
-            cursor.execute('ALTER TABLE users ADD COLUMN bio TEXT')
-            print("✓ Added bio column to users table")
-        except sqlite3.OperationalError as e:
-            if "duplicate column name" not in str(e):
-                print(f"Bio column addition error: {e}")
-        
-        try:
-            cursor.execute('ALTER TABLE users ADD COLUMN profile_photo_url TEXT')
-            print("✓ Added profile_photo_url column to users table")
-        except sqlite3.OperationalError as e:
-            if "duplicate column name" not in str(e):
-                print(f"Profile photo URL column addition error: {e}")
+            cursor.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS min_age INTEGER DEFAULT 18')
+            cursor.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS max_age INTEGER DEFAULT 65')
+            cursor.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT')
+            cursor.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_photo_url TEXT')
+            print("✓ Added new columns to users table")
+        except psycopg2.Error as e:
+            print(f"Column addition info: {e}")
         
         # Create profile privacy settings table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS profile_privacy (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 user_id INTEGER NOT NULL,
-                share_personality_scores BOOLEAN DEFAULT 1,
-                share_values_scores BOOLEAN DEFAULT 1,
-                share_lifestyle_info BOOLEAN DEFAULT 1,
-                share_social_preferences BOOLEAN DEFAULT 1,
-                share_contact_info BOOLEAN DEFAULT 1,
-                share_detailed_analysis BOOLEAN DEFAULT 1,
-                share_bio BOOLEAN DEFAULT 1,
-                share_photo BOOLEAN DEFAULT 1,
-                share_exact_location BOOLEAN DEFAULT 0,
-                share_age BOOLEAN DEFAULT 1,
+                share_personality_scores BOOLEAN DEFAULT TRUE,
+                share_values_scores BOOLEAN DEFAULT TRUE,
+                share_lifestyle_info BOOLEAN DEFAULT TRUE,
+                share_social_preferences BOOLEAN DEFAULT TRUE,
+                share_contact_info BOOLEAN DEFAULT TRUE,
+                share_detailed_analysis BOOLEAN DEFAULT TRUE,
+                share_bio BOOLEAN DEFAULT TRUE,
+                share_photo BOOLEAN DEFAULT TRUE,
+                share_exact_location BOOLEAN DEFAULT FALSE,
+                share_age BOOLEAN DEFAULT TRUE,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users (id),
                 UNIQUE(user_id)
             )
         ''')
-    
+        
         # User profiles table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS anonymous_profiles (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 anonymous_id TEXT NOT NULL,
                 profile_data_encrypted TEXT NOT NULL,
                 profile_hash TEXT NOT NULL,
@@ -282,9 +283,10 @@ class UserAuthSystem:
                 FOREIGN KEY (anonymous_id) REFERENCES users (anonymous_id)
             )
         ''')
+        
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS user_profiles (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 user_id INTEGER NOT NULL,
                 profile_data TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -297,11 +299,12 @@ class UserAuthSystem:
         # User matches table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS user_matches (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 user_id INTEGER NOT NULL,
                 matched_user_id INTEGER NOT NULL,
                 matched_user_name TEXT NOT NULL,
                 matched_user_email TEXT,
+                matched_user_phone TEXT,
                 compatibility_score INTEGER,
                 personality_score INTEGER,
                 values_score INTEGER,
@@ -313,27 +316,19 @@ class UserAuthSystem:
                 overall_score INTEGER,
                 compatibility_analysis TEXT,
                 distance_miles REAL,
-                is_active BOOLEAN DEFAULT 1,
+                is_active BOOLEAN DEFAULT TRUE,
+                user_would_meet_again BOOLEAN,
+                match_would_meet_again BOOLEAN,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users (id),
                 FOREIGN KEY (matched_user_id) REFERENCES users (id)
             )
         ''')
-
-        
-        try:
-            cursor.execute('ALTER TABLE user_matches ADD COLUMN matched_user_phone TEXT')
-            print("✓ Added matched_user_phone column to user_matches table")
-        except sqlite3.OperationalError as e:
-            if "duplicate column name" in str(e):
-                print("✓ matched_user_phone column already exists")
-            else:
-                raise e
             
         # Blocked users table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS blocked_users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 user_id INTEGER NOT NULL,
                 blocked_email TEXT,
                 blocked_phone TEXT,
@@ -346,7 +341,7 @@ class UserAuthSystem:
         
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS contact_requests (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 requester_id INTEGER NOT NULL,
                 requested_id INTEGER NOT NULL,
                 requester_name TEXT NOT NULL,
@@ -365,27 +360,50 @@ class UserAuthSystem:
 
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS password_reset_tokens (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 user_id INTEGER NOT NULL,
                 token TEXT UNIQUE NOT NULL,
                 expires_at TIMESTAMP NOT NULL,
-                used BOOLEAN DEFAULT 0,
+                used BOOLEAN DEFAULT FALSE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users (id)
             )
         ''')
+
+        # Follow-up tracking table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS followup_tracking (
+                id SERIAL PRIMARY KEY,
+                contact_request_id INTEGER NOT NULL,
+                user1_id INTEGER NOT NULL,
+                user2_id INTEGER NOT NULL,
+                user1_name TEXT NOT NULL,
+                user2_name TEXT NOT NULL,
+                user1_email TEXT NOT NULL,
+                user2_email TEXT NOT NULL,
+                email_sent_at TIMESTAMP,
+                user1_token TEXT UNIQUE,
+                user2_token TEXT UNIQUE,
+                user1_response BOOLEAN,
+                user2_response BOOLEAN,
+                user1_responded_at TIMESTAMP,
+                user2_responded_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (contact_request_id) REFERENCES contact_requests (id),
+                FOREIGN KEY (user1_id) REFERENCES users (id),
+                FOREIGN KEY (user2_id) REFERENCES users (id)
+            )
+        ''')
+        
         conn.commit()
         conn.close()
-        print("✓ User authentication database initialized")
-    
+
     def create_user(self, email: str, password: str, first_name: str = None, 
-                   last_name: str = None, phone: str = None, min_age: int = 18, max_age: int = 100, data_consent: bool = True) -> Dict[str, Any]:
+               last_name: str = None, phone: str = None, min_age: int = 18, 
+               max_age: int = 100, data_consent: bool = True) -> Dict[str, Any]:
         """Create user with encryption and anonymization"""
         try:
-            # if not data_consent:
-            #     return {'success': False, 'error': 'Data processing consent required'}
-            
-            conn = sqlite3.connect('users.db')
+            conn = get_db_connection()
             cursor = conn.cursor()
             
             # Create hashes for duplicate checking
@@ -393,8 +411,8 @@ class UserAuthSystem:
             phone_hash = self.encryption.hash_for_matching(phone) if phone else None
             
             # Check if email/phone already exists
-            cursor.execute('SELECT id FROM users WHERE email_hash = ? OR phone_hash = ?', 
-                          (email_hash, phone_hash))
+            cursor.execute('SELECT id FROM users WHERE email_hash = %s OR phone_hash = %s', 
+                        (email_hash, phone_hash))
             if cursor.fetchone():
                 conn.close()
                 return {'success': False, 'error': 'Email or phone already registered'}
@@ -411,20 +429,21 @@ class UserAuthSystem:
             # Create password hash
             password_hash = generate_password_hash(password)
             
-            # Insert user
+            # Insert user (Note: PostgreSQL uses RETURNING instead of lastrowid)
             cursor.execute('''
                 INSERT INTO users (
                     anonymous_id, email_hash, email_encrypted, password_hash,
                     first_name_encrypted, last_name_encrypted, phone_encrypted, phone_hash,
                     min_age, max_age, data_consent, data_consent_date
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                RETURNING id
             ''', (
                 anonymous_id, email_hash, email_encrypted, password_hash,
                 first_name_encrypted, last_name_encrypted, phone_encrypted, phone_hash,
                 min_age, max_age, data_consent
             ))
             
-            user_id = cursor.lastrowid
+            user_id = cursor.fetchone()['id']
             
             # Log data processing
             self._log_data_processing(cursor, anonymous_id, 'user_creation', 'account_setup')
@@ -436,12 +455,12 @@ class UserAuthSystem:
             
         except Exception as e:
             print(f"Error creating user: {e}")
-            return {'success': False, 'error': 'Account creation failed'}
+            return {'success': False, 'error': 'Account creation failed'}     
     
     def authenticate_user(self, email: str, password: str) -> Dict[str, Any]:
         """Authenticate user login"""
         try:
-            conn = sqlite3.connect('users.db')
+            conn = get_db_connection()
             cursor = conn.cursor()
             
             # Hash the email for lookup
@@ -449,7 +468,7 @@ class UserAuthSystem:
             
             cursor.execute('''
                 SELECT id, password_hash, first_name_encrypted, last_name_encrypted, profile_completed
-                FROM users WHERE email_hash = ? AND is_active = 1
+                FROM users WHERE email_hash = %s AND is_active = 1
             ''', (email_hash,))
             
             user = cursor.fetchone()
@@ -461,7 +480,7 @@ class UserAuthSystem:
                 
                 # Update last login
                 cursor.execute('''
-                    UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?
+                    UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = %s
                 ''', (user[0],))
                 conn.commit()
                 conn.close()
@@ -484,12 +503,13 @@ class UserAuthSystem:
     def get_user_info(self, user_id: int) -> Optional[Dict[str, Any]]:
         """Get user information"""
         try:
-            conn = sqlite3.connect('users.db')
+            conn = get_db_connection()
             cursor = conn.cursor()
             
             cursor.execute('''
-                SELECT email, first_name, last_name, phone, profile_completed, profile_date
-                FROM users WHERE id = ?
+                SELECT email_encrypted, first_name_encrypted, last_name_encrypted, 
+                    phone_encrypted, profile_completed, profile_date
+                FROM users WHERE id = %s
             ''', (user_id,))
             
             user = cursor.fetchone()
@@ -497,28 +517,29 @@ class UserAuthSystem:
             
             if user:
                 return {
-                    'email': user[0],
-                    'first_name': user[1],
-                    'last_name': user[2],
-                    'phone': user[3],
-                    'profile_completed': bool(user[4]),
-                    'profile_date': user[5]
+                    'email': self.encryption.decrypt_sensitive_data(user['email_encrypted']) if user['email_encrypted'] else None,
+                    'first_name': self.encryption.decrypt_sensitive_data(user['first_name_encrypted']) if user['first_name_encrypted'] else None,
+                    'last_name': self.encryption.decrypt_sensitive_data(user['last_name_encrypted']) if user['last_name_encrypted'] else None,
+                    'phone': self.encryption.decrypt_sensitive_data(user['phone_encrypted']) if user['phone_encrypted'] else None,
+                    'profile_completed': bool(user['profile_completed']) if user['profile_completed'] is not None else False,
+                    'profile_date': user['profile_date']
                 }
             return None
             
         except Exception as e:
             print(f"Error getting user info: {e}")
             return None
+
     def get_user_by_email(self, email: str):
         """Get user by email"""
         try:
-            conn = sqlite3.connect('users.db')
+            conn = get_db_connection()
             cursor = conn.cursor()
             
             cursor.execute('''
                 SELECT id, email, first_name, last_name 
                 FROM users 
-                WHERE LOWER(email) = LOWER(?)
+                WHERE LOWER(email) = LOWER(%s)
             ''', (email,))
             
             user = cursor.fetchone()
@@ -539,13 +560,13 @@ class UserAuthSystem:
     def get_user_by_phone(self, phone: str):
         """Get user by phone number"""
         try:
-            conn = sqlite3.connect('users.db')
+            conn = get_db_connection()
             cursor = conn.cursor()
             
             cursor.execute('''
                 SELECT id, email, first_name, last_name, phone 
                 FROM users 
-                WHERE phone = ?
+                WHERE phone = %s
             ''', (phone,))
             
             user = cursor.fetchone()
@@ -568,51 +589,54 @@ class UserAuthSystem:
     def save_user_profile(self, user_id: int, profile_data: Dict[str, Any]) -> bool:
         """Save profile data to both encrypted and plain tables"""
         try:
-            conn = sqlite3.connect('users.db')
+            conn = get_db_connection()
             cursor = conn.cursor()
             
             # Get anonymous ID
-            cursor.execute('SELECT anonymous_id FROM users WHERE id = ?', (user_id,))
+            cursor.execute('SELECT anonymous_id FROM users WHERE id = %s', (user_id,))
             result = cursor.fetchone()
             if not result:
+                print(f"❌ User {user_id} not found")
+                conn.close()
                 return False
             
-            anonymous_id = result[0]
+            anonymous_id = result['anonymous_id']
             
-            # Save to anonymous profiles (encrypted) - existing code
-            anonymized_profile = self._anonymize_profile_data(profile_data)
-            encrypted_profile = self.encryption.encrypt_sensitive_data(json.dumps(anonymized_profile))
-            profile_hash = self.encryption.hash_for_matching(json.dumps(anonymized_profile, sort_keys=True))
-            
-            cursor.execute('''
-                INSERT OR REPLACE INTO anonymous_profiles (anonymous_id, profile_data_encrypted, profile_hash, updated_at)
-                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-            ''', (anonymous_id, encrypted_profile, profile_hash))
-            
-            # ALSO save to user_profiles (plain) for matching system
-            cursor.execute('''
-                INSERT OR REPLACE INTO user_profiles (user_id, profile_data, updated_at)
-                VALUES (?, ?, CURRENT_TIMESTAMP)
-            ''', (user_id, json.dumps(profile_data)))
+            # Save to user_profiles (plain) for matching system
+            # Check if profile exists
+            cursor.execute('SELECT id FROM user_profiles WHERE user_id = %s', (user_id,))
+            if cursor.fetchone():
+                # Update existing
+                cursor.execute('''
+                    UPDATE user_profiles 
+                    SET profile_data = %s, updated_at = CURRENT_TIMESTAMP
+                    WHERE user_id = %s
+                ''', (json.dumps(profile_data), user_id))
+            else:
+                # Insert new
+                cursor.execute('''
+                    INSERT INTO user_profiles (user_id, profile_data, updated_at)
+                    VALUES (%s, %s, CURRENT_TIMESTAMP)
+                ''', (user_id, json.dumps(profile_data)))
             
             # Update user record
             cursor.execute('''
                 UPDATE users 
-                SET profile_completed = 1, profile_date = CURRENT_TIMESTAMP
-                WHERE id = ?
+                SET profile_completed = TRUE, profile_date = CURRENT_TIMESTAMP
+                WHERE id = %s
             ''', (user_id,))
-            
-            # Log data processing
-            self._log_data_processing(cursor, anonymous_id, 'profile_update', 'matching_algorithm')
             
             conn.commit()
             conn.close()
+            print(f"✅ Profile saved successfully for user {user_id}")
             return True
             
         except Exception as e:
-            print(f"Error saving profile: {e}")
+            print(f"❌ Error saving profile for user {user_id}: {e}")
+            import traceback
+            traceback.print_exc()
             return False
-    
+
     def _anonymize_profile_data(self, profile_data: Dict[str, Any]) -> Dict[str, Any]:
         """Remove or hash identifying information from profile data"""
         anonymized = profile_data.copy()
@@ -636,40 +660,44 @@ class UserAuthSystem:
             anonymized['unique_interest_hash'] = self.encryption.hash_for_matching(anonymized['unique_interest'])
         
         return anonymized
+    
     def get_user_profile(self, user_id: int) -> Optional[Dict[str, Any]]:
         """Get user profile data"""
         try:
-            conn = sqlite3.connect('users.db')
+            conn = get_db_connection()
             cursor = conn.cursor()
             
             cursor.execute('''
-                SELECT profile_data FROM user_profiles WHERE user_id = ?
+                SELECT profile_data FROM user_profiles WHERE user_id = %s
             ''', (user_id,))
             
             result = cursor.fetchone()
             conn.close()
             
             if result:
-                return json.loads(result[0])
+                return json.loads(result['profile_data'])
             return None
             
         except Exception as e:
-            print(f"Error getting profile: {e}")
+            print(f"Error getting profile for user {user_id}: {e}")
+            import traceback
+            traceback.print_exc()
             return None
+
     def _log_data_processing(self, cursor, anonymous_id: str, action: str, purpose: str):
         """Log data processing activities for compliance"""
         cursor.execute('''
             INSERT INTO data_processing_log (anonymous_id, action, purpose)
-            VALUES (?, ?, ?)
+            VALUES (%s, %s, %s)
         ''', (anonymous_id, action, purpose))
     def save_user_matches(self, user_id: int, matches: List[Dict[str, Any]]) -> bool:
         """Save user matches to database"""
         try:
-            conn = sqlite3.connect('users.db')
+            conn = get_db_connection()
             cursor = conn.cursor()
             
             # Clear existing matches
-            cursor.execute('DELETE FROM user_matches WHERE user_id = ?', (user_id,))
+            cursor.execute('DELETE FROM user_matches WHERE user_id = %s', (user_id,))
             
             # Save new matches
             for match in matches:
@@ -679,7 +707,7 @@ class UserAuthSystem:
                     compatibility_score, personality_score, values_score, lifestyle_score,
                     emotional_score, social_score, communication_score, location_score, 
                     overall_score, compatibility_analysis, distance_miles)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ''', (
                     user_id,
                     match['matched_user_id'],
@@ -710,7 +738,7 @@ class UserAuthSystem:
     def get_user_matches(self, user_id: int) -> List[Dict[str, Any]]:
         """Get saved user matches with follow-up response data"""
         try:
-            conn = sqlite3.connect('users.db')
+            conn = get_db_connection()
             cursor = conn.cursor()
             
             cursor.execute('''
@@ -721,7 +749,7 @@ class UserAuthSystem:
                     um.overall_score, um.compatibility_analysis, um.distance_miles,
                     um.user_would_meet_again, um.match_would_meet_again
                 FROM user_matches um
-                WHERE um.user_id = ? AND um.is_active = 1
+                WHERE um.user_id = %s AND um.is_active = TRUE
                 ORDER BY um.overall_score DESC
             ''', (user_id,))
             
@@ -731,23 +759,23 @@ class UserAuthSystem:
             results = []
             for match in matches:
                 results.append({
-                    'matched_user_id': match[0],
-                    'matched_user_name': match[1],
-                    'matched_user_email': match[2],
-                    'matched_user_phone': match[3],
-                    'compatibility_score': match[4],
-                    'personality_score': match[5],
-                    'values_score': match[6] or 75,
-                    'lifestyle_score': match[7] or 75,
-                    'emotional_score': match[8] or 75,
-                    'social_score': match[9] or 75,
-                    'communication_score': match[10] or 75,
-                    'location_score': match[11],
-                    'overall_score': match[12],
-                    'compatibility_analysis': match[13],
-                    'distance_miles': match[14],
-                    'user_would_meet_again': match[15],  # Your response
-                    'match_would_meet_again': match[16]   # Their response
+                    'matched_user_id': match['matched_user_id'],
+                    'matched_user_name': match['matched_user_name'],
+                    'matched_user_email': match['matched_user_email'],
+                    'matched_user_phone': match['matched_user_phone'],
+                    'compatibility_score': match['compatibility_score'],
+                    'personality_score': match['personality_score'],
+                    'values_score': match['values_score'] or 75,
+                    'lifestyle_score': match['lifestyle_score'] or 75,
+                    'emotional_score': match['emotional_score'] or 75,
+                    'social_score': match['social_score'] or 75,
+                    'communication_score': match['communication_score'] or 75,
+                    'location_score': match['location_score'],
+                    'overall_score': match['overall_score'],
+                    'compatibility_analysis': match['compatibility_analysis'],
+                    'distance_miles': match['distance_miles'],
+                    'user_would_meet_again': match['user_would_meet_again'],
+                    'match_would_meet_again': match['match_would_meet_again']
                 })
             
             return results
@@ -755,18 +783,19 @@ class UserAuthSystem:
         except Exception as e:
             print(f"Error getting matches: {e}")
             return []
-    
+
     def get_all_users_for_matching(self, exclude_user_id: int) -> List[Dict[str, Any]]:
         """Get all users with completed profiles for matching"""
         try:
-            conn = sqlite3.connect('users.db')
+            conn = get_db_connection()
             cursor = conn.cursor()
             
             cursor.execute('''
-                SELECT u.id, u.email, u.first_name, u.last_name, u.phone, up.profile_data
+                SELECT u.id, u.email_encrypted, u.first_name_encrypted, u.last_name_encrypted, 
+                    u.phone_encrypted, up.profile_data
                 FROM users u
                 JOIN user_profiles up ON u.id = up.user_id
-                WHERE u.id != ? AND u.is_active = 1 AND u.profile_completed = 1
+                WHERE u.id != %s AND u.is_active = TRUE AND u.profile_completed = TRUE
             ''', (exclude_user_id,))
             
             users = cursor.fetchall()
@@ -775,13 +804,13 @@ class UserAuthSystem:
             results = []
             for user in users:
                 try:
-                    profile_data = json.loads(user[5]) if user[5] else {}
+                    profile_data = json.loads(user['profile_data']) if user['profile_data'] else {}
                     results.append({
-                        'user_id': user[0],
-                        'email': user[1],
-                        'first_name': user[2],
-                        'last_name': user[3],
-                        'phone': user[4],
+                        'user_id': user['id'],
+                        'email': self.encryption.decrypt_sensitive_data(user['email_encrypted']) if user['email_encrypted'] else None,
+                        'first_name': self.encryption.decrypt_sensitive_data(user['first_name_encrypted']) if user['first_name_encrypted'] else None,
+                        'last_name': self.encryption.decrypt_sensitive_data(user['last_name_encrypted']) if user['last_name_encrypted'] else None,
+                        'phone': self.encryption.decrypt_sensitive_data(user['phone_encrypted']) if user['phone_encrypted'] else None,
                         'profile': profile_data
                     })
                 except json.JSONDecodeError:
@@ -792,111 +821,102 @@ class UserAuthSystem:
         except Exception as e:
             print(f"Error getting users for matching: {e}")
             return []
-    
+
     def get_age_filtered_users(self, user_id: int) -> List[Dict[str, Any]]:
-            """Get users filtered by mutual age compatibility"""
-            try:
-                conn = sqlite3.connect('users.db')
-                cursor = conn.cursor()
-                
-                # Get current user's age preferences
-                cursor.execute('SELECT min_age, max_age FROM users WHERE id = ?', (user_id,))
-                user_prefs = cursor.fetchone()
-                if not user_prefs:
-                    return []
-                
-                user_min_age, user_max_age = user_prefs
-                
-                # Get users who fit mutual age requirements
-                cursor.execute('''
-                    SELECT u.id, u.email, u.first_name, u.last_name, u.phone, 
-                        up.profile_data, u.min_age, u.max_age
-                    FROM users u
-                    JOIN user_profiles up ON u.id = up.user_id
-                    WHERE u.id != ? 
-                    AND u.is_active = 1 
-                    AND u.profile_completed = 1
-                    AND JSON_EXTRACT(up.profile_data, '$.age') BETWEEN ? AND ?
-                    AND ? BETWEEN u.min_age AND u.max_age
-                ''', (user_id, user_min_age, user_max_age, 
-                    user_id))  # Current user's age needs to be passed here
-                
-                # Actually, we need current user's age too:
-                cursor.execute('SELECT JSON_EXTRACT(profile_data, "$.age") FROM user_profiles WHERE user_id = ?', (user_id,))
-                current_user_age = cursor.fetchone()
-                if not current_user_age:
-                    return []
-                
-                current_user_age = int(current_user_age[0])
-                
-                # Redo query with current user's age
-                cursor.execute('''
-                    SELECT u.id, u.email, u.first_name, u.last_name, u.phone, up.profile_data
-                    FROM users u
-                    JOIN user_profiles up ON u.id = up.user_id
-                    WHERE u.id != ? 
-                    AND u.is_active = 1 
-                    AND u.profile_completed = 1
-                    AND CAST(JSON_EXTRACT(up.profile_data, '$.age') AS INTEGER) BETWEEN ? AND ?
-                    AND ? BETWEEN u.min_age AND u.max_age
-                ''', (user_id, user_min_age, user_max_age, current_user_age))
-                
-                users = cursor.fetchall()
-                conn.close()
-                
-                results = []
-                for user in users:
-                    try:
-                        profile_data = json.loads(user[5]) if user[5] else {}
-                        results.append({
-                            'user_id': user[0],
-                            'email': user[1],
-                            'first_name': user[2],
-                            'last_name': user[3], 
-                            'phone': user[4],
-                            'profile': profile_data
-                        })
-                    except json.JSONDecodeError:
-                        continue
-                
-                return results
-                
-            except Exception as e:
-                print(f"Error getting age-filtered users: {e}")
+        """Get users filtered by mutual age compatibility"""
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            # Get current user's age preferences
+            cursor.execute('SELECT min_age, max_age FROM users WHERE id = %s', (user_id,))
+            user_prefs = cursor.fetchone()
+            if not user_prefs:
                 return []
+            
+            user_min_age, user_max_age = user_prefs['min_age'], user_prefs['max_age']
+            
+            # Get current user's age
+            cursor.execute('SELECT (profile_data::json->>\'age\')::integer as age FROM user_profiles WHERE user_id = %s', (user_id,))
+            current_user_age_result = cursor.fetchone()
+            if not current_user_age_result:
+                return []
+            
+            current_user_age = current_user_age_result['age']
+            
+            # Get users who fit mutual age requirements
+            cursor.execute('''
+                SELECT u.id, u.email_encrypted, u.first_name_encrypted, u.last_name_encrypted, 
+                    u.phone_encrypted, up.profile_data
+                FROM users u
+                JOIN user_profiles up ON u.id = up.user_id
+                WHERE u.id != %s 
+                AND u.is_active = TRUE 
+                AND u.profile_completed = TRUE
+                AND (up.profile_data::json->>\'age\')::integer BETWEEN %s AND %s
+                AND %s BETWEEN u.min_age AND u.max_age
+            ''', (user_id, user_min_age, user_max_age, current_user_age))
+            
+            users = cursor.fetchall()
+            conn.close()
+            
+            results = []
+            for user in users:
+                try:
+                    profile_data = json.loads(user['profile_data']) if user['profile_data'] else {}
+                    results.append({
+                        'user_id': user['id'],
+                        'email': self.encryption.decrypt_sensitive_data(user['email_encrypted']) if user['email_encrypted'] else None,
+                        'first_name': self.encryption.decrypt_sensitive_data(user['first_name_encrypted']) if user['first_name_encrypted'] else None,
+                        'last_name': self.encryption.decrypt_sensitive_data(user['last_name_encrypted']) if user['last_name_encrypted'] else None, 
+                        'phone': self.encryption.decrypt_sensitive_data(user['phone_encrypted']) if user['phone_encrypted'] else None,
+                        'profile': profile_data
+                    })
+                except json.JSONDecodeError:
+                    continue
+            
+            return results
+            
+        except Exception as e:
+            print(f"Error getting age-filtered users: {e}")
+            return []
 
     def get_random_users(self, limit=15, exclude_user_id=None):
         """Get random users for visualization"""
         try:
-            conn = sqlite3.connect('users.db')
+            conn = get_db_connection()
             cursor = conn.cursor()
             
             if exclude_user_id:
                 cursor.execute('''
-                    SELECT id, first_name, last_name, email 
+                    SELECT id, first_name_encrypted, last_name_encrypted, email_encrypted 
                     FROM users 
-                    WHERE id != ? AND is_active = 1
+                    WHERE id != %s AND is_active = TRUE
                     ORDER BY RANDOM() 
-                    LIMIT ?
+                    LIMIT %s
                 ''', (exclude_user_id, limit))
             else:
                 cursor.execute('''
-                    SELECT id, first_name, last_name, email 
+                    SELECT id, first_name_encrypted, last_name_encrypted, email_encrypted 
                     FROM users 
-                    WHERE is_active = 1
+                    WHERE is_active = TRUE
                     ORDER BY RANDOM() 
-                    LIMIT ?
+                    LIMIT %s
                 ''', (limit,))
             
             rows = cursor.fetchall()
             users = []
             
             for row in rows:
+                first_name = self.encryption.decrypt_sensitive_data(row['first_name_encrypted']) if row['first_name_encrypted'] else 'Anonymous'
+                last_name = self.encryption.decrypt_sensitive_data(row['last_name_encrypted']) if row['last_name_encrypted'] else ''
+                email = self.encryption.decrypt_sensitive_data(row['email_encrypted']) if row['email_encrypted'] else ''
+                
                 users.append({
-                    'user_id': row[0],
-                    'first_name': row[1] or 'Anonymous',
-                    'last_name': row[2] or '',
-                    'email': row[3]
+                    'user_id': row['id'],
+                    'first_name': first_name,
+                    'last_name': last_name,
+                    'email': email
                 })
             
             conn.close()
@@ -912,12 +932,12 @@ class UserAuthSystem:
                         reason: str = None) -> bool:
         """Add a user to the block list"""
         try:
-            conn = sqlite3.connect('users.db')
+            conn = get_db_connection()
             cursor = conn.cursor()
             
             cursor.execute('''
                 INSERT INTO blocked_users (user_id, blocked_email, blocked_phone, blocked_name, reason)
-                VALUES (?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s)
             ''', (user_id, blocked_email, blocked_phone, blocked_name, reason))
             
             conn.commit()
@@ -931,12 +951,12 @@ class UserAuthSystem:
     def get_blocked_users(self, user_id: int) -> Dict[str, List[str]]:
         """Get list of blocked users for a user"""
         try:
-            conn = sqlite3.connect('users.db')
+            conn = get_db_connection()
             cursor = conn.cursor()
             
             cursor.execute('''
                 SELECT blocked_email, blocked_phone, blocked_name
-                FROM blocked_users WHERE user_id = ?
+                FROM blocked_users WHERE user_id = %s
             ''', (user_id,))
             
             blocked = cursor.fetchall()
@@ -955,10 +975,10 @@ class UserAuthSystem:
     def clear_blocked_users(self, user_id: int) -> bool:
         """Clear all blocked users for a user"""
         try:
-            conn = sqlite3.connect('users.db')
+            conn = get_db_connection()
             cursor = conn.cursor()
             
-            cursor.execute('DELETE FROM blocked_users WHERE user_id = ?', (user_id,))
+            cursor.execute('DELETE FROM blocked_users WHERE user_id = %s', (user_id,))
             
             conn.commit()
             conn.close()
@@ -971,15 +991,15 @@ class UserAuthSystem:
     def send_contact_request(self, requester_id: int, requested_id: int, message: str = '') -> Dict[str, Any]:
         """Send a contact request"""
         try:
-            conn = sqlite3.connect('users.db')
+            conn = get_db_connection()
             cursor = conn.cursor()
             
             # Get requester info
-            cursor.execute('SELECT first_name, last_name, phone FROM users WHERE id = ?', (requester_id,))
+            cursor.execute('SELECT first_name, last_name, phone FROM users WHERE id = %s', (requester_id,))
             requester = cursor.fetchone()
             
             # Get requested user info
-            cursor.execute('SELECT first_name, last_name, phone FROM users WHERE id = ?', (requested_id,))
+            cursor.execute('SELECT first_name, last_name, phone FROM users WHERE id = %s', (requested_id,))
             requested = cursor.fetchone()
             
             if not requester or not requested:
@@ -987,7 +1007,7 @@ class UserAuthSystem:
                 return {'success': False, 'error': 'User not found'}
             
             # Check if request already exists
-            cursor.execute('SELECT id, status FROM contact_requests WHERE requester_id = ? AND requested_id = ?', (requester_id, requested_id))
+            cursor.execute('SELECT id, status FROM contact_requests WHERE requester_id = %s AND requested_id = %s', (requester_id, requested_id))
             existing = cursor.fetchone()
             
             if existing:
@@ -1002,7 +1022,7 @@ class UserAuthSystem:
                 INSERT INTO contact_requests 
                 (requester_id, requested_id, requester_name, requested_name, 
                 requester_phone, requested_phone, message)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
             ''', (
                 requester_id, requested_id,
                 f"{requester[0]} {requester[1]}",
@@ -1021,18 +1041,18 @@ class UserAuthSystem:
     def get_contact_requests(self, user_id: int, request_type: str = 'received') -> List[Dict[str, Any]]:
             """Get contact requests for a user (received or sent)"""
             try:
-                conn = sqlite3.connect('users.db')
+                conn = get_db_connection()
                 cursor = conn.cursor()
                 
                 if request_type == 'received':
                     cursor.execute('''
                         SELECT id, requester_id, requester_name, requester_phone, message, status, created_at
-                        FROM contact_requests WHERE requested_id = ? ORDER BY created_at DESC
+                        FROM contact_requests WHERE requested_id = %s ORDER BY created_at DESC
                     ''', (user_id,))
                 else:  # sent
                     cursor.execute('''
                         SELECT id, requested_id, requested_name, requested_phone, message, status, created_at
-                        FROM contact_requests WHERE requester_id = ? ORDER BY created_at DESC
+                        FROM contact_requests WHERE requester_id = %s ORDER BY created_at DESC
                     ''', (user_id,))
                 
                 requests = cursor.fetchall()
@@ -1053,11 +1073,11 @@ class UserAuthSystem:
     def respond_to_contact_request(self, request_id: int, user_id: int, response: str) -> Dict[str, Any]:
             """Respond to a contact request (accept/deny)"""
             try:
-                conn = sqlite3.connect('users.db')
+                conn = get_db_connection()
                 cursor = conn.cursor()
                 
                 # Verify this request belongs to the user
-                cursor.execute('SELECT requester_id, requested_id, status FROM contact_requests WHERE id = ?', (request_id,))
+                cursor.execute('SELECT requester_id, requested_id, status FROM contact_requests WHERE id = %s', (request_id,))
                 result = cursor.fetchone()
                 
                 if not result or result[1] != user_id:
@@ -1073,7 +1093,7 @@ class UserAuthSystem:
                 
                 # Update request status
                 cursor.execute('''
-                    UPDATE contact_requests SET status = ?, responded_at = CURRENT_TIMESTAMP WHERE id = ?
+                    UPDATE contact_requests SET status = %s, responded_at = CURRENT_TIMESTAMP WHERE id = %s
                 ''', (response, request_id))
                 
                 conn.commit()
@@ -1094,9 +1114,9 @@ class UserAuthSystem:
     def get_request_status(self, requester_id: int, requested_id: int) -> Optional[str]:
         """Get status of contact request between two users"""
         try:
-            conn = sqlite3.connect('users.db')
+            conn = get_db_connection()
             cursor = conn.cursor()
-            cursor.execute('SELECT status FROM contact_requests WHERE requester_id = ? AND requested_id = ?', (requester_id, requested_id))
+            cursor.execute('SELECT status FROM contact_requests WHERE requester_id = %s AND requested_id = %s', (requester_id, requested_id))
             result = cursor.fetchone()
             conn.close()
             return result[0] if result else None
@@ -1105,41 +1125,58 @@ class UserAuthSystem:
 
     def create_password_reset_token(self, email: str) -> Dict[str, Any]:
         """Create a password reset token for a user"""
+        print(f"🔑 CREATE TOKEN: Starting for email: {email}")
+        
         try:
-            conn = sqlite3.connect('users.db')
+            conn = get_db_connection()
             cursor = conn.cursor()
             
-            # Check if user exists
-            cursor.execute('SELECT id, first_name FROM users WHERE email = ? AND is_active = 1', (email,))
+            # Create email hash for lookup (same as registration process)
+            email_hash = self.encryption.hash_for_matching(email.lower().strip())
+            print(f"🔍 Looking for email hash: {email_hash[:16]}...")
+            
+            # Check if user exists using email_hash
+            cursor.execute('SELECT id, first_name_encrypted FROM users WHERE email_hash = %s AND is_active = TRUE', (email_hash,))
             user = cursor.fetchone()
             
             if not user:
+                print(f"❌ User not found for email: {email}")
                 conn.close()
-                # Don't reveal if email exists or not for security
                 return {'success': True, 'message': 'If this email exists, a reset link has been sent'}
             
-            user_id, first_name = user
+            user_id = user['id']
+            first_name_encrypted = user['first_name_encrypted']
+            
+            # Decrypt the first name
+            first_name = self.encryption.decrypt_sensitive_data(first_name_encrypted) if first_name_encrypted else 'User'
+            print(f"✅ User found: ID={user_id}, Name={first_name}")
             
             # Generate secure token
             token = secrets.token_urlsafe(32)
-            expires_at = datetime.now() + timedelta(hours=1)  # Token expires in 1 hour
+            expires_at = datetime.now() + timedelta(hours=1)
+            print(f"🎫 Generated token: {token[:8]}... (expires: {expires_at})")
             
             # Store token in database
             cursor.execute('''
                 INSERT INTO password_reset_tokens (user_id, token, expires_at)
-                VALUES (?, ?, ?)
+                VALUES (%s, %s, %s)
             ''', (user_id, token, expires_at))
             
             conn.commit()
             conn.close()
+            print(f"💾 Token stored in database")
             
             # Send reset email
-            self.send_password_reset_email(email, first_name, token)
+            print(f"📧 Calling send_password_reset_email...")
+            email_sent = self.send_password_reset_email(email, first_name, token)
+            print(f"📬 Email send result: {email_sent}")
             
             return {'success': True, 'message': 'If this email exists, a reset link has been sent'}
             
         except Exception as e:
-            print(f"Error creating password reset token: {e}")
+            print(f"❌ ERROR in create_password_reset_token: {e}")
+            import traceback
+            traceback.print_exc()
             return {'success': False, 'error': 'Failed to process reset request'}
 
     def send_password_reset_email(self, to_email: str, first_name: str, token: str):
@@ -1222,14 +1259,14 @@ class UserAuthSystem:
     def validate_reset_token(self, token: str) -> Dict[str, Any]:
         """Validate a password reset token"""
         try:
-            conn = sqlite3.connect('users.db')
+            conn = get_db_connection()
             cursor = conn.cursor()
             
             cursor.execute('''
-                SELECT prt.user_id, prt.expires_at, prt.used, u.email, u.first_name
+                SELECT prt.user_id, prt.expires_at, prt.used, u.email_encrypted, u.first_name_encrypted
                 FROM password_reset_tokens prt
                 JOIN users u ON prt.user_id = u.id
-                WHERE prt.token = ?
+                WHERE prt.token = %s
             ''', (token,))
             
             result = cursor.fetchone()
@@ -1238,16 +1275,23 @@ class UserAuthSystem:
             if not result:
                 return {'valid': False, 'error': 'Invalid reset token'}
             
-            user_id, expires_at, used, email, first_name = result
+            user_id = result['user_id']
+            expires_at = result['expires_at']
+            used = result['used']
+            email_encrypted = result['email_encrypted']
+            first_name_encrypted = result['first_name_encrypted']
             
             # Check if token is used
             if used:
                 return {'valid': False, 'error': 'This reset link has already been used'}
             
-            # Check if token is expired
-            expires_datetime = datetime.strptime(expires_at, '%Y-%m-%d %H:%M:%S')
-            if datetime.now() > expires_datetime:
+            # Check if token is expired (expires_at is already a datetime object in PostgreSQL)
+            if datetime.now() > expires_at:
                 return {'valid': False, 'error': 'This reset link has expired. Please request a new one.'}
+            
+            # Decrypt user data
+            email = self.encryption.decrypt_sensitive_data(email_encrypted) if email_encrypted else None
+            first_name = self.encryption.decrypt_sensitive_data(first_name_encrypted) if first_name_encrypted else 'User'
             
             return {
                 'valid': True,
@@ -1258,6 +1302,8 @@ class UserAuthSystem:
             
         except Exception as e:
             print(f"Error validating reset token: {e}")
+            import traceback
+            traceback.print_exc()
             return {'valid': False, 'error': 'Invalid reset token'}
 
     def reset_password_with_token(self, token: str, new_password: str) -> Dict[str, Any]:
@@ -1270,15 +1316,15 @@ class UserAuthSystem:
             
             user_id = validation['user_id']
             
-            conn = sqlite3.connect('users.db')
+            conn = get_db_connection()
             cursor = conn.cursor()
             
             # Update password
             password_hash = generate_password_hash(new_password)
-            cursor.execute('UPDATE users SET password_hash = ? WHERE id = ?', (password_hash, user_id))
+            cursor.execute('UPDATE users SET password_hash = %s WHERE id = %s', (password_hash, user_id))
             
             # Mark token as used
-            cursor.execute('UPDATE password_reset_tokens SET used = 1 WHERE token = ?', (token,))
+            cursor.execute('UPDATE password_reset_tokens SET used = TRUE WHERE token = %s', (token,))
             
             conn.commit()
             conn.close()
@@ -1287,15 +1333,17 @@ class UserAuthSystem:
             
         except Exception as e:
             print(f"Error resetting password: {e}")
+            import traceback
+            traceback.print_exc()
             return {'success': False, 'error': 'Failed to reset password'}
 
     def cleanup_expired_tokens(self):
         """Clean up expired password reset tokens (call this periodically)"""
         try:
-            conn = sqlite3.connect('users.db')
+            conn = get_db_connection()
             cursor = conn.cursor()
             
-            cursor.execute('DELETE FROM password_reset_tokens WHERE expires_at < ?', (datetime.now(),))
+            cursor.execute('DELETE FROM password_reset_tokens WHERE expires_at < %s', (datetime.now(),))
             deleted_count = cursor.rowcount
             
             conn.commit()
@@ -1317,14 +1365,14 @@ class GDPRCompliance:
     def export_user_data(self, user_id: int) -> Dict[str, Any]:
         """Export all user data in readable format (GDPR Article 15)"""
         try:
-            conn = sqlite3.connect('users.db')
+            conn = get_db_connection()
             cursor = conn.cursor()
             
             # Get user data
             cursor.execute('''
                 SELECT anonymous_id, email_encrypted, first_name_encrypted, 
                        last_name_encrypted, phone_encrypted, created_at, data_consent_date
-                FROM users WHERE id = ?
+                FROM users WHERE id = %s
             ''', (user_id,))
             user_data = cursor.fetchone()
             
@@ -1344,7 +1392,7 @@ class GDPRCompliance:
             }
             
             # Get profile data
-            cursor.execute('SELECT profile_data_encrypted FROM anonymous_profiles WHERE anonymous_id = ?', 
+            cursor.execute('SELECT profile_data_encrypted FROM anonymous_profiles WHERE anonymous_id = %s', 
                           (anonymous_id,))
             profile_result = cursor.fetchone()
             if profile_result:
@@ -1356,7 +1404,7 @@ class GDPRCompliance:
             cursor.execute('''
                 SELECT action, purpose, timestamp 
                 FROM data_processing_log 
-                WHERE anonymous_id = ? 
+                WHERE anonymous_id = %s
                 ORDER BY timestamp DESC
             ''', (anonymous_id,))
             processing_log = cursor.fetchall()
@@ -1374,11 +1422,11 @@ class GDPRCompliance:
     def delete_user_data(self, user_id: int) -> Dict[str, Any]:
         """Permanently delete all user data (GDPR Article 17)"""
         try:
-            conn = sqlite3.connect('users.db')
+            conn = get_db_connection()
             cursor = conn.cursor()
             
             # Get anonymous ID
-            cursor.execute('SELECT anonymous_id FROM users WHERE id = ?', (user_id,))
+            cursor.execute('SELECT anonymous_id FROM users WHERE id = %s', (user_id,))
             result = cursor.fetchone()
             if not result:
                 return {'success': False, 'error': 'User not found'}
@@ -1386,18 +1434,18 @@ class GDPRCompliance:
             anonymous_id = result[0]
             
             # Delete all related data
-            cursor.execute('DELETE FROM anonymous_profiles WHERE anonymous_id = ?', (anonymous_id,))
-            cursor.execute('DELETE FROM data_processing_log WHERE anonymous_id = ?', (anonymous_id,))
-            cursor.execute('DELETE FROM user_matches WHERE user_id = ? OR matched_user_id = ?', 
+            cursor.execute('DELETE FROM anonymous_profiles WHERE anonymous_id = %s', (anonymous_id,))
+            cursor.execute('DELETE FROM data_processing_log WHERE anonymous_id = %s', (anonymous_id,))
+            cursor.execute('DELETE FROM user_matches WHERE user_id = %s OR matched_user_id = %s', 
                           (user_id, user_id))
-            cursor.execute('DELETE FROM contact_requests WHERE requester_id = ? OR requested_id = ?', 
+            cursor.execute('DELETE FROM contact_requests WHERE requester_id = %s OR requested_id = %s', 
                           (user_id, user_id))
-            cursor.execute('DELETE FROM users WHERE id = ?', (user_id,))
+            cursor.execute('DELETE FROM users WHERE id = %s', (user_id,))
             
             # Log deletion
             cursor.execute('''
                 INSERT INTO data_processing_log (anonymous_id, action, purpose)
-                VALUES (?, 'data_deletion', 'user_request')
+                VALUES (%s, 'data_deletion', 'user_request')
             ''', (anonymous_id,))
             
             conn.commit()
@@ -1421,13 +1469,13 @@ class EmailFollowupSystem:
         
     def init_followup_database(self):
         """Initialize follow-up tracking tables"""
-        conn = sqlite3.connect('users.db')
+        conn = get_db_connection()
         cursor = conn.cursor()
         
         # Follow-up tracking table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS followup_tracking (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 contact_request_id INTEGER NOT NULL,
                 user1_id INTEGER NOT NULL,
                 user2_id INTEGER NOT NULL,
@@ -1448,35 +1496,30 @@ class EmailFollowupSystem:
                 FOREIGN KEY (user2_id) REFERENCES users (id)
             )
         ''')
-        
-        # Update the user_matches table to include follow-up data
+
+        # Update the user_matches table to include follow-up data (PostgreSQL safe way)
         try:
-            cursor.execute('ALTER TABLE user_matches ADD COLUMN user_would_meet_again BOOLEAN')
-        except sqlite3.OperationalError as e:
-            if "duplicate column name" not in str(e):
-                raise e
-                
-        try:
-            cursor.execute('ALTER TABLE user_matches ADD COLUMN match_would_meet_again BOOLEAN')
-        except sqlite3.OperationalError as e:
-            if "duplicate column name" not in str(e):
-                raise e
+            cursor.execute('ALTER TABLE user_matches ADD COLUMN IF NOT EXISTS user_would_meet_again BOOLEAN')
+            cursor.execute('ALTER TABLE user_matches ADD COLUMN IF NOT EXISTS match_would_meet_again BOOLEAN')
+            print("✓ Added follow-up columns to user_matches table")
+        except psycopg2.Error as e:
+            print(f"Follow-up columns already exist: {e}")
         
         conn.commit()
         conn.close()
         print("✓ Email follow-up database initialized")
-    
+
     def schedule_followup_email(self, contact_request_id, user1_id, user2_id):
         """Schedule a follow-up email to be sent in 5 days"""
         try:
-            conn = sqlite3.connect('users.db')
+            conn = get_db_connection()
             cursor = conn.cursor()
             
             # Get user information
-            cursor.execute('SELECT first_name, last_name, email FROM users WHERE id = ?', (user1_id,))
+            cursor.execute('SELECT first_name, last_name, email FROM users WHERE id = %s', (user1_id,))
             user1_info = cursor.fetchone()
             
-            cursor.execute('SELECT first_name, last_name, email FROM users WHERE id = ?', (user2_id,))
+            cursor.execute('SELECT first_name, last_name, email FROM users WHERE id = %s', (user2_id,))
             user2_info = cursor.fetchone()
             
             if not user1_info or not user2_info:
@@ -1493,7 +1536,7 @@ class EmailFollowupSystem:
                 INSERT INTO followup_tracking 
                 (contact_request_id, user1_id, user2_id, user1_name, user2_name, 
                  user1_email, user2_email, user1_token, user2_token)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             ''', (
                 contact_request_id, user1_id, user2_id,
                 f"{user1_info[0]} {user1_info[1]}", f"{user2_info[0]} {user2_info[1]}",
@@ -1518,13 +1561,13 @@ class EmailFollowupSystem:
     def send_followup_emails(self, followup_id):
         """Send follow-up emails to both users"""
         try:
-            conn = sqlite3.connect('users.db')
+            conn = get_db_connection()
             cursor = conn.cursor()
             
             cursor.execute('''
                 SELECT user1_id, user2_id, user1_name, user2_name, user1_email, user2_email, 
                        user1_token, user2_token
-                FROM followup_tracking WHERE id = ?
+                FROM followup_tracking WHERE id = %s
             ''', (followup_id,))
             
             followup = cursor.fetchone()
@@ -1546,7 +1589,7 @@ class EmailFollowupSystem:
             
             # Update that emails were sent
             cursor.execute('''
-                UPDATE followup_tracking SET email_sent_at = CURRENT_TIMESTAMP WHERE id = ?
+                UPDATE followup_tracking SET email_sent_at = CURRENT_TIMESTAMP WHERE id = %s
             ''', (followup_id,))
             
             conn.commit()
@@ -1645,14 +1688,14 @@ class EmailFollowupSystem:
     def record_followup_response(self, token, response):
         """Record user's follow-up response"""
         try:
-            conn = sqlite3.connect('users.db')
+            conn = get_db_connection()
             cursor = conn.cursor()
             
             # Find the follow-up record and determine which user responded
             cursor.execute('''
                 SELECT id, user1_id, user2_id, user1_token, user2_token 
                 FROM followup_tracking 
-                WHERE user1_token = ? OR user2_token = ?
+                WHERE user1_token = %s OR user2_token = %s
             ''', (token, token))
             
             followup = cursor.fetchone()
@@ -1666,16 +1709,16 @@ class EmailFollowupSystem:
             if token == user1_token:
                 cursor.execute('''
                     UPDATE followup_tracking 
-                    SET user1_response = ?, user1_responded_at = CURRENT_TIMESTAMP 
-                    WHERE id = ?
+                    SET user1_response = %s, user1_responded_at = CURRENT_TIMESTAMP 
+                    WHERE id = %s
                 ''', (response == 'yes', followup_id))
                 responding_user_id = user1_id
                 other_user_id = user2_id
             else:
                 cursor.execute('''
                     UPDATE followup_tracking 
-                    SET user2_response = ?, user2_responded_at = CURRENT_TIMESTAMP 
-                    WHERE id = ?
+                    SET user2_response = %s, user2_responded_at = CURRENT_TIMESTAMP 
+                    WHERE id = %s
                 ''', (response == 'yes', followup_id))
                 responding_user_id = user2_id
                 other_user_id = user1_id
@@ -1683,15 +1726,15 @@ class EmailFollowupSystem:
             # Update the user_matches table with the response
             cursor.execute('''
                 UPDATE user_matches 
-                SET user_would_meet_again = ? 
-                WHERE user_id = ? AND matched_user_id = ?
+                SET user_would_meet_again = %s
+                WHERE user_id = %s AND matched_user_id = %s
             ''', (response == 'yes', responding_user_id, other_user_id))
             
             # Also update the reverse match
             cursor.execute('''
                 UPDATE user_matches 
-                SET match_would_meet_again = ? 
-                WHERE user_id = ? AND matched_user_id = ?
+                SET match_would_meet_again = %s 
+                WHERE user_id = %s AND matched_user_id = %s
             ''', (response == 'yes', other_user_id, responding_user_id))
             
             conn.commit()
@@ -6292,12 +6335,12 @@ def edit_profile():
             last_name = request.form.get('last_name', '').strip()
             
             # Update user table
-            conn = sqlite3.connect('users.db')
+            conn = get_db_connection()
             cursor = conn.cursor()
             cursor.execute('''
                 UPDATE users 
-                SET email = ?, phone = ?, first_name = ?, last_name = ?
-                WHERE id = ?
+                SET email = %s, phone = %s, first_name = %s, last_name = %s
+                WHERE id = %s
             ''', (email, phone, first_name, last_name, user_id))
             
             # Get existing profile data
@@ -9687,9 +9730,9 @@ def respond_contact_request_with_tracking(request_id, response):
     
     # Get request details for tracking
     try:
-        conn = sqlite3.connect('users.db')
+        conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('SELECT requester_id FROM contact_requests WHERE id = ? AND requested_id = ?', 
+        cursor.execute('SELECT requester_id FROM contact_requests WHERE id = %s AND requested_id = %s', 
                       (request_id, user_id))
         result = cursor.fetchone()
         conn.close()
@@ -9728,12 +9771,12 @@ def followup_response_with_tracking(token, response):
     
     # Get user details from token for tracking
     try:
-        conn = sqlite3.connect('users.db')
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute('''
             SELECT user1_id, user2_id, user1_token, user2_token 
             FROM followup_tracking 
-            WHERE user1_token = ? OR user2_token = ?
+            WHERE user1_token = %s OR user2_token = %s
         ''', (token, token))
         
         followup = cursor.fetchone()
@@ -9794,7 +9837,7 @@ def followup_stats(user_id):
         return jsonify({'error': 'Unauthorized'}), 401
     
     try:
-        conn = sqlite3.connect('users.db')
+        conn = get_db_connection()
         cursor = conn.cursor()
         
         # Get follow-up responses for this user's matches
@@ -9805,7 +9848,7 @@ def followup_stats(user_id):
                 SUM(CASE WHEN user1_response = 0 OR user2_response = 0 THEN 1 ELSE 0 END) as negative_responses,
                 SUM(CASE WHEN user1_response IS NULL AND user2_response IS NULL THEN 1 ELSE 0 END) as pending_responses
             FROM followup_tracking 
-            WHERE user1_id = ? OR user2_id = ?
+            WHERE user1_id = %s OR user2_id = %s
             AND email_sent_at IS NOT NULL
         ''', (user_id, user_id))
         
@@ -9880,7 +9923,7 @@ def track_interaction():
 def neural_network_status():
     """Get neural network training status and performance"""
     try:
-        conn = sqlite3.connect('users.db')
+        conn = get_db_connection()
         cursor = conn.cursor()
         
         # Get latest model performance
@@ -9935,7 +9978,26 @@ def init_database():
 # ============================================================================
 # MAIN APPLICATION
 # ============================================================================
-
+@app.route('/debug-users')
+def debug_users():
+    # if not session.get('user_id'):
+    #     return "Must be logged in"
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT id, email, email_encrypted FROM users LIMIT 5')
+        users = cursor.fetchall()
+        conn.close()
+        
+        result = "<h3>Users in database:</h3>"
+        for user in users:
+            decrypted_email = data_encryption.decrypt_sensitive_data(user['email_encrypted']) if user['email_encrypted'] else user['email']
+            result += f"<p>ID: {user['id']}, Email: {decrypted_email}</p>"
+        
+        return result
+    except Exception as e:
+        return f"Error: {e}"
 # @app.route('/test-live-matching/<int:user_id>')
 # @login_required  
 # def test_live_matching(user_id):
