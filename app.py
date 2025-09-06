@@ -411,11 +411,17 @@ class UserAuthSystem:
     def authenticate_user(self, email: str, password: str) -> Dict[str, Any]:
         """Authenticate user login"""
         try:
+            print(f"LOGIN: Starting for email: {email}")
+            
             conn = get_db_connection()
             cursor = conn.cursor()
             
             # Hash the email for lookup
-            email_hash = self.encryption.hash_for_matching(email.lower().strip())
+            email_clean = email.lower().strip()
+            email_hash = self.encryption.hash_for_matching(email_clean)
+            
+            print(f"Email clean: '{email_clean}'")
+            print(f"Generated hash: {email_hash}")
             
             cursor.execute('''
                 SELECT id, password_hash, first_name_encrypted, last_name_encrypted, profile_completed
@@ -423,32 +429,44 @@ class UserAuthSystem:
             ''', (email_hash,))
             
             user = cursor.fetchone()
+            print(f"User found: {user is not None}")
             
-            if user and check_password_hash(user[1], password):
-                # Decrypt names for session
-                first_name = self.encryption.decrypt_sensitive_data(user[2]) if user[2] else None
-                last_name = self.encryption.decrypt_sensitive_data(user[3]) if user[3] else None
+            if user:
+                print(f"User ID: {user['id']}")
                 
-                # Update last login
-                cursor.execute('''
-                    UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = %s
-                ''', (user[0],))
-                conn.commit()
-                conn.close()
+                password_valid = check_password_hash(user['password_hash'], password)
+                print(f"Password valid: {password_valid}")
                 
-                return {
-                    'success': True,
-                    'user_id': user[0],
-                    'first_name': first_name,
-                    'last_name': last_name,
-                    'profile_completed': bool(user[4])
-                }
+                if password_valid:
+                    # Decrypt names
+                    first_name = self.encryption.decrypt_sensitive_data(user['first_name_encrypted']) if user['first_name_encrypted'] else None
+                    last_name = self.encryption.decrypt_sensitive_data(user['last_name_encrypted']) if user['last_name_encrypted'] else None
+                    
+                    # Update last login
+                    cursor.execute('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = %s', (user['id'],))
+                    conn.commit()
+                    conn.close()
+                    
+                    print("Login successful!")
+                    return {
+                        'success': True,
+                        'user_id': user['id'],
+                        'first_name': first_name,
+                        'last_name': last_name,
+                        'profile_completed': bool(user['profile_completed'])
+                    }
+                else:
+                    print("Password check failed")
+            else:
+                print("No user found with generated hash")
             
             conn.close()
             return {'success': False, 'error': 'Invalid email or password'}
             
         except Exception as e:
-            print(f"Error authenticating user: {e}")
+            print(f"Authentication error: {e}")
+            import traceback
+            traceback.print_exc()
             return {'success': False, 'error': 'Authentication failed'}
 
     def get_user_info(self, user_id: int) -> Optional[Dict[str, Any]]:
