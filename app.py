@@ -419,7 +419,7 @@ class UserAuthSystem:
             
             cursor.execute('''
                 SELECT id, password_hash, first_name_encrypted, last_name_encrypted, profile_completed
-                FROM users WHERE email_encrypted = %s AND is_active = TRUE
+                FROM users WHERE email_hash = %s AND is_active = TRUE
             ''', (email_hash,))
             
             user = cursor.fetchone()
@@ -10761,36 +10761,65 @@ def init_database():
 # ============================================================================
 @app.route('/debug-users')
 def debug_users():
+    email = "alessa@pont-diagnostics.com"  # The email from your user record
+    test_password = "123456"  # The password you're trying to use
+    
+    # Test hash generation
+    hash_salt = os.environ.get('HASH_SALT', 'default-salt')
+    generated_hash = data_encryption.hash_for_matching(email.lower().strip())
+    expected_hash = "0c91053185e01034240ee9ea508ada319f342dceb0d91291505fd556476859d6"
+    
+    # Get the actual password hash from database
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
-        # First, show the actual table structure
-        cursor.execute("""
-            SELECT column_name, data_type, is_nullable
-            FROM information_schema.columns 
-            WHERE table_name = 'users'
-            ORDER BY ordinal_position
-        """)
-        columns = cursor.fetchall()
-        
-        result = "<h3>Users table structure:</h3>"
-        for col in columns:
-            result += f"<p>{col['column_name']}: {col['data_type']} ({'nullable' if col['is_nullable'] == 'YES' else 'not null'})</p>"
-        
-        # Then show the actual user data
-        cursor.execute('SELECT * FROM users LIMIT 5')
-        users = cursor.fetchall()
-        
-        result += "<h3>Users in database:</h3>"
-        for user in users:
-            result += f"<p>User data: {dict(user)}</p>"
-        
+        cursor.execute('SELECT password_hash FROM users WHERE id = 1')
+        user = cursor.fetchone()
+        stored_password_hash = user['password_hash'] if user else None
         conn.close()
-        return result
-        
     except Exception as e:
-        return f"Error: {e}"
+        stored_password_hash = f"Error: {e}"
+    
+    # Test password verification
+    password_test_result = "N/A"
+    if stored_password_hash and isinstance(stored_password_hash, str):
+        try:
+            password_test_result = check_password_hash(stored_password_hash, test_password)
+        except Exception as e:
+            password_test_result = f"Error: {e}"
+    
+    return f'''
+    <h3>Authentication Debug:</h3>
+    
+    <h4>Email Hash Test:</h4>
+    <p><strong>Email:</strong> {email}</p>
+    <p><strong>HASH_SALT env var:</strong> {hash_salt}</p>
+    <p><strong>Generated hash:</strong> {generated_hash}</p>
+    <p><strong>Expected hash:</strong> {expected_hash}</p>
+    <p><strong>Hashes match:</strong> {generated_hash == expected_hash}</p>
+    
+    <h4>Password Test:</h4>
+    <p><strong>Test password:</strong> {test_password}</p>
+    <p><strong>Stored hash:</strong> {stored_password_hash}</p>
+    <p><strong>Password verification result:</strong> {password_test_result}</p>
+    
+    <h4>Manual Hash Calculation:</h4>
+    <p><strong>Input string:</strong> {email.lower().strip()}_{hash_salt}</p>
+    <p><strong>SHA256:</strong> {hashlib.sha256(f"{email.lower().strip()}_{hash_salt}".encode()).hexdigest()}</p>
+    
+    <h4>Environment Check:</h4>
+    <p><strong>ENCRYPTION_PASSWORD:</strong> {"SET" if os.environ.get('ENCRYPTION_PASSWORD') else "NOT SET (using default)"}</p>
+    <p><strong>ENCRYPTION_SALT:</strong> {"SET" if os.environ.get('ENCRYPTION_SALT') else "NOT SET (using default)"}</p>
+    <p><strong>HASH_SALT:</strong> {"SET" if os.environ.get('HASH_SALT') else "NOT SET (using default)"}</p>
+    
+    <hr>
+    <h4>Quick Login Test:</h4>
+    <form method="POST" action="/debug-login-test">
+        <input type="email" name="email" value="{email}" placeholder="Email">
+        <input type="password" name="password" value="{test_password}" placeholder="Password">
+        <button type="submit">Test Login</button>
+    </form>
+    '''
 
 @app.route('/privacy-policy')
 def privacy_policy():
