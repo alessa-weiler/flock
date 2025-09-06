@@ -1,3 +1,13 @@
+import os
+import base64
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+import secrets
+import hashlib
+import json
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Tuple, Any  # Add this line
 
 # ============================================================================
 # DATA ANONYMIZATION
@@ -52,9 +62,10 @@ class DataEncryption:
 class GDPRCompliance:
     """Handle GDPR compliance features"""
     
-    def __init__(self, user_auth_system):
+    def __init__(self, user_auth_system, data_encryption, get_db_connection):
         self.user_auth = user_auth_system
         self.encryption = data_encryption
+        self.get_db_connection = get_db_connection
     
     def export_user_data(self, user_id: int) -> Dict[str, Any]:
         """Export all user data in readable format (GDPR Article 15)"""

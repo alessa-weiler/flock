@@ -3147,7 +3147,8 @@ from data_safety import DataEncryption, GDPRCompliance
 data_encryption = DataEncryption()
 user_auth = UserAuthSystem()
 # Initialize GDPR compliance
-gdpr_compliance = GDPRCompliance(user_auth)
+# After initializing data_encryption and user_auth
+gdpr_compliance = GDPRCompliance(user_auth, data_encryption, get_db_connection)
 #matching_system = MatchingSystem(API_KEY)
 verification_system = IdentityVerificationSystem(user_auth)
 

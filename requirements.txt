@@ -28,7 +28,7 @@ gunicorn==21.2.0
 # Email Support (built-in libraries, no requirements needed for smtplib, email)
 
 # Database (SQLite3 is built-in to Python)
-psycopg==2.9.10
+psycopg2-binary==2.9.9
 # Other built-in libraries used (no requirements needed):
 # - sqlite3
 # - hashlib  
