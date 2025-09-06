@@ -419,7 +419,7 @@ class UserAuthSystem:
             
             cursor.execute('''
                 SELECT id, password_hash, first_name_encrypted, last_name_encrypted, profile_completed
-                FROM users WHERE email_hash = %s AND is_active = 1
+                FROM users WHERE email_hash = %s AND is_active = TRUE
             ''', (email_hash,))
             
             user = cursor.fetchone()
