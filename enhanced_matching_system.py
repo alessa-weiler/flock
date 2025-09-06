@@ -22,6 +22,465 @@ except ImportError:
     print("Warning: TensorFlow/sklearn not installed. Using fallback methods.")
 
 # ============================================================================
+# MATCHING SYSTEM
+# ============================================================================
+
+class MatchingSystem:
+    """Advanced friendship compatibility matching system"""
+    
+    def __init__(self, api_key: str):
+        self.client = OpenAI(api_key=api_key) if api_key else None
+        self.user_auth = UserAuthSystem()
+    
+    def calculate_distance(self, postcode1: str, postcode2: str) -> float:
+        """Calculate distance between two UK postcodes"""
+        def get_postcode_coordinates(postcode: str) -> Tuple[Optional[float], Optional[float]]:
+            try:
+                response = requests.get(f"https://api.postcodes.io/postcodes/{postcode}")
+                if response.status_code == 200:
+                    data = response.json()
+                    return data['result']['latitude'], data['result']['longitude']
+            except:
+                pass
+            return None, None
+
+        def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+            R = 3959  # Earth's radius in miles
+            
+            lat1_rad = math.radians(lat1)
+            lat2_rad = math.radians(lat2)
+            delta_lat = math.radians(lat2 - lat1)
+            delta_lon = math.radians(lon2 - lon1)
+            
+            a = (math.sin(delta_lat / 2) ** 2 + 
+                math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(delta_lon / 2) ** 2)
+            c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+            
+            return R * c
+
+        lat1, lon1 = get_postcode_coordinates(postcode1)
+        lat2, lon2 = get_postcode_coordinates(postcode2)
+        
+        if lat1 and lon1 and lat2 and lon2:
+            return haversine_distance(lat1, lon1, lat2, lon2)
+        
+        return 999  # Return high number if geocoding fails
+    
+    def check_gender_compatibility(self, user1_profile: Dict, user2_profile: Dict) -> bool:
+        """Check if users meet each other's gender preferences"""
+        user1_gender = user1_profile.get('gender', '')
+        user2_gender = user2_profile.get('gender', '')
+        user1_preference = user1_profile.get('gender_preference', 'all')
+        user2_preference = user2_profile.get('gender_preference', 'all')
+        
+        # Check mutual compatibility
+        user1_compatible = (user1_preference == 'all' or 
+                           (user1_preference == 'women' and user2_gender == 'woman') or
+                           (user1_preference == 'men' and user2_gender == 'man') or
+                           (user1_preference == 'non_binary' and user2_gender == 'non_binary'))
+        
+        user2_compatible = (user2_preference == 'all' or 
+                           (user2_preference == 'women' and user1_gender == 'woman') or
+                           (user2_preference == 'men' and user1_gender == 'man') or
+                           (user2_preference == 'non_binary' and user1_gender == 'non_binary'))
+        
+        return user1_compatible and user2_compatible
+    
+    def is_user_blocked(self, user_id: int, potential_match: Dict[str, Any]) -> bool:
+        """Check if a potential match is blocked"""
+        blocked = self.user_auth.get_blocked_users(user_id)
+        
+        # Check email, phone, and name matches
+        if potential_match['email'] in blocked['emails']:
+            return True
+        if potential_match['phone'] and potential_match['phone'] in blocked['phones']:
+            return True
+        
+        user_name = f"{potential_match['first_name']} {potential_match['last_name']}".lower()
+        for blocked_name in blocked['names']:
+            if blocked_name and blocked_name.lower() in user_name:
+                return True
+        
+        return False
+    
+    def calculate_compatibility_scores(self, user1_profile: Dict, user2_profile: Dict) -> Dict[str, float]:
+        """Calculate all compatibility scores"""
+        scores = {}
+        
+        # Personality compatibility
+        scores['personality'] = self._calculate_personality_score(user1_profile, user2_profile)
+        
+        # Values compatibility  
+        scores['values'] = self._calculate_values_score(user1_profile, user2_profile)
+        
+        # Lifestyle compatibility
+        scores['lifestyle'] = self._calculate_lifestyle_score(user1_profile, user2_profile)
+        
+        # Emotional compatibility
+        scores['emotional'] = self._calculate_emotional_score(user1_profile, user2_profile)
+        
+        # Social boundaries compatibility
+        scores['social'] = self._calculate_social_score(user1_profile, user2_profile)
+        
+        return scores
+    
+    def _calculate_personality_score(self, user1: Dict, user2: Dict) -> float:
+        """Calculate personality compatibility score with safe numeric conversion"""
+        
+        # Helper function to safely convert to numeric
+        def safe_numeric(value, default=5):
+            try:
+                if isinstance(value, str):
+                    return float(value)
+                elif isinstance(value, (int, float)):
+                    return float(value)
+                else:
+                    return default
+            except (ValueError, TypeError):
+                return default
+        
+        personality_scores = []
+        
+        # Decision-making (moderate differences okay)
+        decision_diff = abs(safe_numeric(user1.get('decision_making', 5)) - safe_numeric(user2.get('decision_making', 5)))
+        decision_score = 100 * max(0.2, 1 - (decision_diff / 8)**1.2)
+        personality_scores.append(decision_score * 1.2)
+        
+        # Social energy (should align more closely)  
+        social_diff = abs(safe_numeric(user1.get('social_energy', 5)) - safe_numeric(user2.get('social_energy', 5)))
+        social_score = 100 * max(0.1, 1 - (social_diff / 6)**2)
+        personality_scores.append(social_score * 1.5)
+        # Communication depth (should align)
+        comm_diff = abs(safe_numeric(user1.get('communication_depth', 5)) - safe_numeric(user2.get('communication_depth', 5)))
+        comm_score = max(0, 100 - (comm_diff * 15))
+        personality_scores.append(comm_score * 1.8)
+        
+        # Conflict approach
+        conflict_diff = abs(safe_numeric(user1.get('conflict_approach', 5)) - safe_numeric(user2.get('conflict_approach', 5)))
+        conflict_score = max(0, 100 - (conflict_diff * 10))
+        personality_scores.append(conflict_score * 1.0)
+        
+        # Life pace
+        pace_diff = abs(safe_numeric(user1.get('life_pace', 5)) - safe_numeric(user2.get('life_pace', 5)))
+        pace_score = max(0, 100 - (pace_diff * 12))
+        personality_scores.append(pace_score * 1.3)
+        
+        return min(100, sum(personality_scores) / len(personality_scores))
+
+    
+    def _calculate_values_score(self, user1: Dict, user2: Dict) -> float:
+        """Calculate values alignment score with safe numeric conversion"""
+        
+        def safe_numeric(value, default=5):
+            try:
+                if isinstance(value, str):
+                    return float(value)
+                elif isinstance(value, (int, float)):
+                    return float(value)
+                else:
+                    return default
+            except (ValueError, TypeError):
+                return default
+        
+        values_scores = []
+        
+        # Personal growth alignment
+        growth_diff = abs(safe_numeric(user1.get('personal_growth', 5)) - safe_numeric(user2.get('personal_growth', 5)))
+        growth_score = max(0, 100 - (growth_diff * 10))
+        values_scores.append(growth_score)
+        
+        # Success definition alignment
+        success_diff = abs(safe_numeric(user1.get('success_definition', 5)) - safe_numeric(user2.get('success_definition', 5)))
+        success_score = max(0, 100 - (success_diff * 12))
+        values_scores.append(success_score)
+        
+        # Community involvement
+        community_diff = abs(safe_numeric(user1.get('community_involvement', 5)) - safe_numeric(user2.get('community_involvement', 5)))
+        community_score = max(0, 100 - (community_diff * 8))
+        values_scores.append(community_score)
+        
+        # Work-life philosophy
+        worklife_diff = abs(safe_numeric(user1.get('work_life_philosophy', 5)) - safe_numeric(user2.get('work_life_philosophy', 5)))
+        worklife_score = max(0, 100 - (worklife_diff * 11))
+        values_scores.append(worklife_score)
+        
+        # Future orientation
+        future_diff = abs(safe_numeric(user1.get('future_orientation', 5)) - safe_numeric(user2.get('future_orientation', 5)))
+        future_score = max(0, 100 - (future_diff * 9))
+        values_scores.append(future_score)
+        
+        return sum(values_scores) / len(values_scores)
+
+    def _calculate_lifestyle_score(self, user1: Dict, user2: Dict) -> float:
+        """Calculate lifestyle compatibility score with safe numeric conversion"""
+        
+        def safe_numeric(value, default=5):
+            try:
+                if isinstance(value, str):
+                    return float(value)
+                elif isinstance(value, (int, float)):
+                    return float(value)
+                else:
+                    return default
+            except (ValueError, TypeError):
+                return default
+        
+        lifestyle_scores = []
+        
+        # Energy patterns (important for scheduling)
+        energy_diff = abs(safe_numeric(user1.get('energy_patterns', 5)) - safe_numeric(user2.get('energy_patterns', 5)))
+        energy_score = max(0, 100 - (energy_diff * 15))
+        lifestyle_scores.append(energy_score * 1.4)
+        
+        # Social setting preference
+        setting_diff = abs(safe_numeric(user1.get('social_setting', 5)) - safe_numeric(user2.get('social_setting', 5)))
+        setting_score = max(0, 100 - (setting_diff * 8))
+        lifestyle_scores.append(setting_score)
+        
+        # Activity investment
+        activity_diff = abs(safe_numeric(user1.get('activity_investment', 5)) - safe_numeric(user2.get('activity_investment', 5)))
+        activity_score = max(0, 100 - (activity_diff * 7))
+        lifestyle_scores.append(activity_score)
+        
+        # Physical activity level
+        physical_diff = abs(safe_numeric(user1.get('physical_activity', 5)) - safe_numeric(user2.get('physical_activity', 5)))
+        physical_score = max(0, 100 - (physical_diff * 10))
+        lifestyle_scores.append(physical_score * 1.2)
+        
+        # Cultural consumption
+        cultural_diff = abs(safe_numeric(user1.get('cultural_consumption', 5)) - safe_numeric(user2.get('cultural_consumption', 5)))
+        cultural_score = max(0, 100 - (cultural_diff * 6))
+        lifestyle_scores.append(cultural_score)
+        
+        return sum(lifestyle_scores) / len(lifestyle_scores)
+
+    def _calculate_emotional_score(self, user1: Dict, user2: Dict) -> float:
+        """Calculate emotional compatibility score with safe numeric conversion"""
+        
+        def safe_numeric(value, default=5):
+            try:
+                if isinstance(value, str):
+                    return float(value)
+                elif isinstance(value, (int, float)):
+                    return float(value)
+                else:
+                    return default
+            except (ValueError, TypeError):
+                return default
+        
+        emotional_scores = []
+        
+        # Stress preference compatibility
+        stress1 = user1.get('stress_preference', '')
+        stress2 = user2.get('stress_preference', '')
+        stress_score = 85 if stress1 == stress2 else 70
+        emotional_scores.append(stress_score)
+        
+        # Processing style compatibility
+        process1 = user1.get('processing_style', '')
+        process2 = user2.get('processing_style', '')
+        process_score = 90 if process1 == process2 else 65
+        emotional_scores.append(process_score * 1.3)
+        
+        # Celebration preference
+        celeb_diff = abs(safe_numeric(user1.get('celebration_preference', 5)) - safe_numeric(user2.get('celebration_preference', 5)))
+        celeb_score = max(0, 100 - (celeb_diff * 12))
+        emotional_scores.append(celeb_score)
+        
+        return sum(emotional_scores) / len(emotional_scores)
+
+    def _calculate_social_score(self, user1: Dict, user2: Dict) -> float:
+        """Calculate social boundaries compatibility score with safe numeric conversion"""
+        
+        def safe_numeric(value, default=5):
+            try:
+                if isinstance(value, str):
+                    return float(value)
+                elif isinstance(value, (int, float)):
+                    return float(value)
+                else:
+                    return default
+            except (ValueError, TypeError):
+                return default
+        
+        boundary_scores = []
+        
+        # Personal sharing alignment
+        sharing_diff = abs(safe_numeric(user1.get('personal_sharing', 5)) - safe_numeric(user2.get('personal_sharing', 5)))
+        sharing_score = max(0, 100 - (sharing_diff * 14))
+        boundary_scores.append(sharing_score * 1.4)
+        
+        # Social overlap tolerance
+        overlap_diff = abs(safe_numeric(user1.get('social_overlap', 5)) - safe_numeric(user2.get('social_overlap', 5)))
+        overlap_score = max(0, 100 - (overlap_diff * 8))
+        boundary_scores.append(overlap_score)
+        
+        # Advice-giving style
+        advice_diff = abs(safe_numeric(user1.get('advice_giving', 5)) - safe_numeric(user2.get('advice_giving', 5)))
+        advice_score = max(0, 100 - (advice_diff * 9))
+        boundary_scores.append(advice_score)
+        
+        # Social commitment level
+        commitment_diff = abs(safe_numeric(user1.get('social_commitment', 5)) - safe_numeric(user2.get('social_commitment', 5)))
+        commitment_score = max(0, 100 - (commitment_diff * 13))
+        boundary_scores.append(commitment_score * 1.3)
+        
+        return sum(boundary_scores) / len(boundary_scores)
+    
+    def run_matching(self, user_id: int) -> List[Dict[str, Any]]:
+        """Run comprehensive matching for a user"""
+        print(f"\n=== Running Advanced Friendship Matching for {user_id} ===")
+        
+        # Get current user's profile and info
+        current_user_profile = self.user_auth.get_user_profile(user_id)
+        current_user_info = self.user_auth.get_user_info(user_id)
+        
+        if not current_user_profile or not current_user_info:
+            print("ERROR: Current user profile not found!")
+            return []
+        
+        # Get all other users for matching
+        all_users = self.user_auth.get_age_filtered_users(user_id)
+        print(f"Found {len(all_users)} potential matches")
+        
+        if not all_users:
+            print("No other users found for matching")
+            return []
+        
+        matches = []
+        
+        for potential_match in all_users:
+            # Apply filters
+            if self.is_user_blocked(user_id, potential_match):
+                print(f"Skipping blocked user: {potential_match['first_name']} {potential_match['last_name']}")
+                continue
+            
+            if not self.check_gender_compatibility(current_user_profile, potential_match['profile']):
+                print(f"Skipping due to gender preference: {potential_match['first_name']} {potential_match['last_name']}")
+                continue
+            
+            print(f"Analyzing compatibility with {potential_match['first_name']} {potential_match['last_name']}...")
+            
+            # Calculate detailed compatibility scores
+            scores = self.calculate_compatibility_scores(current_user_profile, potential_match['profile'])
+            
+            # Calculate distance and location score
+            distance = 999
+            location_score = 50  # Default neutral score
+            current_postcode = current_user_profile.get('postcode')
+            match_postcode = potential_match['profile'].get('postcode')
+            
+            if current_postcode and match_postcode:
+                distance = self.calculate_distance(current_postcode, match_postcode)
+                # Location score based on distance
+                if distance <= 5:
+                    location_score = 95
+                elif distance <= 15:
+                    location_score = 85
+                elif distance <= 30:
+                    location_score = 75
+                elif distance <= 50:
+                    location_score = 65
+                else:
+                    location_score = 40
+            
+            # Calculate weighted overall score
+            overall_score = (
+                scores['personality'] * 0.25 +
+                scores['values'] * 0.20 +
+                scores['lifestyle'] * 0.15 +
+                scores['emotional'] * 0.20 +
+                scores['social'] * 0.10 +
+                location_score * 0.10
+            )
+            
+            # Generate AI analysis
+            if self.client:
+                analysis = self.get_ai_friendship_analysis(current_user_profile, potential_match['profile'])
+            else:
+                analysis = self.get_fallback_friendship_analysis(current_user_profile, potential_match['profile'])
+            
+            match_result = {
+                'matched_user_id': potential_match['user_id'],
+                'matched_user_name': potential_match['first_name'],
+                'matched_user_email': potential_match['email'],
+                'compatibility_score': round(overall_score),
+                'personality_score': round(scores['personality']),
+                'values_score': round(scores['values']),
+                'lifestyle_score': round(scores['lifestyle']),
+                'emotional_score': round(scores['emotional']),
+                'social_score': round(scores['social']),
+                'location_score': round(location_score),
+                'overall_score': round(overall_score),
+                'compatibility_analysis': analysis,
+                'distance_miles': distance
+            }
+            
+            matches.append(match_result)
+        
+        # Sort by overall score and filter
+        matches.sort(key=lambda x: x['overall_score'], reverse=True)
+        matches = [m for m in matches if m['overall_score'] >= 60]
+        
+        # Save matches to database
+        self.user_auth.save_user_matches(user_id, matches)
+        
+        print(f"✓ Found {len(matches)} compatible friendship matches")
+        return matches
+    
+    def get_ai_friendship_analysis(self, user1_profile: Dict, user2_profile: Dict) -> str:
+        """Get AI-powered friendship compatibility analysis"""
+        personality_summary = f"""
+        User 1: Decision-making ({user1_profile.get('decision_making', 5)}/10), Social energy ({user1_profile.get('social_energy', 5)}/10), Communication depth ({user1_profile.get('communication_depth', 5)}/10)
+        User 2: Decision-making ({user2_profile.get('decision_making', 5)}/10), Social energy ({user2_profile.get('social_energy', 5)}/10), Communication depth ({user2_profile.get('communication_depth', 5)}/10)
+        
+        User 1 friendship superpower: {user1_profile.get('friendship_superpower', 'Not specified')}
+        User 2 friendship superpower: {user2_profile.get('friendship_superpower', 'Not specified')}
+        
+        User 1 ideal friendship: {user1_profile.get('ideal_friendship_description', 'Not specified')}
+        User 2 ideal friendship: {user2_profile.get('ideal_friendship_description', 'Not specified')}
+        """
+        
+        prompt = f"""Analyze this friendship compatibility and provide a warm, encouraging 2-3 sentence analysis of why these two people could be great friends.
+
+{personality_summary}
+
+Focus on:
+- Complementary or aligned personality traits
+- Shared values and interests
+- How they might support each other
+- What makes this friendship exciting
+
+Keep it positive and specific."""
+        
+        try:
+            response = self.client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.7,
+                max_tokens=200,
+                timeout=30
+            )
+            
+            return response.choices[0].message.content.strip()
+            
+        except Exception as e:
+            print(f"Error calling OpenAI: {e}")
+            return self.get_fallback_friendship_analysis(user1_profile, user2_profile)
+    
+    def get_fallback_friendship_analysis(self, user1_profile: Dict, user2_profile: Dict) -> str:
+        """Fallback friendship analysis without AI"""
+        analyses = [
+            "Your complementary communication styles and shared values around personal growth suggest you could build a really meaningful friendship with great conversations and mutual support.",
+            "You both seem to value authentic connections and have similar approaches to handling life's challenges, which could form the foundation for a lasting and supportive friendship.",
+            "Your different strengths could really complement each other well - one brings energy and planning while the other offers thoughtful listening and emotional support.",
+            "You share similar lifestyle rhythms and social preferences, which means you'd likely enjoy spending time together and have compatible friendship expectations.",
+            "Both of you value deep, meaningful connections over surface-level interactions, suggesting you could develop the kind of friendship where you really understand and support each other."
+        ]
+        
+        return random.choice(analyses)
+
+# ============================================================================
 # DATA COLLECTION & STORAGE
 # ============================================================================
 

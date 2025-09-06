@@ -73,6 +73,7 @@ from openai import OpenAI
 from dotenv import load_dotenv
 
 from enhanced_matching_system import (
+    MatchingSystem,
     EnhancedMatchingSystem, 
     InteractionTracker, 
     integrate_enhanced_matching
@@ -118,56 +119,6 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# ============================================================================
-# DATA ANONYMIZATION
-# ============================================================================
-class DataEncryption:
-    """Handles all encryption and anonymization for user data"""
-    
-    def __init__(self):
-        self.master_key = self._get_or_create_master_key()
-        self.fernet = Fernet(self.master_key)
-    
-    def _get_or_create_master_key(self):
-        """Get master encryption key from environment or create new one"""
-        key_env = os.environ.get('ENCRYPTION_MASTER_KEY')
-        if key_env:
-            return key_env.encode()
-        
-        # Generate new key if none exists
-        password = os.environ.get('ENCRYPTION_PASSWORD', 'default-change-in-production')
-        salt = os.environ.get('ENCRYPTION_SALT', 'default-salt-change-in-production').encode()
-        
-        kdf = PBKDF2HMAC(
-            algorithm=hashes.SHA256(),
-            length=32,
-            salt=salt,
-            iterations=100000,
-        )
-        key = base64.urlsafe_b64encode(kdf.derive(password.encode()))
-        return key
-    
-    def encrypt_sensitive_data(self, data: str) -> str:
-        """Encrypt sensitive data like email, phone, personal info"""
-        if not data:
-            return data
-        return self.fernet.encrypt(data.encode()).decode()
-    
-    def decrypt_sensitive_data(self, encrypted_data: str) -> str:
-        """Decrypt sensitive data"""
-        if not encrypted_data:
-            return encrypted_data
-        return self.fernet.decrypt(encrypted_data.encode()).decode()
-    
-    def hash_for_matching(self, data: str) -> str:
-        """Create one-way hash for matching purposes (cannot be reversed)"""
-        if not data:
-            return data
-        return hashlib.sha256(f"{data}_{os.environ.get('HASH_SALT', 'default-salt')}".encode()).hexdigest()
-    
-    def generate_anonymous_id(self) -> str:
-        """Generate anonymous ID for user"""
-        return secrets.token_urlsafe(16)
 
 # ============================================================================
 # CONNECTING TO POSTGRESQL DATABASE
@@ -1355,106 +1306,6 @@ class UserAuthSystem:
         except Exception as e:
             print(f"Error cleaning up expired tokens: {e}")
 
-class GDPRCompliance:
-    """Handle GDPR compliance features"""
-    
-    def __init__(self, user_auth_system):
-        self.user_auth = user_auth_system
-        self.encryption = data_encryption
-    
-    def export_user_data(self, user_id: int) -> Dict[str, Any]:
-        """Export all user data in readable format (GDPR Article 15)"""
-        try:
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            
-            # Get user data
-            cursor.execute('''
-                SELECT anonymous_id, email_encrypted, first_name_encrypted, 
-                       last_name_encrypted, phone_encrypted, created_at, data_consent_date
-                FROM users WHERE id = %s
-            ''', (user_id,))
-            user_data = cursor.fetchone()
-            
-            if not user_data:
-                return {'error': 'User not found'}
-            
-            anonymous_id = user_data[0]
-            
-            # Decrypt personal data
-            decrypted_data = {
-                'email': self.encryption.decrypt_sensitive_data(user_data[1]) if user_data[1] else None,
-                'first_name': self.encryption.decrypt_sensitive_data(user_data[2]) if user_data[2] else None,
-                'last_name': self.encryption.decrypt_sensitive_data(user_data[3]) if user_data[3] else None,
-                'phone': self.encryption.decrypt_sensitive_data(user_data[4]) if user_data[4] else None,
-                'created_at': user_data[5],
-                'data_consent_date': user_data[6]
-            }
-            
-            # Get profile data
-            cursor.execute('SELECT profile_data_encrypted FROM anonymous_profiles WHERE anonymous_id = %s', 
-                          (anonymous_id,))
-            profile_result = cursor.fetchone()
-            if profile_result:
-                encrypted_profile = profile_result[0]
-                profile_json = self.encryption.decrypt_sensitive_data(encrypted_profile)
-                decrypted_data['profile'] = json.loads(profile_json)
-            
-            # Get processing log
-            cursor.execute('''
-                SELECT action, purpose, timestamp 
-                FROM data_processing_log 
-                WHERE anonymous_id = %s
-                ORDER BY timestamp DESC
-            ''', (anonymous_id,))
-            processing_log = cursor.fetchall()
-            decrypted_data['processing_history'] = [
-                {'action': row[0], 'purpose': row[1], 'timestamp': row[2]}
-                for row in processing_log
-            ]
-            
-            conn.close()
-            return decrypted_data
-            
-        except Exception as e:
-            return {'error': f'Data export failed: {str(e)}'}
-    
-    def delete_user_data(self, user_id: int) -> Dict[str, Any]:
-        """Permanently delete all user data (GDPR Article 17)"""
-        try:
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            
-            # Get anonymous ID
-            cursor.execute('SELECT anonymous_id FROM users WHERE id = %s', (user_id,))
-            result = cursor.fetchone()
-            if not result:
-                return {'success': False, 'error': 'User not found'}
-            
-            anonymous_id = result[0]
-            
-            # Delete all related data
-            cursor.execute('DELETE FROM anonymous_profiles WHERE anonymous_id = %s', (anonymous_id,))
-            cursor.execute('DELETE FROM data_processing_log WHERE anonymous_id = %s', (anonymous_id,))
-            cursor.execute('DELETE FROM user_matches WHERE user_id = %s OR matched_user_id = %s', 
-                          (user_id, user_id))
-            cursor.execute('DELETE FROM contact_requests WHERE requester_id = %s OR requested_id = %s', 
-                          (user_id, user_id))
-            cursor.execute('DELETE FROM users WHERE id = %s', (user_id,))
-            
-            # Log deletion
-            cursor.execute('''
-                INSERT INTO data_processing_log (anonymous_id, action, purpose)
-                VALUES (%s, 'data_deletion', 'user_request')
-            ''', (anonymous_id,))
-            
-            conn.commit()
-            conn.close()
-            
-            return {'success': True, 'message': 'All user data permanently deleted'}
-            
-        except Exception as e:
-            return {'success': False, 'error': f'Deletion failed: {str(e)}'}
 
 # ============================================================================
 # EMAIL FOLLOW-UP SYSTEM
@@ -1747,463 +1598,636 @@ class EmailFollowupSystem:
             return {'success': False, 'error': 'Failed to record response'}
 
 # ============================================================================
-# MATCHING SYSTEM
+# IDENTITY VERIFICATION SYSTEM
 # ============================================================================
 
-class MatchingSystem:
-    """Advanced friendship compatibility matching system"""
-    
-    def __init__(self, api_key: str):
-        self.client = OpenAI(api_key=api_key) if api_key else None
-        self.user_auth = UserAuthSystem()
-    
-    def calculate_distance(self, postcode1: str, postcode2: str) -> float:
-        """Calculate distance between two UK postcodes"""
-        def get_postcode_coordinates(postcode: str) -> Tuple[Optional[float], Optional[float]]:
-            try:
-                response = requests.get(f"https://api.postcodes.io/postcodes/{postcode}")
-                if response.status_code == 200:
-                    data = response.json()
-                    return data['result']['latitude'], data['result']['longitude']
-            except:
-                pass
-            return None, None
+import os
+import secrets
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Tuple, Any
+import json
 
-        def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-            R = 3959  # Earth's radius in miles
-            
-            lat1_rad = math.radians(lat1)
-            lat2_rad = math.radians(lat2)
-            delta_lat = math.radians(lat2 - lat1)
-            delta_lon = math.radians(lon2 - lon1)
-            
-            a = (math.sin(delta_lat / 2) ** 2 + 
-                math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(delta_lon / 2) ** 2)
-            c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-            
-            return R * c
-
-        lat1, lon1 = get_postcode_coordinates(postcode1)
-        lat2, lon2 = get_postcode_coordinates(postcode2)
-        
-        if lat1 and lon1 and lat2 and lon2:
-            return haversine_distance(lat1, lon1, lat2, lon2)
-        
-        return 999  # Return high number if geocoding fails
+class IdentityVerificationSystem:
+    """Handles identity verification with photo ID uploads via email"""
     
-    def check_gender_compatibility(self, user1_profile: Dict, user2_profile: Dict) -> bool:
-        """Check if users meet each other's gender preferences"""
-        user1_gender = user1_profile.get('gender', '')
-        user2_gender = user2_profile.get('gender', '')
-        user1_preference = user1_profile.get('gender_preference', 'all')
-        user2_preference = user2_profile.get('gender_preference', 'all')
-        
-        # Check mutual compatibility
-        user1_compatible = (user1_preference == 'all' or 
-                           (user1_preference == 'women' and user2_gender == 'woman') or
-                           (user1_preference == 'men' and user2_gender == 'man') or
-                           (user1_preference == 'non_binary' and user2_gender == 'non_binary'))
-        
-        user2_compatible = (user2_preference == 'all' or 
-                           (user2_preference == 'women' and user1_gender == 'woman') or
-                           (user2_preference == 'men' and user1_gender == 'man') or
-                           (user2_preference == 'non_binary' and user1_gender == 'non_binary'))
-        
-        return user1_compatible and user2_compatible
+    def __init__(self, user_auth_system):
+        self.user_auth = user_auth_system
+        self.init_verification_database()
     
-    def is_user_blocked(self, user_id: int, potential_match: Dict[str, Any]) -> bool:
-        """Check if a potential match is blocked"""
-        blocked = self.user_auth.get_blocked_users(user_id)
+    def init_verification_database(self):
+        """Initialize identity verification tables"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
         
-        # Check email, phone, and name matches
-        if potential_match['email'] in blocked['emails']:
-            return True
-        if potential_match['phone'] and potential_match['phone'] in blocked['phones']:
-            return True
-        
-        user_name = f"{potential_match['first_name']} {potential_match['last_name']}".lower()
-        for blocked_name in blocked['names']:
-            if blocked_name and blocked_name.lower() in user_name:
-                return True
-        
-        return False
-    
-    def calculate_compatibility_scores(self, user1_profile: Dict, user2_profile: Dict) -> Dict[str, float]:
-        """Calculate all compatibility scores"""
-        scores = {}
-        
-        # Personality compatibility
-        scores['personality'] = self._calculate_personality_score(user1_profile, user2_profile)
-        
-        # Values compatibility  
-        scores['values'] = self._calculate_values_score(user1_profile, user2_profile)
-        
-        # Lifestyle compatibility
-        scores['lifestyle'] = self._calculate_lifestyle_score(user1_profile, user2_profile)
-        
-        # Emotional compatibility
-        scores['emotional'] = self._calculate_emotional_score(user1_profile, user2_profile)
-        
-        # Social boundaries compatibility
-        scores['social'] = self._calculate_social_score(user1_profile, user2_profile)
-        
-        return scores
-    
-    def _calculate_personality_score(self, user1: Dict, user2: Dict) -> float:
-        """Calculate personality compatibility score with safe numeric conversion"""
-        
-        # Helper function to safely convert to numeric
-        def safe_numeric(value, default=5):
-            try:
-                if isinstance(value, str):
-                    return float(value)
-                elif isinstance(value, (int, float)):
-                    return float(value)
-                else:
-                    return default
-            except (ValueError, TypeError):
-                return default
-        
-        personality_scores = []
-        
-        # Decision-making (moderate differences okay)
-        decision_diff = abs(safe_numeric(user1.get('decision_making', 5)) - safe_numeric(user2.get('decision_making', 5)))
-        decision_score = 100 * max(0.2, 1 - (decision_diff / 8)**1.2)
-        personality_scores.append(decision_score * 1.2)
-        
-        # Social energy (should align more closely)  
-        social_diff = abs(safe_numeric(user1.get('social_energy', 5)) - safe_numeric(user2.get('social_energy', 5)))
-        social_score = 100 * max(0.1, 1 - (social_diff / 6)**2)
-        personality_scores.append(social_score * 1.5)
-        # Communication depth (should align)
-        comm_diff = abs(safe_numeric(user1.get('communication_depth', 5)) - safe_numeric(user2.get('communication_depth', 5)))
-        comm_score = max(0, 100 - (comm_diff * 15))
-        personality_scores.append(comm_score * 1.8)
-        
-        # Conflict approach
-        conflict_diff = abs(safe_numeric(user1.get('conflict_approach', 5)) - safe_numeric(user2.get('conflict_approach', 5)))
-        conflict_score = max(0, 100 - (conflict_diff * 10))
-        personality_scores.append(conflict_score * 1.0)
-        
-        # Life pace
-        pace_diff = abs(safe_numeric(user1.get('life_pace', 5)) - safe_numeric(user2.get('life_pace', 5)))
-        pace_score = max(0, 100 - (pace_diff * 12))
-        personality_scores.append(pace_score * 1.3)
-        
-        return min(100, sum(personality_scores) / len(personality_scores))
-
-    
-    def _calculate_values_score(self, user1: Dict, user2: Dict) -> float:
-        """Calculate values alignment score with safe numeric conversion"""
-        
-        def safe_numeric(value, default=5):
-            try:
-                if isinstance(value, str):
-                    return float(value)
-                elif isinstance(value, (int, float)):
-                    return float(value)
-                else:
-                    return default
-            except (ValueError, TypeError):
-                return default
-        
-        values_scores = []
-        
-        # Personal growth alignment
-        growth_diff = abs(safe_numeric(user1.get('personal_growth', 5)) - safe_numeric(user2.get('personal_growth', 5)))
-        growth_score = max(0, 100 - (growth_diff * 10))
-        values_scores.append(growth_score)
-        
-        # Success definition alignment
-        success_diff = abs(safe_numeric(user1.get('success_definition', 5)) - safe_numeric(user2.get('success_definition', 5)))
-        success_score = max(0, 100 - (success_diff * 12))
-        values_scores.append(success_score)
-        
-        # Community involvement
-        community_diff = abs(safe_numeric(user1.get('community_involvement', 5)) - safe_numeric(user2.get('community_involvement', 5)))
-        community_score = max(0, 100 - (community_diff * 8))
-        values_scores.append(community_score)
-        
-        # Work-life philosophy
-        worklife_diff = abs(safe_numeric(user1.get('work_life_philosophy', 5)) - safe_numeric(user2.get('work_life_philosophy', 5)))
-        worklife_score = max(0, 100 - (worklife_diff * 11))
-        values_scores.append(worklife_score)
-        
-        # Future orientation
-        future_diff = abs(safe_numeric(user1.get('future_orientation', 5)) - safe_numeric(user2.get('future_orientation', 5)))
-        future_score = max(0, 100 - (future_diff * 9))
-        values_scores.append(future_score)
-        
-        return sum(values_scores) / len(values_scores)
-
-    def _calculate_lifestyle_score(self, user1: Dict, user2: Dict) -> float:
-        """Calculate lifestyle compatibility score with safe numeric conversion"""
-        
-        def safe_numeric(value, default=5):
-            try:
-                if isinstance(value, str):
-                    return float(value)
-                elif isinstance(value, (int, float)):
-                    return float(value)
-                else:
-                    return default
-            except (ValueError, TypeError):
-                return default
-        
-        lifestyle_scores = []
-        
-        # Energy patterns (important for scheduling)
-        energy_diff = abs(safe_numeric(user1.get('energy_patterns', 5)) - safe_numeric(user2.get('energy_patterns', 5)))
-        energy_score = max(0, 100 - (energy_diff * 15))
-        lifestyle_scores.append(energy_score * 1.4)
-        
-        # Social setting preference
-        setting_diff = abs(safe_numeric(user1.get('social_setting', 5)) - safe_numeric(user2.get('social_setting', 5)))
-        setting_score = max(0, 100 - (setting_diff * 8))
-        lifestyle_scores.append(setting_score)
-        
-        # Activity investment
-        activity_diff = abs(safe_numeric(user1.get('activity_investment', 5)) - safe_numeric(user2.get('activity_investment', 5)))
-        activity_score = max(0, 100 - (activity_diff * 7))
-        lifestyle_scores.append(activity_score)
-        
-        # Physical activity level
-        physical_diff = abs(safe_numeric(user1.get('physical_activity', 5)) - safe_numeric(user2.get('physical_activity', 5)))
-        physical_score = max(0, 100 - (physical_diff * 10))
-        lifestyle_scores.append(physical_score * 1.2)
-        
-        # Cultural consumption
-        cultural_diff = abs(safe_numeric(user1.get('cultural_consumption', 5)) - safe_numeric(user2.get('cultural_consumption', 5)))
-        cultural_score = max(0, 100 - (cultural_diff * 6))
-        lifestyle_scores.append(cultural_score)
-        
-        return sum(lifestyle_scores) / len(lifestyle_scores)
-
-    def _calculate_emotional_score(self, user1: Dict, user2: Dict) -> float:
-        """Calculate emotional compatibility score with safe numeric conversion"""
-        
-        def safe_numeric(value, default=5):
-            try:
-                if isinstance(value, str):
-                    return float(value)
-                elif isinstance(value, (int, float)):
-                    return float(value)
-                else:
-                    return default
-            except (ValueError, TypeError):
-                return default
-        
-        emotional_scores = []
-        
-        # Stress preference compatibility
-        stress1 = user1.get('stress_preference', '')
-        stress2 = user2.get('stress_preference', '')
-        stress_score = 85 if stress1 == stress2 else 70
-        emotional_scores.append(stress_score)
-        
-        # Processing style compatibility
-        process1 = user1.get('processing_style', '')
-        process2 = user2.get('processing_style', '')
-        process_score = 90 if process1 == process2 else 65
-        emotional_scores.append(process_score * 1.3)
-        
-        # Celebration preference
-        celeb_diff = abs(safe_numeric(user1.get('celebration_preference', 5)) - safe_numeric(user2.get('celebration_preference', 5)))
-        celeb_score = max(0, 100 - (celeb_diff * 12))
-        emotional_scores.append(celeb_score)
-        
-        return sum(emotional_scores) / len(emotional_scores)
-
-    def _calculate_social_score(self, user1: Dict, user2: Dict) -> float:
-        """Calculate social boundaries compatibility score with safe numeric conversion"""
-        
-        def safe_numeric(value, default=5):
-            try:
-                if isinstance(value, str):
-                    return float(value)
-                elif isinstance(value, (int, float)):
-                    return float(value)
-                else:
-                    return default
-            except (ValueError, TypeError):
-                return default
-        
-        boundary_scores = []
-        
-        # Personal sharing alignment
-        sharing_diff = abs(safe_numeric(user1.get('personal_sharing', 5)) - safe_numeric(user2.get('personal_sharing', 5)))
-        sharing_score = max(0, 100 - (sharing_diff * 14))
-        boundary_scores.append(sharing_score * 1.4)
-        
-        # Social overlap tolerance
-        overlap_diff = abs(safe_numeric(user1.get('social_overlap', 5)) - safe_numeric(user2.get('social_overlap', 5)))
-        overlap_score = max(0, 100 - (overlap_diff * 8))
-        boundary_scores.append(overlap_score)
-        
-        # Advice-giving style
-        advice_diff = abs(safe_numeric(user1.get('advice_giving', 5)) - safe_numeric(user2.get('advice_giving', 5)))
-        advice_score = max(0, 100 - (advice_diff * 9))
-        boundary_scores.append(advice_score)
-        
-        # Social commitment level
-        commitment_diff = abs(safe_numeric(user1.get('social_commitment', 5)) - safe_numeric(user2.get('social_commitment', 5)))
-        commitment_score = max(0, 100 - (commitment_diff * 13))
-        boundary_scores.append(commitment_score * 1.3)
-        
-        return sum(boundary_scores) / len(boundary_scores)
-    
-    def run_matching(self, user_id: int) -> List[Dict[str, Any]]:
-        """Run comprehensive matching for a user"""
-        print(f"\n=== Running Advanced Friendship Matching for {user_id} ===")
-        
-        # Get current user's profile and info
-        current_user_profile = self.user_auth.get_user_profile(user_id)
-        current_user_info = self.user_auth.get_user_info(user_id)
-        
-        if not current_user_profile or not current_user_info:
-            print("ERROR: Current user profile not found!")
-            return []
-        
-        # Get all other users for matching
-        all_users = self.user_auth.get_age_filtered_users(user_id)
-        print(f"Found {len(all_users)} potential matches")
-        
-        if not all_users:
-            print("No other users found for matching")
-            return []
-        
-        matches = []
-        
-        for potential_match in all_users:
-            # Apply filters
-            if self.is_user_blocked(user_id, potential_match):
-                print(f"Skipping blocked user: {potential_match['first_name']} {potential_match['last_name']}")
-                continue
-            
-            if not self.check_gender_compatibility(current_user_profile, potential_match['profile']):
-                print(f"Skipping due to gender preference: {potential_match['first_name']} {potential_match['last_name']}")
-                continue
-            
-            print(f"Analyzing compatibility with {potential_match['first_name']} {potential_match['last_name']}...")
-            
-            # Calculate detailed compatibility scores
-            scores = self.calculate_compatibility_scores(current_user_profile, potential_match['profile'])
-            
-            # Calculate distance and location score
-            distance = 999
-            location_score = 50  # Default neutral score
-            current_postcode = current_user_profile.get('postcode')
-            match_postcode = potential_match['profile'].get('postcode')
-            
-            if current_postcode and match_postcode:
-                distance = self.calculate_distance(current_postcode, match_postcode)
-                # Location score based on distance
-                if distance <= 5:
-                    location_score = 95
-                elif distance <= 15:
-                    location_score = 85
-                elif distance <= 30:
-                    location_score = 75
-                elif distance <= 50:
-                    location_score = 65
-                else:
-                    location_score = 40
-            
-            # Calculate weighted overall score
-            overall_score = (
-                scores['personality'] * 0.25 +
-                scores['values'] * 0.20 +
-                scores['lifestyle'] * 0.15 +
-                scores['emotional'] * 0.20 +
-                scores['social'] * 0.10 +
-                location_score * 0.10
+        # Identity verification requests table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS identity_verification_requests (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                verification_token TEXT UNIQUE NOT NULL,
+                email_sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                photo_received BOOLEAN DEFAULT FALSE,
+                photo_received_at TIMESTAMP,
+                verification_status TEXT DEFAULT 'pending', -- pending, approved, rejected, expired
+                verified_at TIMESTAMP,
+                verified_by TEXT, -- admin email who approved
+                rejection_reason TEXT,
+                expires_at TIMESTAMP NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (id),
+                UNIQUE(user_id) -- Only one active verification per user
             )
-            
-            # Generate AI analysis
-            if self.client:
-                analysis = self.get_ai_friendship_analysis(current_user_profile, potential_match['profile'])
-            else:
-                analysis = self.get_fallback_friendship_analysis(current_user_profile, potential_match['profile'])
-            
-            match_result = {
-                'matched_user_id': potential_match['user_id'],
-                'matched_user_name': potential_match['first_name'],
-                'matched_user_email': potential_match['email'],
-                'compatibility_score': round(overall_score),
-                'personality_score': round(scores['personality']),
-                'values_score': round(scores['values']),
-                'lifestyle_score': round(scores['lifestyle']),
-                'emotional_score': round(scores['emotional']),
-                'social_score': round(scores['social']),
-                'location_score': round(location_score),
-                'overall_score': round(overall_score),
-                'compatibility_analysis': analysis,
-                'distance_miles': distance
-            }
-            
-            matches.append(match_result)
+        ''')
         
-        # Sort by overall score and filter
-        matches.sort(key=lambda x: x['overall_score'], reverse=True)
-        matches = [m for m in matches if m['overall_score'] >= 60]
-        
-        # Save matches to database
-        self.user_auth.save_user_matches(user_id, matches)
-        
-        print(f"✓ Found {len(matches)} compatible friendship matches")
-        return matches
-    
-    def get_ai_friendship_analysis(self, user1_profile: Dict, user2_profile: Dict) -> str:
-        """Get AI-powered friendship compatibility analysis"""
-        personality_summary = f"""
-        User 1: Decision-making ({user1_profile.get('decision_making', 5)}/10), Social energy ({user1_profile.get('social_energy', 5)}/10), Communication depth ({user1_profile.get('communication_depth', 5)}/10)
-        User 2: Decision-making ({user2_profile.get('decision_making', 5)}/10), Social energy ({user2_profile.get('social_energy', 5)}/10), Communication depth ({user2_profile.get('communication_depth', 5)}/10)
-        
-        User 1 friendship superpower: {user1_profile.get('friendship_superpower', 'Not specified')}
-        User 2 friendship superpower: {user2_profile.get('friendship_superpower', 'Not specified')}
-        
-        User 1 ideal friendship: {user1_profile.get('ideal_friendship_description', 'Not specified')}
-        User 2 ideal friendship: {user2_profile.get('ideal_friendship_description', 'Not specified')}
-        """
-        
-        prompt = f"""Analyze this friendship compatibility and provide a warm, encouraging 2-3 sentence analysis of why these two people could be great friends.
-
-{personality_summary}
-
-Focus on:
-- Complementary or aligned personality traits
-- Shared values and interests
-- How they might support each other
-- What makes this friendship exciting
-
-Keep it positive and specific."""
-        
+        # Add verification status to users table
         try:
-            response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.7,
-                max_tokens=200,
-                timeout=30
+            cursor.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT FALSE')
+            cursor.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS verified_at TIMESTAMP')
+            print("✓ Added verification columns to users table")
+        except Exception as e:
+            print(f"Verification columns may already exist: {e}")
+        
+        # Verification admin settings table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS verification_admin_settings (
+                id SERIAL PRIMARY KEY,
+                admin_email TEXT NOT NULL,
+                verification_email TEXT NOT NULL,
+                instructions TEXT NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Insert default admin settings if none exist
+        cursor.execute('SELECT COUNT(*) FROM verification_admin_settings')
+        if cursor.fetchone()[0] == 0:
+            cursor.execute('''
+                INSERT INTO verification_admin_settings 
+                (admin_email, verification_email, instructions)
+                VALUES (%s, %s, %s)
+            ''', (
+                'admin@connect.com',
+                'verify@connect.com', 
+                '''Please send a clear photo containing:
+1. Your government-issued photo ID (passport, driving licence, or national ID)
+2. A selfie of you holding the same ID next to your face
+3. A piece of paper with your verification code written on it
+
+All three items must be clearly visible in the photo(s).'''
+            ))
+        
+        conn.commit()
+        conn.close()
+        print("✓ Identity verification database initialized")
+    
+    def request_verification(self, user_id: int) -> Dict[str, Any]:
+        """Initiate identity verification process for a user"""
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            # Check if user already has a pending/approved verification
+            cursor.execute('''
+                SELECT verification_status, expires_at FROM identity_verification_requests 
+                WHERE user_id = %s AND verification_status IN ('pending', 'approved')
+                ORDER BY created_at DESC LIMIT 1
+            ''', (user_id,))
+            
+            existing = cursor.fetchone()
+            if existing:
+                if existing['verification_status'] == 'approved':
+                    conn.close()
+                    return {'success': False, 'error': 'You are already verified'}
+                elif existing['verification_status'] == 'pending' and existing['expires_at'] > datetime.now():
+                    conn.close()
+                    return {'success': False, 'error': 'Verification request already pending'}
+            
+            # Generate unique verification token
+            verification_token = secrets.token_urlsafe(32)
+            expires_at = datetime.now() + timedelta(days=7)  # 7 days to submit
+            
+            # Delete any old requests for this user
+            cursor.execute('DELETE FROM identity_verification_requests WHERE user_id = %s', (user_id,))
+            
+            # Create new verification request
+            cursor.execute('''
+                INSERT INTO identity_verification_requests 
+                (user_id, verification_token, expires_at)
+                VALUES (%s, %s, %s)
+                RETURNING id
+            ''', (user_id, verification_token, expires_at))
+            
+            request_id = cursor.fetchone()['id']
+            
+            # Send verification instructions email
+            user_info = self.user_auth.get_user_info(user_id)
+            email_sent = self.send_verification_instructions_email(
+                user_info['email'], 
+                user_info['first_name'] or 'User', 
+                verification_token
             )
             
-            return response.choices[0].message.content.strip()
+            if email_sent:
+                conn.commit()
+                conn.close()
+                return {
+                    'success': True, 
+                    'message': 'Verification instructions sent to your email',
+                    'token': verification_token,
+                    'expires_at': expires_at.isoformat()
+                }
+            else:
+                conn.rollback()
+                conn.close()
+                return {'success': False, 'error': 'Failed to send verification email'}
             
         except Exception as e:
-            print(f"Error calling OpenAI: {e}")
-            return self.get_fallback_friendship_analysis(user1_profile, user2_profile)
+            print(f"Error requesting verification: {e}")
+            return {'success': False, 'error': 'Failed to process verification request'}
     
-    def get_fallback_friendship_analysis(self, user1_profile: Dict, user2_profile: Dict) -> str:
-        """Fallback friendship analysis without AI"""
-        analyses = [
-            "Your complementary communication styles and shared values around personal growth suggest you could build a really meaningful friendship with great conversations and mutual support.",
-            "You both seem to value authentic connections and have similar approaches to handling life's challenges, which could form the foundation for a lasting and supportive friendship.",
-            "Your different strengths could really complement each other well - one brings energy and planning while the other offers thoughtful listening and emotional support.",
-            "You share similar lifestyle rhythms and social preferences, which means you'd likely enjoy spending time together and have compatible friendship expectations.",
-            "Both of you value deep, meaningful connections over surface-level interactions, suggesting you could develop the kind of friendship where you really understand and support each other."
-        ]
-        
-        return random.choice(analyses)
+    def send_verification_instructions_email(self, to_email: str, first_name: str, verification_token: str) -> bool:
+        """Send detailed verification instructions to user"""
+        try:
+            # Get admin settings
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute('SELECT verification_email, instructions FROM verification_admin_settings ORDER BY id DESC LIMIT 1')
+            settings = cursor.fetchone()
+            conn.close()
+            
+            verification_email = settings['verification_email'] if settings else 'verify@connect.com'
+            instructions = settings['instructions'] if settings else 'Send your ID verification photos.'
+            
+            subject = "Connect Identity Verification - Action Required"
+            
+            html_content = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <style>
+                    body {{ font-family: 'Inter', sans-serif; line-height: 1.6; color: #333; }}
+                    .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                    .header {{ background: linear-gradient(135deg, #167a60, #c6e19b); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }}
+                    .content {{ background: white; padding: 30px; border: 1px solid #ddd; }}
+                    .verification-code {{ background: #f0f8f0; border: 2px dashed #167a60; padding: 20px; text-align: center; margin: 20px 0; border-radius: 8px; }}
+                    .code {{ font-family: monospace; font-size: 24px; font-weight: bold; color: #167a60; letter-spacing: 3px; }}
+                    .instructions {{ background: #fff3cd; border: 1px solid #ffeaa7; padding: 20px; border-radius: 6px; margin: 20px 0; }}
+                    .step {{ margin: 15px 0; padding: 10px; border-left: 4px solid #167a60; }}
+                    .footer {{ background: #f8f9fa; padding: 20px; text-align: center; font-size: 12px; color: #666; border-radius: 0 0 8px 8px; }}
+                    .warning {{ background: #ffe6e6; border: 1px solid #ffb3b3; padding: 15px; border-radius: 6px; margin: 20px 0; color: #d63384; }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <h1 style="margin: 0; font-size: 24px;">Identity Verification</h1>
+                        <p style="margin: 10px 0 0 0; opacity: 0.9;">Get your blue verified badge</p>
+                    </div>
+                    
+                    <div class="content">
+                        <h2>Hi {first_name}!</h2>
+                        
+                        <p>You've requested identity verification for your Connect account. Once verified, you'll receive a blue verified badge that shows you're a real person, increasing trust and improving your match success rate.</p>
+                        
+                        <div class="verification-code">
+                            <strong>Your Verification Code:</strong><br>
+                            <div class="code">{verification_token[:8].upper()}</div>
+                            <small>Include this code in your verification photo</small>
+                        </div>
+                        
+                        <div class="instructions">
+                            <strong>🔐 Verification Requirements:</strong><br>
+                            {instructions.replace(chr(10), '<br>')}
+                        </div>
+                        
+                        <div style="margin: 30px 0;">
+                            <div class="step">
+                                <strong>Step 1:</strong> Take a clear photo of your government-issued ID (passport, driving licence, or national ID card)
+                            </div>
+                            <div class="step">
+                                <strong>Step 2:</strong> Take a selfie holding the same ID next to your face
+                            </div>
+                            <div class="step">
+                                <strong>Step 3:</strong> Write your verification code <strong>{verification_token[:8].upper()}</strong> on paper and include it in the photo
+                            </div>
+                            <div class="step">
+                                <strong>Step 4:</strong> Email all photos to: <strong>{verification_email}</strong>
+                            </div>
+                        </div>
+                        
+                        <div class="warning">
+                            <strong>⚠️ Important Security Notes:</strong><br>
+                            • You can blur sensitive details like ID numbers (but keep your photo and name visible)<br>
+                            • We only verify your identity - we don't store your ID details<br>
+                            • This process typically takes 1-2 business days<br>
+                            • Your verification code expires in 7 days
+                        </div>
+                        
+                        <p><strong>What happens next?</strong></p>
+                        <ol>
+                            <li>Send your verification photos to <strong>{verification_email}</strong></li>
+                            <li>Our team will review within 1-2 business days</li>
+                            <li>You'll receive confirmation once approved</li>
+                            <li>Your profile will display a blue verified badge</li>
+                            <li>Your match-to-meet rate will improve significantly</li>
+                        </ol>
+                        
+                        <p>Questions? Reply to this email or contact support.</p>
+                        
+                        <p>Best regards,<br>The Connect Verification Team</p>
+                    </div>
+                    
+                    <div class="footer">
+                        <p>This verification request expires in 7 days. You can request a new code anytime from your profile settings.</p>
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
+            
+            # Send the email
+            msg = MIMEMultipart('alternative')
+            msg['Subject'] = subject
+            msg['From'] = EMAIL_FROM
+            msg['To'] = to_email
+            
+            html_part = MIMEText(html_content, 'html')
+            msg.attach(html_part)
+            
+            with smtplib.SMTP(EMAIL_HOST, EMAIL_PORT) as server:
+                server.starttls()
+                server.login(EMAIL_USER, EMAIL_PASSWORD)
+                server.send_message(msg)
+                
+            print(f"✓ Verification instructions sent to {to_email}")
+            return True
+            
+        except Exception as e:
+            print(f"Error sending verification email to {to_email}: {e}")
+            return False
+    
+    def mark_photo_received(self, verification_token: str) -> Dict[str, Any]:
+        """Mark that verification photos have been received (called by admin)"""
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                UPDATE identity_verification_requests 
+                SET photo_received = TRUE, photo_received_at = CURRENT_TIMESTAMP
+                WHERE verification_token = %s AND expires_at > CURRENT_TIMESTAMP
+                RETURNING user_id
+            ''', (verification_token,))
+            
+            result = cursor.fetchone()
+            
+            if result:
+                conn.commit()
+                conn.close()
+                return {'success': True, 'user_id': result['user_id']}
+            else:
+                conn.close()
+                return {'success': False, 'error': 'Invalid or expired verification token'}
+                
+        except Exception as e:
+            print(f"Error marking photo received: {e}")
+            return {'success': False, 'error': 'Database error'}
+    
+    def approve_verification(self, verification_token: str, admin_email: str) -> Dict[str, Any]:
+        """Approve a verification request"""
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            # Update verification request
+            cursor.execute('''
+                UPDATE identity_verification_requests 
+                SET verification_status = 'approved', verified_at = CURRENT_TIMESTAMP, verified_by = %s
+                WHERE verification_token = %s AND expires_at > CURRENT_TIMESTAMP
+                RETURNING user_id
+            ''', (admin_email, verification_token))
+            
+            result = cursor.fetchone()
+            
+            if result:
+                user_id = result['user_id']
+                
+                # Update user as verified
+                cursor.execute('''
+                    UPDATE users 
+                    SET is_verified = TRUE, verified_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                ''', (user_id,))
+                
+                # Send confirmation email
+                user_info = self.user_auth.get_user_info(user_id)
+                if user_info:
+                    self.send_verification_approved_email(
+                        user_info['email'], 
+                        user_info['first_name'] or 'User'
+                    )
+                
+                conn.commit()
+                conn.close()
+                
+                return {'success': True, 'user_id': user_id, 'message': 'Verification approved'}
+            else:
+                conn.close()
+                return {'success': False, 'error': 'Invalid or expired verification token'}
+                
+        except Exception as e:
+            print(f"Error approving verification: {e}")
+            return {'success': False, 'error': 'Database error'}
+    
+    def reject_verification(self, verification_token: str, admin_email: str, reason: str) -> Dict[str, Any]:
+        """Reject a verification request"""
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            # Update verification request
+            cursor.execute('''
+                UPDATE identity_verification_requests 
+                SET verification_status = 'rejected', verified_at = CURRENT_TIMESTAMP, 
+                    verified_by = %s, rejection_reason = %s
+                WHERE verification_token = %s AND expires_at > CURRENT_TIMESTAMP
+                RETURNING user_id
+            ''', (admin_email, reason, verification_token))
+            
+            result = cursor.fetchone()
+            
+            if result:
+                user_id = result['user_id']
+                
+                # Send rejection email
+                user_info = self.user_auth.get_user_info(user_id)
+                if user_info:
+                    self.send_verification_rejected_email(
+                        user_info['email'], 
+                        user_info['first_name'] or 'User',
+                        reason
+                    )
+                
+                conn.commit()
+                conn.close()
+                
+                return {'success': True, 'user_id': user_id, 'message': 'Verification rejected'}
+            else:
+                conn.close()
+                return {'success': False, 'error': 'Invalid or expired verification token'}
+                
+        except Exception as e:
+            print(f"Error rejecting verification: {e}")
+            return {'success': False, 'error': 'Database error'}
+    
+    def send_verification_approved_email(self, to_email: str, first_name: str) -> bool:
+        """Send verification approved confirmation email"""
+        try:
+            subject = "🎉 Your Connect Account is Now Verified!"
+            
+            html_content = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body {{ font-family: 'Inter', sans-serif; line-height: 1.6; color: #333; }}
+                    .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                    .header {{ background: linear-gradient(135deg, #167a60, #c6e19b); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }}
+                    .content {{ background: white; padding: 30px; border: 1px solid #ddd; }}
+                    .badge-preview {{ background: #f0f8f0; padding: 20px; text-align: center; border-radius: 8px; margin: 20px 0; }}
+                    .verified-badge {{ display: inline-flex; align-items: center; gap: 8px; background: #007bff; color: white; padding: 8px 16px; border-radius: 20px; font-weight: bold; }}
+                    .benefits {{ background: #e8f4fd; padding: 20px; border-radius: 6px; margin: 20px 0; }}
+                    .footer {{ background: #f8f9fa; padding: 20px; text-align: center; font-size: 12px; color: #666; border-radius: 0 0 8px 8px; }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <h1 style="margin: 0; font-size: 28px;">🎉 You're Verified!</h1>
+                        <p style="margin: 10px 0 0 0; opacity: 0.9;">Your identity has been confirmed</p>
+                    </div>
+                    
+                    <div class="content">
+                        <h2>Congratulations {first_name}!</h2>
+                        
+                        <p>Your identity verification has been approved. Your Connect profile now displays a verified badge, showing other users that you're a real, trustworthy person.</p>
+                        
+                        <div class="badge-preview">
+                            <strong>Your new verified badge:</strong><br><br>
+                            <div class="verified-badge">
+                                ✓ Verified
+                            </div>
+                        </div>
+                        
+                        <div class="benefits">
+                            <strong>🚀 Benefits of being verified:</strong><br>
+                            • Higher match-to-meet conversion rates<br>
+                            • Increased trust from other users<br>
+                            • Priority in matching algorithms<br>
+                            • Blue verified badge on your profile<br>
+                            • Enhanced safety for all users
+                        </div>
+                        
+                        <p>Thank you for helping make Connect a safer, more trusted community. Your verification helps other users feel confident about connecting with real people.</p>
+                        
+                        <div style="text-align: center; margin: 30px 0;">
+                            <a href="/dashboard" style="background: #167a60; color: white; padding: 15px 30px; text-decoration: none; border-radius: 6px; font-weight: bold;">
+                                View Your Verified Profile
+                            </a>
+                        </div>
+                        
+                        <p>Best regards,<br>The Connect Team</p>
+                    </div>
+                    
+                    <div class="footer">
+                        <p>Your verified status is permanent and will be displayed on your profile.</p>
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
+            
+            # Send the email
+            msg = MIMEMultipart('alternative')
+            msg['Subject'] = subject
+            msg['From'] = EMAIL_FROM
+            msg['To'] = to_email
+            
+            html_part = MIMEText(html_content, 'html')
+            msg.attach(html_part)
+            
+            with smtplib.SMTP(EMAIL_HOST, EMAIL_PORT) as server:
+                server.starttls()
+                server.login(EMAIL_USER, EMAIL_PASSWORD)
+                server.send_message(msg)
+                
+            print(f"✓ Verification approved email sent to {to_email}")
+            return True
+            
+        except Exception as e:
+            print(f"Error sending approval email to {to_email}: {e}")
+            return False
+    
+    def send_verification_rejected_email(self, to_email: str, first_name: str, reason: str) -> bool:
+        """Send verification rejection email"""
+        try:
+            subject = "Connect Verification Update - Action Needed"
+            
+            html_content = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body {{ font-family: 'Inter', sans-serif; line-height: 1.6; color: #333; }}
+                    .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                    .header {{ background: #dc3545; color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }}
+                    .content {{ background: white; padding: 30px; border: 1px solid #ddd; }}
+                    .reason {{ background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 6px; margin: 20px 0; }}
+                    .next-steps {{ background: #d4edda; border: 1px solid #c3e6cb; padding: 20px; border-radius: 6px; margin: 20px 0; }}
+                    .footer {{ background: #f8f9fa; padding: 20px; text-align: center; font-size: 12px; color: #666; border-radius: 0 0 8px 8px; }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <h1 style="margin: 0; font-size: 24px;">Verification Needs Attention</h1>
+                        <p style="margin: 10px 0 0 0; opacity: 0.9;">We couldn't complete your verification</p>
+                    </div>
+                    
+                    <div class="content">
+                        <h2>Hi {first_name},</h2>
+                        
+                        <p>We've reviewed your identity verification submission, but unfortunately we couldn't approve it at this time.</p>
+                        
+                        <div class="reason">
+                            <strong>Reason:</strong><br>
+                            {reason}
+                        </div>
+                        
+                        <div class="next-steps">
+                            <strong>📋 Next Steps:</strong><br>
+                            • Review the reason above<br>
+                            • Take new photos following our guidelines<br>
+                            • Request a new verification code from your profile<br>
+                            • Submit clearer photos that meet all requirements
+                        </div>
+                        
+                        <p>Don't worry - you can try again anytime! Most verification issues are resolved with clearer photos or including all required elements.</p>
+                        
+                        <div style="text-align: center; margin: 30px 0;">
+                            <a href="/profile-settings" style="background: #167a60; color: white; padding: 15px 30px; text-decoration: none; border-radius: 6px; font-weight: bold;">
+                                Try Verification Again
+                            </a>
+                        </div>
+                        
+                        <p>If you have questions about the verification process, please reply to this email.</p>
+                        
+                        <p>Best regards,<br>The Connect Verification Team</p>
+                    </div>
+                    
+                    <div class="footer">
+                        <p>We're here to help! Contact us if you need assistance with the verification process.</p>
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
+            
+            # Send the email
+            msg = MIMEMultipart('alternative')
+            msg['Subject'] = subject
+            msg['From'] = EMAIL_FROM
+            msg['To'] = to_email
+            
+            html_part = MIMEText(html_content, 'html')
+            msg.attach(html_part)
+            
+            with smtplib.SMTP(EMAIL_HOST, EMAIL_PORT) as server:
+                server.starttls()
+                server.login(EMAIL_USER, EMAIL_PASSWORD)
+                server.send_message(msg)
+                
+            print(f"✓ Verification rejected email sent to {to_email}")
+            return True
+            
+        except Exception as e:
+            print(f"Error sending rejection email to {to_email}: {e}")
+            return False
+    
+    def get_verification_status(self, user_id: int) -> Dict[str, Any]:
+        """Get current verification status for a user"""
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            # Check user verification status
+            cursor.execute('SELECT is_verified, verified_at FROM users WHERE id = %s', (user_id,))
+            user_result = cursor.fetchone()
+            
+            if not user_result:
+                conn.close()
+                return {'error': 'User not found'}
+            
+            # Check for any pending/recent verification requests
+            cursor.execute('''
+                SELECT verification_status, created_at, expires_at, photo_received, rejection_reason
+                FROM identity_verification_requests 
+                WHERE user_id = %s 
+                ORDER BY created_at DESC LIMIT 1
+            ''', (user_id,))
+            
+            request_result = cursor.fetchone()
+            conn.close()
+            
+            status = {
+                'is_verified': bool(user_result['is_verified']),
+                'verified_at': user_result['verified_at'].isoformat() if user_result['verified_at'] else None,
+                'can_request_verification': True,
+                'pending_request': None
+            }
+            
+            if request_result and request_result['expires_at'] > datetime.now():
+                status['can_request_verification'] = False
+                status['pending_request'] = {
+                    'status': request_result['verification_status'],
+                    'created_at': request_result['created_at'].isoformat(),
+                    'expires_at': request_result['expires_at'].isoformat(),
+                    'photo_received': bool(request_result['photo_received']),
+                    'rejection_reason': request_result['rejection_reason']
+                }
+            
+            return status
+            
+        except Exception as e:
+            print(f"Error getting verification status: {e}")
+            return {'error': 'Database error'}
+    
+    def cleanup_expired_requests(self):
+        """Clean up expired verification requests (run periodically)"""
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                UPDATE identity_verification_requests 
+                SET verification_status = 'expired' 
+                WHERE expires_at < CURRENT_TIMESTAMP AND verification_status = 'pending'
+            ''')
+            
+            expired_count = cursor.rowcount
+            conn.commit()
+            conn.close()
+            
+            if expired_count > 0:
+                print(f"✓ Marked {expired_count} verification requests as expired")
+                
+        except Exception as e:
+            print(f"Error cleaning up expired verification requests: {e}")
+
 
 # ============================================================================
 # BACKGROUND PROCESSING
@@ -2636,6 +2660,7 @@ def render_template_with_header(title: str, content: str, user_info: Dict = None
                     <span>{user_info.get('first_name', user_info.get('email', 'User'))}</span>
                     <a href="/edit-profile" class="btn btn-secondary" style="padding: 8px 16px; font-size: 14px;"> Edit Profile</a>
                     <a href="/contact-requests" class="btn btn-secondary">Requests{notification_badge}</a>
+                    <a href="/profile-settings" class="btn btn-secondary">Settings</a>
                     <a href="/logout" class="btn btn-secondary no-transition">Logout</a>
                 </div>
             '''
@@ -2836,24 +2861,312 @@ def render_template_with_header(title: str, content: str, user_info: Dict = None
     </html>
     '''
 
+def enhance_dashboard_with_verification():
+    """Add verification badges to the existing dashboard rendering"""
+    
+    # Modify the render_matches_dashboard function to include verification badges
+    global render_matches_dashboard
+    original_render_matches_dashboard = render_matches_dashboard
+    
+    def render_matches_dashboard_with_verification(user_info: Dict, matches: List[Dict]) -> str:
+        """Enhanced dashboard with verification badges"""
+        user_id = session['user_id']
+        
+        # Get user's own verification status
+        user_verification = verification_system.get_verification_status(user_id)
+        user_verified_badge = ''
+        if user_verification.get('is_verified'):
+            user_verified_badge = '''
+            <div style="text-align: center; margin: 1rem 0;">
+                <div style="display: inline-flex; align-items: center; gap: 0.5rem; background: #007bff; color: white; padding: 0.5rem 1rem; border-radius: 20px; font-weight: 600; font-size: 0.875rem;">
+                    ✓ Your Profile is Verified
+                </div>
+            </div>
+            '''
+        
+        # Get flash messages and convert to HTML
+        flash_html = ""
+        messages = get_flashed_messages(with_categories=True)
+        if messages:
+            flash_html = '<div class="flash-messages">'
+            for category, message in messages:
+                flash_html += f'<div class="flash-{category}">{message}</div>'
+            flash_html += '</div>'
+        
+        # Enhanced matches with verification status
+        matches_html = ""
+        
+        for i, match in enumerate(matches, 1):
+            # Check if the matched user is verified
+            matched_user_verified = False
+            try:
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute('SELECT is_verified FROM users WHERE id = %s', (match['matched_user_id'],))
+                result = cursor.fetchone()
+                if result:
+                    matched_user_verified = bool(result['is_verified'])
+                conn.close()
+            except:
+                pass
+            
+            # Verification badge for matched user
+            verification_badge = ""
+            if matched_user_verified:
+                verification_badge = '''
+                <div style="display: inline-flex; align-items: center; gap: 0.25rem; background: #007bff; color: white; padding: 0.25rem 0.75rem; border-radius: 15px; font-size: 0.75rem; font-weight: 600; margin-left: 0.5rem;">
+                    ✓ Verified
+                </div>
+                '''
+            
+            # Enhanced compatibility badges
+            compatibility_badges = ""
+            
+            # Verification trust badge
+            if matched_user_verified:
+                compatibility_badges += '<span class="badge badge-verified">Identity Verified</span>'
+            
+            # Neural network confidence badge
+            neural_score = match.get('neural_score', 0)
+            data_confidence = match.get('data_confidence', 0)
+            
+            if data_confidence >= 70:
+                compatibility_badges += f'<span class="badge badge-ai">AI Confidence: {data_confidence}%</span>'
+            
+            if neural_score >= 85:
+                compatibility_badges += '<span class="badge badge-neural">High Neural Match</span>'
+            
+            # Traditional badges
+            if match['personality_score'] >= 85:
+                compatibility_badges += '<span class="badge badge-personality">Excellent Personality Match</span>'
+            if match['values_score'] >= 85:
+                compatibility_badges += '<span class="badge badge-values">Strong Values Alignment</span>'
+            
+            # Get initials for avatar
+            name_parts = match['matched_user_name'].split()
+            initials = name_parts[0][0] + (name_parts[-1][0] if len(name_parts) > 1 else '')
+            
+            # Enhanced contact button logic with verification boost messaging
+            request_status = user_auth.get_request_status(user_id, match['matched_user_id'])
+            if request_status == 'pending':
+                contact_button = '<span class="btn btn-pending">Request Pending</span>'
+            elif request_status == 'accepted':
+                contact_button = f'<a href="tel:{match["matched_user_phone"]}" class="btn btn-success">Call {match["matched_user_phone"]}</a>'
+            elif request_status == 'denied':
+                contact_button = '<span class="btn btn-declined">Request Declined</span>'
+            else:
+                verification_boost_text = ""
+                if matched_user_verified:
+                    verification_boost_text = " (Verified users have 40% higher response rates!)"
+                
+                contact_button = f'''
+                    <div>
+                        <a href="/send-contact-request/{match["matched_user_id"]}" 
+                           onclick="trackContactIntention({match['matched_user_id']}, {match['overall_score']})"
+                           class="btn btn-primary">
+                           Connect with {match['matched_user_name']}
+                        </a>
+                        {f'<div style="font-size: 0.75rem; color: #007bff; margin-top: 0.5rem; text-align: center;">{verification_boost_text}</div>' if verification_boost_text else ''}
+                    </div>
+                '''
+            
+            match_html = f'''
+            <div class="match-card" data-match-id="{match['matched_user_id']}" onmouseenter="trackMatchView({match['matched_user_id']})">
+                <div class="match-number">{i}</div>
+                
+                <div class="match-header">
+                    <div class="avatar">{initials}</div>
+                    <div class="match-info">
+                        <div class="match-name">
+                            {match['matched_user_name']}
+                            {verification_badge}
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="compatibility-score">
+                    <div class="score-circle">
+                        <div class="score-number">{match['overall_score']}%</div>
+                        <div class="score-text">Overall Compatibility</div>
+                    </div>
+                </div>
+                
+                <div class="compatibility-badges">
+                    {compatibility_badges}
+                </div>
+                
+                <div class="detailed-scores">
+                    <div class="score-item">
+                        <div class="score-category">Personality</div>
+                        <div class="score-value-small">{match['personality_score']}</div>
+                        <div class="score-bar-small">
+                            <div class="score-fill-small" style="width: {match['personality_score']}%;"></div>
+                        </div>
+                    </div>
+                    <div class="score-item">
+                        <div class="score-category">Values</div>
+                        <div class="score-value-small">{match.get('values_score', 75)}</div>
+                        <div class="score-bar-small">
+                            <div class="score-fill-small" style="width: {match.get('values_score', 75)}%;"></div>
+                        </div>
+                    </div>
+                    <div class="score-item">
+                        <div class="score-category">Lifestyle</div>
+                        <div class="score-value-small">{match.get('lifestyle_score', 75)}</div>
+                        <div class="score-bar-small">
+                            <div class="score-fill-small" style="width: {match.get('lifestyle_score', 75)}%;"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="compatibility-analysis">
+                    {match['compatibility_analysis']}
+                </div>
+                
+                <div class="match-actions">
+                    {contact_button}
+                </div>
+            </div>
+            '''
+            matches_html += match_html
+        
+        matches_count_section = f'''
+        <div class="canvas-container">
+            <canvas id="cube-canvas"></canvas>
+        </div>
+        
+        <div class="matches-header">
+            <h1 class="matches-title">Your Matches</h1>
+            <p class="matches-subtitle">Your agent found {len(matches)} perfect connections</p>
+            {user_verified_badge}
+            <div class="profile-updated">Profile updated: {user_info['profile_date'][:10] if user_info['profile_date'] else 'Recently'}</div>
+        </div>
+        '''
+        
+        # Add verification badge styling
+        additional_styles = '''
+        <style>
+            .badge-verified {
+                background: #007bff;
+                color: white;
+                border: 1px solid #0056b3;
+            }
+            
+            .badge-verified::before {
+                content: '✓ ';
+                font-weight: bold;
+            }
+        </style>
+        '''
+        
+        # Get the original HTML and inject verification enhancements
+        original_html = original_render_matches_dashboard(user_info, matches)
+        
+        # Replace the content with enhanced version
+        enhanced_html = original_html.replace(
+            '<div class="dashboard-container">',
+            f'{additional_styles}<div class="dashboard-container">'
+        ).replace(
+            matches_count_section + matches_html,
+            matches_count_section + matches_html
+        )
+        
+        return f'''
+        {additional_styles}
+        <div class="dashboard-container">
+            {flash_html}
+            {matches_count_section}
+            {matches_html}
+            <!-- Enhanced Three.js script remains the same -->
+        </div>
+        '''
+    
+    return render_matches_dashboard_with_verification
+
+def enhance_matching_with_verification():
+    """Add verification boost to existing matching system"""
+    
+    # Modify the existing MatchingSystem class to include verification bonus
+    original_calculate_scores = MatchingSystem.calculate_compatibility_scores
+    
+    def calculate_compatibility_scores_with_verification(self, user1_profile: Dict, user2_profile: Dict) -> Dict[str, float]:
+        """Enhanced scoring that includes verification bonus"""
+        # Get base compatibility scores
+        scores = original_calculate_scores(self, user1_profile, user2_profile)
+        
+        # Check verification status of both users
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            # Get verification status (assuming we can get user_ids from profiles)
+            user1_id = user1_profile.get('user_id')
+            user2_id = user2_profile.get('user_id')
+            
+            verification_bonus = 0
+            
+            if user1_id and user2_id:
+                cursor.execute('''
+                    SELECT 
+                        (SELECT is_verified FROM users WHERE id = %s) as user1_verified,
+                        (SELECT is_verified FROM users WHERE id = %s) as user2_verified
+                ''', (user1_id, user2_id))
+                
+                result = cursor.fetchone()
+                if result:
+                    user1_verified = result['user1_verified']
+                    user2_verified = result['user2_verified']
+                    
+                    # Both verified: +10 point bonus to overall compatibility
+                    if user1_verified and user2_verified:
+                        verification_bonus = 10
+                    # One verified: +5 point bonus
+                    elif user1_verified or user2_verified:
+                        verification_bonus = 5
+            
+            conn.close()
+            
+            # Apply verification bonus to all scores
+            if verification_bonus > 0:
+                for key in scores:
+                    scores[key] = min(100, scores[key] + verification_bonus)
+                    
+                print(f"Applied +{verification_bonus} verification bonus to compatibility scores")
+            
+        except Exception as e:
+            print(f"Error applying verification bonus: {e}")
+        
+        return scores
+    
+    # Replace the method
+    MatchingSystem.calculate_compatibility_scores = calculate_compatibility_scores_with_verification
+
 # Initialize systems
+from data_safety import DataEncryption, GDPRCompliance
+
 data_encryption = DataEncryption()
 user_auth = UserAuthSystem()
 # Initialize GDPR compliance
 gdpr_compliance = GDPRCompliance(user_auth)
 #matching_system = MatchingSystem(API_KEY)
+verification_system = IdentityVerificationSystem(user_auth)
+
 try:
     enhanced_matching_system, interaction_tracker = integrate_enhanced_matching(app, user_auth, API_KEY)
     enhanced_matching_system.processing_status = processing_status
     print("✓ Enhanced matching system initialized")
 except Exception as e:
-    from enhanced_matching_system import EnhancedMatchingSystem, InteractionTracker
+    from enhanced_matching_system import EnhancedMatchingSystem, InteractionTracker, MatchingSystem
+    
     enhanced_matching_system = EnhancedMatchingSystem(API_KEY)
     enhanced_matching_system.set_user_auth(user_auth)
     interaction_tracker = InteractionTracker(enhanced_matching_system)
     print("✓ Enhanced matching system created directly")
     
 email_followup = EmailFollowupSystem(user_auth)
+enhance_matching_with_verification()
+render_matches_dashboard = enhance_dashboard_with_verification()
+
 # ============================================================================
 # ROUTES - AUTHENTICATION
 # ============================================================================
@@ -4919,6 +5232,470 @@ def reset_password(token):
     '''
     
     return render_template_with_header("Set New Password", content)
+
+# ============================================================================
+# ROUTES - VERIFICATION
+# ============================================================================
+
+@app.route('/request-verification', methods=['POST'])
+@login_required
+def request_verification():
+    """Request identity verification"""
+    user_id = session['user_id']
+    
+    result = verification_system.request_verification(user_id)
+    
+    if result['success']:
+        flash('Verification instructions sent to your email!', 'success')
+    else:
+        flash(result['error'], 'error')
+    
+    return redirect('/profile-settings')
+
+@app.route('/verification-status')
+@login_required  
+def verification_status():
+    """Get verification status for current user"""
+    user_id = session['user_id']
+    
+    status = verification_system.get_verification_status(user_id)
+    return jsonify(status)
+
+@app.route('/profile-settings')
+@login_required
+def profile_settings():
+    """Profile settings page with verification option"""
+    user_id = session['user_id']
+    user_info = user_auth.get_user_info(user_id)
+    verification_status = verification_system.get_verification_status(user_id)
+    
+    # Render verification section based on status
+    verification_html = render_verification_section(verification_status)
+    
+    content = f'''
+    <style>
+        .settings-container {{
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 2rem;
+            font-family: 'Satoshi', -apple-system, BlinkMacSystemFont, sans-serif;
+        }}
+        
+        .settings-header {{
+            text-align: center;
+            margin-bottom: 3rem;
+            padding: 2.5rem 2rem;
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }}
+        
+        .settings-title {{
+            font-family: "Clash Display", sans-serif;
+            font-size: 2.5rem;
+            font-weight: 500;
+            margin: 0 0 1rem 0;
+            color: var(--color-charcoal);
+            background: linear-gradient(135deg, #2d2d2d, #6b9b99);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }}
+        
+        .verification-section {{
+            background: var(--color-white);
+            border-radius: 20px;
+            padding: 2.5rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+            border-left: 4px solid var(--color-emerald);
+        }}
+        
+        .verified-badge {{
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: #007bff;
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 0.875rem;
+            margin-bottom: 1rem;
+        }}
+        
+        .verification-pending {{
+            background: linear-gradient(135deg, var(--color-sage), var(--color-lavender));
+            color: var(--color-charcoal);
+            padding: 1.5rem;
+            border-radius: 12px;
+            margin: 1rem 0;
+        }}
+        
+        .verification-benefits {{
+            background: var(--color-gray-50);
+            padding: 1.5rem;
+            border-radius: 12px;
+            margin: 1.5rem 0;
+        }}
+        
+        .btn-verify {{
+            background: linear-gradient(135deg, #007bff, #0056b3);
+            color: white;
+            padding: 1rem 2rem;
+            border: none;
+            border-radius: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 1rem;
+        }}
+        
+        .btn-verify:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0, 123, 255, 0.3);
+        }}
+        
+        .btn-verify:disabled {{
+            background: var(--color-gray-600);
+            cursor: not-allowed;
+            transform: none;
+        }}
+        
+        .status-pending {{
+            color: #ffc107;
+            font-weight: 600;
+        }}
+        
+        .status-approved {{
+            color: #28a745;
+            font-weight: 600;
+        }}
+        
+        .status-rejected {{
+            color: #dc3545;
+            font-weight: 600;
+        }}
+        
+        .back-link {{
+            display: inline-block;
+            background: var(--color-emerald);
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 500;
+            margin-top: 2rem;
+            transition: all 0.3s ease;
+        }}
+        
+        .back-link:hover {{
+            background: #0f5942;
+            transform: translateY(-1px);
+        }}
+    </style>
+    
+    <div class="settings-container">
+        <div class="settings-header">
+            <h1 class="settings-title">Profile Settings</h1>
+            <p>Manage your account verification and privacy settings</p>
+        </div>
+        
+        {verification_html}
+        
+        <div style="text-align: center;">
+            <a href="/edit-profile" class="back-link">Edit Full Profile</a>
+            <a href="/dashboard" class="back-link">Back to Dashboard</a>
+        </div>
+    </div>
+    '''
+    
+    return render_template_with_header("Profile Settings", content, user_info)
+
+def render_verification_section(verification_status: Dict) -> str:
+    """Render verification section based on user's current status"""
+    
+    if verification_status.get('is_verified'):
+        # User is already verified
+        verified_date = verification_status.get('verified_at', 'Recently')
+        if verified_date != 'Recently':
+            try:
+                from datetime import datetime
+                verified_date = datetime.fromisoformat(verified_date.replace('Z', '+00:00')).strftime('%B %d, %Y')
+            except:
+                verified_date = 'Recently'
+        
+        return f'''
+        <div class="verification-section">
+            <div class="verified-badge">
+                ✓ Verified Account
+            </div>
+            <h3 style="color: var(--color-emerald); margin-bottom: 1rem;">Identity Verified</h3>
+            <p>Your account has been verified on {verified_date}. Your profile displays a blue verified badge to other users, showing that you're a real person.</p>
+            
+            <div class="verification-benefits">
+                <strong>Active Benefits:</strong><br>
+                • Blue verified badge on your profile<br>
+                • Higher match-to-meet conversion rates<br>
+                • Increased trust from other users<br>
+                • Priority in matching algorithms<br>
+                • Enhanced platform safety
+            </div>
+        </div>
+        '''
+    
+    elif verification_status.get('pending_request'):
+        # User has a pending verification request
+        pending = verification_status['pending_request']
+        status = pending['status']
+        
+        if status == 'pending':
+            if pending.get('photo_received'):
+                status_text = '<span class="status-pending">Under Review</span> - Our team is reviewing your submission'
+            else:
+                status_text = '<span class="status-pending">Awaiting Photos</span> - Please send your verification photos'
+            
+            expires_date = pending.get('expires_at', '')
+            try:
+                from datetime import datetime
+                expires_date = datetime.fromisoformat(expires_date.replace('Z', '+00:00')).strftime('%B %d, %Y')
+            except:
+                expires_date = 'Soon'
+            
+            return f'''
+            <div class="verification-section">
+                <h3 style="color: var(--color-emerald); margin-bottom: 1rem;">Verification In Progress</h3>
+                
+                <div class="verification-pending">
+                    <strong>Status:</strong> {status_text}<br>
+                    <strong>Expires:</strong> {expires_date}
+                </div>
+                
+                <p>Your verification request is being processed. Check your email for detailed instructions on submitting your ID photos.</p>
+                
+                <div style="margin-top: 1.5rem;">
+                    <strong>Next Steps:</strong><br>
+                    1. Check your email for verification instructions<br>
+                    2. Send clear photos of your ID and selfie to our verification email<br>
+                    3. Include your verification code in the photo<br>
+                    4. Wait 1-2 business days for review
+                </div>
+            </div>
+            '''
+        
+        elif status == 'rejected':
+            reason = pending.get('rejection_reason', 'Photos did not meet verification requirements')
+            
+            return f'''
+            <div class="verification-section">
+                <h3 style="color: #dc3545; margin-bottom: 1rem;">Verification Needs Attention</h3>
+                
+                <div style="background: #f8d7da; color: #721c24; padding: 1rem; border-radius: 8px; margin: 1rem 0;">
+                    <strong>Reason:</strong> {reason}
+                </div>
+                
+                <p>Your previous verification attempt couldn't be approved. You can submit a new verification request with updated photos.</p>
+                
+                <form method="POST" action="/request-verification" style="margin-top: 1.5rem;">
+                    <button type="submit" class="btn-verify">Request New Verification</button>
+                </form>
+            </div>
+            '''
+    
+    else:
+        # User can request verification
+        return '''
+        <div class="verification-section">
+            <h3 style="color: var(--color-emerald); margin-bottom: 1rem;">Get Verified</h3>
+            <p>Verify your identity to get a blue verified badge and increase your match success rate.</p>
+            
+            <div class="verification-benefits">
+                <strong>Benefits of Verification:</strong><br>
+                • Blue verified badge on your profile<br>
+                • 40% higher match-to-meet conversion rates<br>
+                • Increased trust from other users<br>
+                • Priority in matching algorithms<br>
+                • Help make the platform safer for everyone
+            </div>
+            
+            <div style="background: #fff3cd; color: #856404; padding: 1rem; border-radius: 8px; margin: 1rem 0;">
+                <strong>How it works:</strong><br>
+                1. Click "Start Verification" below<br>
+                2. Receive instructions via email<br>
+                3. Send photos of your ID + selfie<br>
+                4. Get approved within 1-2 business days
+            </div>
+            
+            <form method="POST" action="/request-verification" style="margin-top: 1.5rem;">
+                <button type="submit" class="btn-verify">Start Verification Process</button>
+            </form>
+        </div>
+        '''
+
+# ============================================================================
+# ADMIN VERIFICATION MANAGEMENT ROUTES
+# ============================================================================
+
+@app.route('/admin/verification-queue')
+def admin_verification_queue():
+    """Admin interface for managing verification requests"""
+    # Simple password protection (in production, use proper admin authentication)
+    admin_password = request.args.get('password')
+    if admin_password != os.environ.get('ADMIN_PASSWORD', 'admin123'):
+        return '''
+        <form method="GET">
+            <h2>Admin Access Required</h2>
+            <input type="password" name="password" placeholder="Admin Password" required>
+            <button type="submit">Access Admin Panel</button>
+        </form>
+        '''
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Get pending verification requests
+        cursor.execute('''
+            SELECT 
+                ivr.id, ivr.user_id, ivr.verification_token, ivr.created_at, 
+                ivr.photo_received, ivr.verification_status, ivr.expires_at,
+                u.email_encrypted, u.first_name_encrypted, u.last_name_encrypted
+            FROM identity_verification_requests ivr
+            JOIN users u ON ivr.user_id = u.id
+            WHERE ivr.verification_status = 'pending' 
+            AND ivr.expires_at > CURRENT_TIMESTAMP
+            ORDER BY ivr.created_at ASC
+        ''')
+        
+        requests = cursor.fetchall()
+        conn.close()
+        
+        # Build admin interface
+        requests_html = ""
+        for req in requests:
+            # Decrypt user info
+            email = data_encryption.decrypt_sensitive_data(req['email_encrypted']) if req['email_encrypted'] else 'Unknown'
+            first_name = data_encryption.decrypt_sensitive_data(req['first_name_encrypted']) if req['first_name_encrypted'] else 'Unknown'
+            last_name = data_encryption.decrypt_sensitive_data(req['last_name_encrypted']) if req['last_name_encrypted'] else ''
+            
+            photo_status = "📸 Photos Received" if req['photo_received'] else "⏳ Awaiting Photos"
+            
+            requests_html += f'''
+            <div style="border: 1px solid #ddd; padding: 20px; margin: 10px 0; border-radius: 8px;">
+                <h4>{first_name} {last_name} ({email})</h4>
+                <p><strong>Status:</strong> {photo_status}</p>
+                <p><strong>Verification Code:</strong> {req['verification_token'][:8].upper()}</p>
+                <p><strong>Submitted:</strong> {req['created_at']}</p>
+                <p><strong>Expires:</strong> {req['expires_at']}</p>
+                
+                <div style="margin-top: 15px;">
+                    <form method="POST" action="/admin/approve-verification" style="display: inline-block; margin-right: 10px;">
+                        <input type="hidden" name="token" value="{req['verification_token']}">
+                        <input type="hidden" name="admin_email" value="admin@connect.com">
+                        <button type="submit" style="background: #28a745; color: white; padding: 8px 16px; border: none; border-radius: 4px;">
+                            ✓ Approve
+                        </button>
+                    </form>
+                    
+                    <form method="POST" action="/admin/reject-verification" style="display: inline-block;">
+                        <input type="hidden" name="token" value="{req['verification_token']}">
+                        <input type="hidden" name="admin_email" value="admin@connect.com">
+                        <input type="text" name="reason" placeholder="Rejection reason" required style="margin-right: 5px;">
+                        <button type="submit" style="background: #dc3545; color: white; padding: 8px 16px; border: none; border-radius: 4px;">
+                            ✗ Reject
+                        </button>
+                    </form>
+                    
+                    <form method="POST" action="/admin/mark-photo-received" style="display: inline-block; margin-left: 10px;">
+                        <input type="hidden" name="token" value="{req['verification_token']}">
+                        <button type="submit" style="background: #007bff; color: white; padding: 8px 16px; border: none; border-radius: 4px;">
+                            📸 Mark Photos Received
+                        </button>
+                    </form>
+                </div>
+            </div>
+            '''
+        
+        if not requests_html:
+            requests_html = "<p>No pending verification requests.</p>"
+        
+        return f'''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Verification Admin Panel</title>
+            <style>
+                body {{ font-family: Arial, sans-serif; padding: 20px; }}
+                .header {{ background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px; }}
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h1>Identity Verification Admin Panel</h1>
+                <p>Manage pending verification requests</p>
+            </div>
+            
+            <h2>Pending Requests ({len(requests)})</h2>
+            {requests_html}
+            
+            <div style="margin-top: 30px; padding: 20px; background: #e9ecef; border-radius: 8px;">
+                <h3>Instructions for Admins:</h3>
+                <ul>
+                    <li><strong>Mark Photos Received:</strong> Click when user emails photos</li>
+                    <li><strong>Approve:</strong> Verify ID matches selfie and verification code is visible</li>
+                    <li><strong>Reject:</strong> If photos are unclear, missing elements, or don't match</li>
+                </ul>
+                
+                <p><strong>Verification Email:</strong> verify@connect.com</p>
+                <p><strong>Look for:</strong> Government ID + matching selfie + verification code on paper</p>
+            </div>
+        </body>
+        </html>
+        '''
+        
+    except Exception as e:
+        return f"<h2>Error</h2><p>{e}</p>"
+
+@app.route('/admin/approve-verification', methods=['POST'])
+def admin_approve_verification():
+    """Admin route to approve verification"""
+    token = request.form.get('token')
+    admin_email = request.form.get('admin_email')
+    
+    result = verification_system.approve_verification(token, admin_email)
+    
+    if result['success']:
+        return f"<h2>Success</h2><p>Verification approved for user {result['user_id']}</p><a href='/admin/verification-queue?password={os.environ.get('ADMIN_PASSWORD', 'admin123')}'>Back to Queue</a>"
+    else:
+        return f"<h2>Error</h2><p>{result['error']}</p><a href='/admin/verification-queue?password={os.environ.get('ADMIN_PASSWORD', 'admin123')}'>Back to Queue</a>"
+
+@app.route('/admin/reject-verification', methods=['POST'])
+def admin_reject_verification():
+    """Admin route to reject verification"""
+    token = request.form.get('token')
+    admin_email = request.form.get('admin_email')
+    reason = request.form.get('reason')
+    
+    result = verification_system.reject_verification(token, admin_email, reason)
+    
+    if result['success']:
+        return f"<h2>Success</h2><p>Verification rejected for user {result['user_id']}</p><a href='/admin/verification-queue?password={os.environ.get('ADMIN_PASSWORD', 'admin123')}'>Back to Queue</a>"
+    else:
+        return f"<h2>Error</h2><p>{result['error']}</p><a href='/admin/verification-queue?password={os.environ.get('ADMIN_PASSWORD', 'admin123')}'>Back to Queue</a>"
+
+@app.route('/admin/mark-photo-received', methods=['POST'])
+def admin_mark_photo_received():
+    """Admin route to mark photos as received"""
+    token = request.form.get('token')
+    
+    result = verification_system.mark_photo_received(token)
+    
+    if result['success']:
+        return f"<h2>Success</h2><p>Photos marked as received for user {result['user_id']}</p><a href='/admin/verification-queue?password={os.environ.get('ADMIN_PASSWORD', 'admin123')}'>Back to Queue</a>"
+    else:
+        return f"<h2>Error</h2><p>{result['error']}</p><a href='/admin/verification-queue?password={os.environ.get('ADMIN_PASSWORD', 'admin123')}'>Back to Queue</a>"
+
 
 # ============================================================================
 # ROUTES - DASHBOARD & MATCHING
