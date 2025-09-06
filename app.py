@@ -1133,9 +1133,10 @@ class UserAuthSystem:
     def send_password_reset_email(self, to_email: str, first_name: str, token: str):
         """Send password reset email"""
         try:
-            base_url = os.environ.get('BASE_URL', 'http://localhost:8080')
-            reset_url = f"{base_url}/reset-password/{token}"
             
+            base_url = 'https://pont.world' if os.environ.get('FLASK_ENV') == 'production' else 'http://localhost:8080'
+            reset_url = f"{base_url}/reset-password/{token}"
+        
             subject = "Reset Your Connect Password"
             
             html_content = f"""
