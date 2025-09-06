@@ -419,7 +419,7 @@ class UserAuthSystem:
             
             cursor.execute('''
                 SELECT id, password_hash, first_name_encrypted, last_name_encrypted, profile_completed
-                FROM users WHERE email_hash = %s AND is_active = TRUE
+                FROM users WHERE email_encrypted = %s AND is_active = TRUE
             ''', (email_hash,))
             
             user = cursor.fetchone()
@@ -10761,22 +10761,34 @@ def init_database():
 # ============================================================================
 @app.route('/debug-users')
 def debug_users():
-    # if not session.get('user_id'):
-    #     return "Must be logged in"
-    
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('SELECT id, email, email_encrypted FROM users LIMIT 5')
+        
+        # First, show the actual table structure
+        cursor.execute("""
+            SELECT column_name, data_type, is_nullable
+            FROM information_schema.columns 
+            WHERE table_name = 'users'
+            ORDER BY ordinal_position
+        """)
+        columns = cursor.fetchall()
+        
+        result = "<h3>Users table structure:</h3>"
+        for col in columns:
+            result += f"<p>{col['column_name']}: {col['data_type']} ({'nullable' if col['is_nullable'] == 'YES' else 'not null'})</p>"
+        
+        # Then show the actual user data
+        cursor.execute('SELECT * FROM users LIMIT 5')
         users = cursor.fetchall()
-        conn.close()
         
-        result = "<h3>Users in database:</h3>"
+        result += "<h3>Users in database:</h3>"
         for user in users:
-            decrypted_email = data_encryption.decrypt_sensitive_data(user['email_encrypted']) if user['email_encrypted'] else user['email']
-            result += f"<p>ID: {user['id']}, Email: {decrypted_email}</p>"
+            result += f"<p>User data: {dict(user)}</p>"
         
+        conn.close()
         return result
+        
     except Exception as e:
         return f"Error: {e}"
 
