@@ -1662,8 +1662,9 @@ class IdentityVerificationSystem:
         ''')
         
         # Insert default admin settings if none exist
-        cursor.execute('SELECT COUNT(*) FROM verification_admin_settings')
-        if cursor.fetchone()[0] == 0:
+        cursor.execute('SELECT COUNT(*) as count FROM verification_admin_settings')
+        result = cursor.fetchone()
+        if result['count'] == 0:
             cursor.execute('''
                 INSERT INTO verification_admin_settings 
                 (admin_email, verification_email, instructions)
