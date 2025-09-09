@@ -72,6 +72,9 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from openai import OpenAI
 from dotenv import load_dotenv
 
+from payment import SubscriptionManager
+import stripe
+
 from enhanced_matching_system import (
     MatchingSystem,
     EnhancedMatchingSystem, 
@@ -345,6 +348,51 @@ class UserAuthSystem:
                 FOREIGN KEY (user2_id) REFERENCES users (id)
             )
         ''')
+        
+        #Stripe payment tracking
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS user_subscriptions (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                stripe_customer_id TEXT UNIQUE,
+                stripe_subscription_id TEXT UNIQUE,
+                status TEXT NOT NULL DEFAULT 'inactive',
+                plan_id TEXT,
+                current_period_start TIMESTAMP,
+                current_period_end TIMESTAMP,
+                cancel_at_period_end BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (id),
+                UNIQUE(user_id)
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS matching_usage (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                matching_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                is_free_run BOOLEAN DEFAULT FALSE,
+                subscription_active BOOLEAN DEFAULT FALSE,
+                FOREIGN KEY (user_id) REFERENCES users (id)
+            )
+        ''')
+
+        # Add subscription columns to users table
+        try:
+            cursor.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS free_matches_used INTEGER DEFAULT 0')
+            cursor.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS last_free_match_date TIMESTAMP')
+            print("✓ Added subscription columns to users table")
+        except Exception as e:
+            print(f"Subscription columns may already exist: {e}")
+        
+        #Add linkedin URL
+        try:
+            cursor.execute('ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS linkedin_url TEXT')
+            print("✓ Added linkedin_url column to user_profiles table")
+        except psycopg2.Error as e:
+            print(f"LinkedIn URL column may already exist: {e}")
         
         conn.commit()
         conn.close()
@@ -3171,7 +3219,7 @@ user_auth = UserAuthSystem()
 gdpr_compliance = GDPRCompliance(user_auth, data_encryption, get_db_connection)
 #matching_system = MatchingSystem(API_KEY)
 verification_system = IdentityVerificationSystem(user_auth)
-
+subscription_manager = SubscriptionManager(user_auth, get_db_connection)
 try:
     enhanced_matching_system, interaction_tracker = integrate_enhanced_matching(app, user_auth, API_KEY)
     enhanced_matching_system.processing_status = processing_status
@@ -3497,8 +3545,19 @@ def home():
     return render_template_with_header("home", content)
 
 @app.route('/choose-agent')
+@login_required
 def choose_agent():
     """Landing page with 3D animated spheres - Mobile Responsive (FIXED)"""
+    user_id = session['user_id']
+    status = subscription_manager.get_user_subscription_status(user_id)
+    
+    if not status['can_run_matching']:
+        flash('You have used your free match for this month. Upgrade to Premium for unlimited matching!', 'error')
+        return redirect('/subscription/plans')
+    
+    # Record the usage if it's a free run
+    if not status['is_subscribed']:
+        subscription_manager.record_matching_usage(user_id, is_free=True)
     
     content = '''
     <style>
@@ -6627,7 +6686,42 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
         </script>
     </div>
     '''
-
+def render_matches_dashboard_with_subscription(user_info: Dict, matches: List[Dict]) -> str:
+    """Enhanced dashboard with subscription status"""
+    user_id = session['user_id']
+    status = subscription_manager.get_user_subscription_status(user_id)
+    
+    # Add subscription banner
+    subscription_banner = ""
+    if status['is_subscribed']:
+        subscription_banner = '''
+        <div style="background: linear-gradient(135deg, var(--color-emerald), var(--color-sage)); color: white; padding: 1rem; border-radius: 12px; text-align: center; margin-bottom: 2rem;">
+            ✓ Premium Member - Unlimited matching available
+        </div>
+        '''
+    else:
+        remaining = status['free_matches_remaining']
+        subscription_banner = f'''
+        <div style="background: linear-gradient(135deg, var(--color-lavender), var(--color-sage)); color: var(--color-charcoal); padding: 1rem; border-radius: 12px; text-align: center; margin-bottom: 2rem;">
+            Free Plan - {remaining} free match{"" if remaining == 1 else "es"} remaining this month
+            <div style="margin-top: 0.5rem;">
+                <a href="/subscription/plans" style="color: var(--color-emerald); font-weight: 600; text-decoration: none;">
+                    Upgrade to Premium for unlimited matching →
+                </a>
+            </div>
+        </div>
+        '''
+    
+    # Get original dashboard content
+    original_content = render_matches_dashboard(user_info, matches)
+    
+    # Insert subscription banner after flash messages
+    enhanced_content = original_content.replace(
+        '<div class="dashboard-container">',
+        f'<div class="dashboard-container">{subscription_banner}'
+    )
+    
+    return enhanced_content
 render_matches_dashboard = enhance_dashboard_with_verification()
 
 def render_no_matches_dashboard() -> str:
@@ -7726,7 +7820,14 @@ def edit_profile():
                 </div>
             </div>
             
-            
+            <div class="form-group">
+                <label class="form-label" for="linkedin_url">LinkedIn Profile URL (Optional)</label>
+                <input type="url" name="linkedin_url" id="linkedin_url"
+                    value="{existing_profile.get('linkedin_url', '')}"
+                    class="form-input" 
+                    placeholder="https://www.linkedin.com/in/your-profile">
+                <div class="form-help">We'll use this to enhance your professional compatibility matching</div>
+            </div>
             
             <!-- Action Buttons -->
             <div class="action-buttons">
@@ -8342,18 +8443,30 @@ def render_step_1_content(profile: Dict) -> str:
         <div class="form-group">
             <label class="form-label">Minimum Age for Matches</label>
             <input type="number" name="min_age" class="form-input" 
-                   value="22" min="18" max="100" required>
+                   value="{profile.get('min_age', 22)}" min="18" max="100" required>
         </div>
         <div class="form-group">
             <label class="form-label">Maximum Age for Matches</label>
             <input type="number" name="max_age" class="form-input" 
-                   value="35" min="18" max="100" required>
+                   value="{profile.get('max_age', 35)}" min="18" max="100" required>
         </div>
     </div>
     <div style="font-size: 12px; color: #6b9b99; margin-bottom: 16px; text-align: center;">
         You'll only see matches within this age range, and they must also accept your age
     </div>
-   
+
+    <div class="form-group">
+        <label class="form-label">LinkedIn Profile URL (Optional)</label>
+        <input type="url" name="linkedin_url" 
+            value="{profile.get('linkedin_url', '')}"
+            placeholder="https://www.linkedin.com/in/your-profile"
+            pattern="https://(www\.)?linkedin\.com/in/[\w\-]+"
+            title="Please enter a valid LinkedIn profile URL (e.g., https://linkedin.com/in/yourname)"
+            class="form-input" id="linkedin-url-input">
+        <div style="font-size: 12px; color: #6b9b99; margin-top: 5px; line-height: 1.4;">
+            We'll use this to enhance your profile with professional insights and improve matching accuracy
+        </div>
+    </div>
     
     <div class="form-group">
         <label class="form-label">Gender</label>
@@ -8379,8 +8492,8 @@ def render_step_1_content(profile: Dict) -> str:
     
     <div class="form-group">
         <label class="form-label">Location (City/Area)</label>
-        <select name="location" required class="form-input">
-            <option value="London" selected>London</option>
+        <select name="location" required class="form-select">
+            <option value="London" {"selected" if profile.get('location', 'London') == 'London' else ""}>London</option>
         </select>
         <p style="font-size: 0.9em; color: #666; margin-top: 5px;">
             We're starting with London, feel free to drop us a message to 
@@ -9237,6 +9350,18 @@ def complete_onboarding_enhanced():
 @login_required
 def processing():
     """Start matching and redirect to live visualization"""
+    user_id = session['user_id']
+    status = subscription_manager.get_user_subscription_status(user_id)
+    
+    if not status['can_run_matching'] and not status['is_subscribed']:
+        flash('Subscription required for additional matches', 'error')
+        return redirect('/subscription/plans')
+    
+    # Record usage if subscribed
+    if status['is_subscribed']:
+        subscription_manager.record_matching_usage(user_id, is_free=False)
+    
+
     user_id = session.get('user_id')
     if not user_id:
         return redirect('/login')
@@ -11272,6 +11397,295 @@ def terms_of_service():
     
     return render_template_with_header("Terms of Service", content)
 
+# ============================================================================
+# SUBSCRIPTION MANAGEMENT
+# ============================================================================
+
+@app.route('/subscription/check')
+@login_required
+def check_subscription():
+    """Check if user can run matching"""
+    user_id = session['user_id']
+    status = subscription_manager.get_user_subscription_status(user_id)
+    return jsonify(status)
+
+@app.route('/subscription/subscribe')
+@login_required
+def subscribe():
+    """Create Stripe checkout session"""
+    user_id = session['user_id']
+    result = subscription_manager.create_checkout_session(user_id)
+    
+    if result['success']:
+        return redirect(result['checkout_url'])
+    else:
+        flash(f"Error creating checkout: {result['error']}", 'error')
+        return redirect('/subscription/plans')
+
+@app.route('/subscription/plans')
+@login_required
+def subscription_plans():
+    """Show subscription plans page"""
+    user_id = session['user_id']
+    user_info = user_auth.get_user_info(user_id)
+    status = subscription_manager.get_user_subscription_status(user_id)
+    
+    content = f'''
+    <style>
+        .subscription-container {{
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 2rem;
+            font-family: 'Satoshi', sans-serif;
+        }}
+        
+        .subscription-header {{
+            text-align: center;
+            margin-bottom: 3rem;
+            padding: 2.5rem 2rem;
+            background: var(--color-white);
+            border-radius: 20px;
+            border-left: 4px solid var(--color-emerald);
+        }}
+        
+        .plan-card {{
+            background: var(--color-white);
+            border-radius: 20px;
+            padding: 2.5rem;
+            margin: 2rem 0;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.08);
+            border-left: 4px solid var(--color-sage);
+            position: relative;
+        }}
+        
+        .plan-popular {{
+            border-left-color: var(--color-emerald);
+            transform: scale(1.02);
+        }}
+        
+        .plan-popular::before {{
+            content: "Most Popular";
+            position: absolute;
+            top: -12px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--color-emerald);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }}
+        
+        .plan-price {{
+            font-family: 'Clash Display', sans-serif;
+            font-size: 2.5rem;
+            font-weight: 600;
+            color: var(--color-emerald);
+            margin-bottom: 0.5rem;
+        }}
+        
+        .plan-features {{
+            list-style: none;
+            padding: 0;
+            margin: 1.5rem 0;
+        }}
+        
+        .plan-features li {{
+            padding: 0.5rem 0;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }}
+        
+        .plan-features li::before {{
+            content: "✓";
+            color: var(--color-emerald);
+            font-weight: bold;
+            font-size: 1.1rem;
+        }}
+        
+        .btn-subscribe {{
+            background: linear-gradient(135deg, var(--color-emerald), var(--color-sage));
+            color: white;
+            padding: 1rem 2rem;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 1rem;
+            display: inline-block;
+            transition: all 0.3s ease;
+            border: none;
+            cursor: pointer;
+            width: 100%;
+            text-align: center;
+        }}
+        
+        .btn-subscribe:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(22, 122, 96, 0.3);
+        }}
+        
+        .btn-current {{
+            background: var(--color-gray-600);
+            cursor: not-allowed;
+        }}
+        
+        .status-banner {{
+            padding: 1rem;
+            border-radius: 12px;
+            margin-bottom: 2rem;
+            text-align: center;
+            font-weight: 500;
+        }}
+        
+        .status-free {{
+            background: linear-gradient(135deg, var(--color-lavender), var(--color-sage));
+            color: var(--color-charcoal);
+        }}
+        
+        .status-subscribed {{
+            background: linear-gradient(135deg, var(--color-emerald), var(--color-sage));
+            color: white;
+        }}
+    </style>
+    
+    <div class="subscription-container">
+        <div class="subscription-header">
+            <h1 style="font-family: 'Clash Display', sans-serif; font-size: 2.5rem; margin-bottom: 1rem;">
+                Upgrade Your Matching
+            </h1>
+            <p style="font-size: 1.125rem; color: var(--color-gray-600);">
+                Get unlimited matches and find your perfect connections
+            </p>
+        </div>
+        
+        {render_subscription_status_banner(status)}
+        
+        <div class="plan-card">
+            <h3 style="font-family: 'Clash Display', sans-serif; font-size: 1.5rem; margin-bottom: 1rem;">
+                Free Plan
+            </h3>
+            <div class="plan-price">£0<span style="font-size: 1rem; color: var(--color-gray-600);">/month</span></div>
+            
+            <ul class="plan-features">
+                <li>1 free match run per month</li>
+                <li>Basic compatibility analysis</li>
+                <li>Contact request system</li>
+                <li>Profile creation</li>
+            </ul>
+            
+            <div style="text-align: center; margin-top: 2rem;">
+                {f'<div class="btn-subscribe btn-current">Current Plan</div>' if not status['is_subscribed'] else '<div class="btn-subscribe" style="opacity: 0.6;">Free Tier</div>'}
+            </div>
+            
+            <div style="text-align: center; margin-top: 1rem; font-size: 0.875rem; color: var(--color-gray-600);">
+                Free matches remaining: {status['free_matches_remaining']}
+            </div>
+        </div>
+        
+        <div class="plan-card plan-popular">
+            <h3 style="font-family: 'Clash Display', sans-serif; font-size: 1.5rem; margin-bottom: 1rem;">
+                Premium Matching
+            </h3>
+            <div class="plan-price">£9.99<span style="font-size: 1rem; color: var(--color-gray-600);">/month</span></div>
+            
+            <ul class="plan-features">
+                <li>Unlimited match runs</li>
+                <li>Enhanced AI analysis</li>
+                <li>Priority matching algorithm</li>
+                <li>Advanced compatibility insights</li>
+                <li>Exclusive match filters</li>
+                <li>24/7 support</li>
+            </ul>
+            
+            <div style="text-align: center; margin-top: 2rem;">
+                {render_subscription_button(status)}
+            </div>
+        </div>
+        
+        <div style="text-align: center; margin-top: 3rem;">
+            <a href="/dashboard" style="color: var(--color-emerald); text-decoration: none; font-weight: 500;">
+                ← Back to Dashboard
+            </a>
+        </div>
+    </div>
+    '''
+    
+    return render_template_with_header("Subscription Plans", content, user_info)
+
+def render_subscription_status_banner(status: Dict) -> str:
+    """Render status banner based on subscription"""
+    if status['is_subscribed']:
+        expires = status.get('expires_at', 'Unknown')
+        return f'''
+        <div class="status-banner status-subscribed">
+            ✓ Premium subscriber - Unlimited matching until {expires}
+        </div>
+        '''
+    else:
+        remaining = status['free_matches_remaining']
+        return f'''
+        <div class="status-banner status-free">
+            Free Plan - {remaining} free match{"" if remaining == 1 else "es"} remaining this month
+        </div>
+        '''
+
+def render_subscription_button(status: Dict) -> str:
+    """Render appropriate subscription button"""
+    if status['is_subscribed']:
+        return '<div class="btn-subscribe btn-current">Current Plan</div>'
+    else:
+        return '<a href="/subscription/subscribe" class="btn-subscribe">Upgrade to Premium</a>'
+
+@app.route('/subscription/success')
+@login_required
+def subscription_success():
+    """Handle successful subscription"""
+    session_id = request.args.get('session_id')
+    
+    if session_id:
+        try:
+            session = stripe.checkout.Session.retrieve(session_id)
+            if session.payment_status == 'paid':
+                flash('Welcome to Premium! You now have unlimited matching.', 'success')
+            else:
+                flash('Payment is being processed. You will receive confirmation shortly.', 'success')
+        except Exception as e:
+            flash('Subscription activated successfully!', 'success')
+    
+    return redirect('/dashboard')
+
+@app.route('/subscription/cancelled')
+@login_required
+def subscription_cancelled():
+    """Handle cancelled subscription"""
+    flash('Subscription cancelled. You can upgrade anytime from your dashboard.', 'error')
+    return redirect('/subscription/plans')
+
+@app.route('/webhook/stripe', methods=['POST'])
+def stripe_webhook():
+    """Handle Stripe webhooks"""
+    payload = request.get_data()
+    sig_header = request.headers.get('Stripe-Signature')
+    endpoint_secret = os.environ.get('STRIPE_WEBHOOK_SECRET')
+    
+    try:
+        event = stripe.Webhook.construct_event(payload, sig_header, endpoint_secret)
+        
+        # Handle the event
+        if subscription_manager.handle_subscription_event(event):
+            return jsonify({'status': 'success'}), 200
+        else:
+            return jsonify({'status': 'error'}), 400
+            
+    except ValueError:
+        return jsonify({'status': 'invalid payload'}), 400
+    except stripe.error.SignatureVerificationError:
+        return jsonify({'status': 'invalid signature'}), 400
+    except Exception as e:
+        print(f"Webhook error: {e}")
+        return jsonify({'status': 'error'}), 500
 # ============================================================================
 # DEBUG AND TESTING
 # ============================================================================

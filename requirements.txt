@@ -29,6 +29,9 @@ gunicorn==21.2.0
 
 # Database (SQLite3 is built-in to Python)
 psycopg2-binary==2.9.9
+
+stripe>=5.0.0
+
 # Other built-in libraries used (no requirements needed):
 # - sqlite3
 # - hashlib  
