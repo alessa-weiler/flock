@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 import os
 from typing import Optional, Dict, Any
 from flask import request
-from app import get_db_connection
+# from app import get_db_connection
 
 class SubscriptionManager:
     """Handles Stripe subscriptions and payment processing"""
