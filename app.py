@@ -11272,6 +11272,232 @@ def terms_of_service():
     
     return render_template_with_header("Terms of Service", content)
 
+# ============================================================================
+# DEBUG AND TESTING
+# ============================================================================
+
+@app.route('/system-health')
+def system_health():
+    """Quick health check for the recommender system"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Check basic database connectivity
+        cursor.execute('SELECT COUNT(*) FROM users')
+        total_users = cursor.fetchone()[0]
+        
+        cursor.execute('SELECT COUNT(*) FROM user_profiles')
+        total_profiles = cursor.fetchone()[0]
+        
+        cursor.execute('SELECT COUNT(*) FROM users WHERE profile_completed = TRUE')
+        completed_profiles = cursor.fetchone()[0]
+        
+        cursor.execute('SELECT COUNT(*) FROM user_matches')
+        total_matches = cursor.fetchone()[0]
+        
+        conn.close()
+        
+        # Check if matching system is accessible
+        matching_system_available = enhanced_matching_system is not None
+        neural_network_trained = enhanced_matching_system.neural_predictor.is_trained if enhanced_matching_system else False
+        
+        status = {
+            'database_connected': True,
+            'total_users': total_users,
+            'total_profiles': total_profiles,
+            'completed_profiles': completed_profiles,
+            'total_matches_generated': total_matches,
+            'matching_system_available': matching_system_available,
+            'neural_network_trained': neural_network_trained,
+            'can_generate_matches': completed_profiles >= 2
+        }
+        
+        return f"""
+        <h2>Recommender System Health Check</h2>
+        <ul>
+            <li>Database Connected: {'✅' if status['database_connected'] else '❌'}</li>
+            <li>Total Users: {status['total_users']}</li>
+            <li>User Profiles: {status['total_profiles']}</li>
+            <li>Completed Profiles: {status['completed_profiles']}</li>
+            <li>Matches Generated: {status['total_matches_generated']}</li>
+            <li>Matching System Available: {'✅' if status['matching_system_available'] else '❌'}</li>
+            <li>Neural Network Trained: {'✅' if status['neural_network_trained'] else '❌'}</li>
+            <li>Can Generate Matches: {'✅' if status['can_generate_matches'] else '❌'}</li>
+        </ul>
+        
+        <h3>Next Steps:</h3>
+        {'<p>✅ System ready for matching!</p>' if status['can_generate_matches'] else '<p>❌ Need at least 2 completed profiles to test matching</p>'}
+        
+        <h3>Test Links:</h3>
+        <ul>
+            <li><a href="/create-test-users">Create Test Users</a></li>
+            <li><a href="/test-matching">Test Matching Process</a></li>
+        </ul>
+        """
+        
+    except Exception as e:
+        return f"<h2>System Error</h2><p>Error: {e}</p>"
+
+@app.route('/create-test-users')
+def create_test_users():
+    """Create test users with realistic profiles for testing"""
+    test_users = [
+        {
+            'email': 'alice.test@example.com',
+            'password': 'test123',
+            'first_name': 'Alice',
+            'last_name': 'Johnson',
+            'phone': '+44 7700 900001',
+            'profile': {
+                'age': 28,
+                'gender': 'woman',
+                'gender_preference': 'all',
+                'location': 'London',
+                'postcode': 'SW1A 1AA',
+                'social_energy': 8,
+                'decision_making': 7,
+                'communication_depth': 9,
+                'personal_growth': 8,
+                'social_satisfaction': 6,
+                'friend_motivation': 'seeking_deeper_connections',
+                'ideal_friendship_description': 'Someone who loves deep conversations and trying new restaurants',
+                'unique_interest': 'Urban photography and weekend markets'
+            }
+        },
+        {
+            'email': 'bob.test@example.com',
+            'password': 'test123',
+            'first_name': 'Bob',
+            'last_name': 'Smith',
+            'phone': '+44 7700 900002',
+            'profile': {
+                'age': 29,
+                'gender': 'man',
+                'gender_preference': 'all',
+                'location': 'London',
+                'postcode': 'SW1A 2BB',
+                'social_energy': 7,  # Similar to Alice
+                'decision_making': 6,
+                'communication_depth': 8,  # Similar to Alice
+                'personal_growth': 9,  # Similar to Alice
+                'social_satisfaction': 5,
+                'friend_motivation': 'seeking_deeper_connections',
+                'ideal_friendship_description': 'Looking for someone to explore London with and have meaningful chats',
+                'unique_interest': 'Coffee brewing and independent cinema'
+            }
+        },
+        {
+            'email': 'charlie.test@example.com',
+            'password': 'test123',
+            'first_name': 'Charlie',
+            'last_name': 'Wilson',
+            'phone': '+44 7700 900003',
+            'profile': {
+                'age': 26,
+                'gender': 'non_binary',
+                'gender_preference': 'all',
+                'location': 'London',
+                'postcode': 'N1 0AA',
+                'social_energy': 3,  # Very different from Alice/Bob
+                'decision_making': 8,
+                'communication_depth': 4,  # Very different
+                'personal_growth': 3,  # Very different
+                'social_satisfaction': 8,
+                'friend_motivation': 'activity_companions',
+                'ideal_friendship_description': 'Someone for quiet activities like reading and board games',
+                'unique_interest': 'Vintage book collecting and tea ceremonies'
+            }
+        }
+    ]
+    
+    results = []
+    for test_user in test_users:
+        # Extract profile before creating user
+        profile = test_user.pop('profile')
+        
+        result = user_auth.create_user(**test_user)
+        if result['success']:
+            # Save the profile
+            profile_saved = user_auth.save_user_profile(result['user_id'], profile)
+            results.append(f"✅ Created {test_user['first_name']} (ID: {result['user_id']}) - Profile saved: {profile_saved}")
+        else:
+            results.append(f"❌ Failed to create {test_user['first_name']}: {result['error']}")
+    
+    return f"""
+    <h2>Test User Creation Results</h2>
+    <ul>{''.join(f'<li>{r}</li>' for r in results)}</ul>
+    <p><a href="/system-health">Check System Health</a></p>
+    <p><a href="/test-matching">Test Matching</a></p>
+    """
+
+@app.route('/test-matching')
+def test_matching():
+    """Test the matching system with existing users"""
+    try:
+        # Get users with completed profiles
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT id, first_name FROM users WHERE profile_completed = TRUE LIMIT 5')
+        users = cursor.fetchall()
+        conn.close()
+        
+        if len(users) < 2:
+            return """
+            <h2>Cannot Test Matching</h2>
+            <p>Need at least 2 users with completed profiles.</p>
+            <p><a href="/create-test-users">Create Test Users First</a></p>
+            """
+        
+        # Test matching for the first user
+        test_user_id = users[0]['id']
+        test_user_name = users[0]['first_name']
+        
+        print(f"Testing matching for user {test_user_id} ({test_user_name})")
+        
+        # Run the matching
+        matches = enhanced_matching_system.run_matching(test_user_id)
+        
+        results_html = f"""
+        <h2>Matching Test Results</h2>
+        <p><strong>Test User:</strong> {test_user_name} (ID: {test_user_id})</p>
+        <p><strong>Matches Found:</strong> {len(matches)}</p>
+        """
+        
+        if matches:
+            results_html += "<h3>Top Matches:</h3><ul>"
+            for i, match in enumerate(matches[:3]):
+                results_html += f"""
+                <li>
+                    <strong>{match['matched_user_name']}</strong> 
+                    - Overall Score: {match['overall_score']}%
+                    - Personality: {match['personality_score']}%
+                    - Values: {match.get('values_score', 'N/A')}%
+                </li>
+                """
+            results_html += "</ul>"
+        else:
+            results_html += "<p>No matches found - this could indicate an issue with the matching algorithm.</p>"
+        
+        results_html += """
+        <h3>Test More:</h3>
+        <ul>
+            <li><a href="/system-health">System Health Check</a></li>
+            <li><a href="/create-test-users">Create More Test Users</a></li>
+        </ul>
+        """
+        
+        return results_html
+        
+    except Exception as e:
+        import traceback
+        return f"""
+        <h2>Matching Test Failed</h2>
+        <p><strong>Error:</strong> {e}</p>
+        <pre>{traceback.format_exc()}</pre>
+        <p><a href="/system-health">Check System Health</a></p>
+        """
+
 if __name__ == '__main__':
     # Initialize database
     init_database()
