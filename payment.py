@@ -1,22 +1,21 @@
+import os
 import stripe
 from datetime import datetime, timedelta
-import os
-from typing import Optional, Dict, Any
-from flask import request
-# from app import get_db_connection
+from typing import Dict, Any, Callable
 
 class SubscriptionManager:
     """Handles Stripe subscriptions and payment processing"""
     
-    def __init__(self, user_auth_system):
+    def __init__(self, user_auth_system, get_db_connection_func: Callable):
         self.user_auth = user_auth_system
+        self.get_db_connection = get_db_connection_func
         stripe.api_key = os.environ.get('STRIPE_SECRET_KEY')
         self.price_id = os.environ.get('STRIPE_PRICE_ID')
     
     def get_user_subscription_status(self, user_id: int) -> Dict[str, Any]:
         """Get current subscription status for user"""
         try:
-            conn = get_db_connection()
+            conn = self.get_db_connection()
             cursor = conn.cursor()
             
             cursor.execute('''
@@ -78,7 +77,7 @@ class SubscriptionManager:
     def reset_free_matches(self, user_id: int):
         """Reset free matches counter monthly"""
         try:
-            conn = get_db_connection()
+            conn = self.get_db_connection()
             cursor = conn.cursor()
             cursor.execute('''
                 UPDATE users 
@@ -90,7 +89,7 @@ class SubscriptionManager:
         except Exception as e:
             print(f"Error resetting free matches: {e}")
     
-    def create_checkout_session(self, user_id: int) -> Dict[str, Any]:
+    def create_checkout_session(self, user_id: int, request_url_root: str) -> Dict[str, Any]:
         """Create Stripe checkout session"""
         try:
             user_info = self.user_auth.get_user_info(user_id)
@@ -108,8 +107,8 @@ class SubscriptionManager:
                     'quantity': 1,
                 }],
                 mode='subscription',
-                success_url=f"{request.url_root}subscription/success?session_id={{CHECKOUT_SESSION_ID}}",
-                cancel_url=f"{request.url_root}subscription/cancelled",
+                success_url=f"{request_url_root}subscription/success?session_id={{CHECKOUT_SESSION_ID}}",
+                cancel_url=f"{request_url_root}subscription/cancelled",
                 metadata={
                     'user_id': str(user_id)
                 }
@@ -128,7 +127,7 @@ class SubscriptionManager:
     def get_or_create_customer(self, user_id: int, email: str) -> str:
         """Get existing Stripe customer or create new one"""
         try:
-            conn = get_db_connection()
+            conn = self.get_db_connection()
             cursor = conn.cursor()
             
             cursor.execute('SELECT stripe_customer_id FROM user_subscriptions WHERE user_id = %s', (user_id,))
@@ -185,7 +184,7 @@ class SubscriptionManager:
     def update_subscription(self, subscription: Dict):
         """Update subscription in database"""
         try:
-            conn = get_db_connection()
+            conn = self.get_db_connection()
             cursor = conn.cursor()
             
             cursor.execute('''
@@ -215,7 +214,7 @@ class SubscriptionManager:
     def cancel_subscription(self, subscription: Dict):
         """Cancel subscription in database"""
         try:
-            conn = get_db_connection()
+            conn = self.get_db_connection()
             cursor = conn.cursor()
             
             cursor.execute('''
@@ -233,7 +232,7 @@ class SubscriptionManager:
     def record_matching_usage(self, user_id: int, is_free: bool = False):
         """Record when user runs matching"""
         try:
-            conn = get_db_connection()
+            conn = self.get_db_connection()
             cursor = conn.cursor()
             
             # Record usage
@@ -258,3 +257,10 @@ class SubscriptionManager:
         except Exception as e:
             print(f"Error recording matching usage: {e}")
 
+    def handle_successful_payment(self, invoice):
+        """Handle successful payment"""
+        pass
+    
+    def handle_failed_payment(self, invoice):
+        """Handle failed payment"""
+        pass
