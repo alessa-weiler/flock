@@ -1255,7 +1255,7 @@ class UserAuthSystem:
                     
                     <div class="footer">
                         <p>This email was sent because a password reset was requested for your Connect account.</p>
-                        <p>If you have any questions, please contact us at support@connect.com</p>
+                        <p>If you have any questions, please contact us at admin@pont.world</p>
                     </div>
                 </div>
             </body>
@@ -1584,7 +1584,7 @@ class EmailFollowupSystem:
                     
                     <div class="footer">
                         <p>This email was sent because you recently connected with someone through Connect.</p>
-                        <p>If you have any questions, please contact us at support@connect.com</p>
+                        <p>If you have any questions, please contact us at admin@pont.world</p>
                     </div>
                 </div>
             </body>
@@ -1744,8 +1744,8 @@ class IdentityVerificationSystem:
                 (admin_email, verification_email, instructions)
                 VALUES (%s, %s, %s)
             ''', (
-                'admin@connect.com',
-                'verify@connect.com', 
+                'admin@pont.world',
+                'verify@pont.world', 
                 '''Please send a clear photo containing:
 1. Your government-issued photo ID (passport, driving licence, or national ID)
 2. A selfie of you holding the same ID next to your face
@@ -1833,7 +1833,7 @@ All three items must be clearly visible in the photo(s).'''
             settings = cursor.fetchone()
             conn.close()
             
-            verification_email = settings['verification_email'] if settings else 'verify@connect.com'
+            verification_email = settings['verification_email'] if settings else 'verify@pont.world'
             instructions = settings['instructions'] if settings else 'Send your ID verification photos.'
             
             subject = "Connect Identity Verification - Action Required"
@@ -5753,7 +5753,7 @@ def admin_verification_queue():
                 <div style="margin-top: 15px;">
                     <form method="POST" action="/admin/approve-verification" style="display: inline-block; margin-right: 10px;">
                         <input type="hidden" name="token" value="{req['verification_token']}">
-                        <input type="hidden" name="admin_email" value="admin@connect.com">
+                        <input type="hidden" name="admin_email" value="admin@pont.world">
                         <button type="submit" style="background: #28a745; color: white; padding: 8px 16px; border: none; border-radius: 4px;">
                             ✓ Approve
                         </button>
@@ -5761,7 +5761,7 @@ def admin_verification_queue():
                     
                     <form method="POST" action="/admin/reject-verification" style="display: inline-block;">
                         <input type="hidden" name="token" value="{req['verification_token']}">
-                        <input type="hidden" name="admin_email" value="admin@connect.com">
+                        <input type="hidden" name="admin_email" value="admin@pont.world">
                         <input type="text" name="reason" placeholder="Rejection reason" required style="margin-right: 5px;">
                         <button type="submit" style="background: #dc3545; color: white; padding: 8px 16px; border: none; border-radius: 4px;">
                             ✗ Reject
@@ -5808,7 +5808,7 @@ def admin_verification_queue():
                     <li><strong>Reject:</strong> If photos are unclear, missing elements, or don't match</li>
                 </ul>
                 
-                <p><strong>Verification Email:</strong> verify@connect.com</p>
+                <p><strong>Verification Email:</strong> verify@pont.world</p>
                 <p><strong>Look for:</strong> Government ID + matching selfie + verification code on paper</p>
             </div>
         </body>
@@ -11458,7 +11458,7 @@ def terms_of_service():
                 For questions about these Terms of Service, please contact us:
             </p>
             <ul>
-                <li><strong>Email:</strong> legal@connect.com</li>
+                <li><strong>Email:</strong> admin@pont.world</li>
                 <li><strong>Post:</strong> [Your Company Name], [Your Business Address], England</li>
                 <li><strong>Company Registration:</strong> [Companies House Number]</li>
             </ul>
