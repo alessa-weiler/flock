@@ -5356,6 +5356,15 @@ def profile_settings():
     verification_status = verification_system.get_verification_status(user_id)
     subscription_status = subscription_manager.get_user_subscription_status(user_id)
     
+    # Get flash messages and convert to HTML
+    flash_html = ""
+    messages = get_flashed_messages(with_categories=True)
+    if messages:
+        flash_html = '<div class="flash-messages">'
+        for category, message in messages:
+            flash_html += f'<div class="flash-{category}">{message}</div>'
+        flash_html += '</div>'
+    
     # Render verification section
     verification_html = render_verification_section(verification_status)
     
@@ -5364,110 +5373,347 @@ def profile_settings():
     
     content = f'''
     <style>
-        /* Your existing styles... */
+        @import url("https://fonts.googleapis.com/css2?family=Clash+Display:wght@200..700&display=swap");
+        @import url("https://fonts.googleapis.com/css2?family=Satoshi:wght@300..900&display=swap");
+
+        body {{
+            background-color: #f4e8ee;
+            color: #2d2d2d;
+            font-family: "Satoshi", -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+        }}
+        
+        .settings-container {{
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 2rem;
+        }}
+        
+        .settings-header {{
+            text-align: center;
+            margin-bottom: 3rem;
+            padding: 2.5rem 2rem;
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+        }}
+        
+        .settings-title {{
+            font-family: "Clash Display", sans-serif;
+            font-size: 2.5rem;
+            font-weight: 500;
+            margin: 0 0 1rem 0;
+            color: #2d2d2d;
+            letter-spacing: -0.02em;
+            background: linear-gradient(135deg, #2d2d2d, #6b9b99);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }}
+        
+        .settings-header p {{
+            font-family: "Satoshi", sans-serif;
+            font-size: 1.125rem;
+            line-height: 1.6;
+            color: #6b9b99;
+            margin: 0;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }}
         
         .subscription-section {{
-            background: var(--color-white);
-            border-radius: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(20px);
+            border-radius: 24px;
             padding: 2.5rem;
-            margin-bottom: 2rem;
+            margin: 2rem 0;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            position: relative;
+            transition: all 0.3s ease;
             box-shadow: 0 4px 16px rgba(0,0,0,0.06);
-            border-left: 4px solid var(--color-emerald);
+        }}
+        
+        .subscription-section:hover {{
+            transform: translateY(-4px);
+            border-color: rgba(107, 155, 153, 0.3);
         }}
         
         .subscription-active {{
-            border-left-color: var(--color-emerald);
-            background: linear-gradient(135deg, rgba(22, 122, 96, 0.05), rgba(198, 225, 155, 0.05));
+            border-left: 4px solid #6b9b99;
+            background: linear-gradient(135deg, rgba(107, 155, 153, 0.05), rgba(198, 225, 155, 0.05));
         }}
         
         .subscription-free {{
-            border-left-color: var(--color-sage);
+            border-left: 4px solid rgba(107, 155, 153, 0.5);
+        }}
+        
+        .verification-section {{
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(20px);
+            border-radius: 24px;
+            padding: 2.5rem;
+            margin: 2rem 0;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            position: relative;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+        }}
+        
+        .verification-section:hover {{
+            transform: translateY(-4px);
+            border-color: rgba(107, 155, 153, 0.3);
+        }}
+        
+        .verification-section h3 {{
+            font-family: "Clash Display", sans-serif;
+            font-size: 1.75rem;
+            font-weight: 600;
+            margin: 0 0 1.5rem 0;
+            color: #6b9b99;
+        }}
+        
+        .subscription-section h3 {{
+            font-family: "Clash Display", sans-serif;
+            font-size: 1.75rem;
+            font-weight: 600;
+            margin: 0 0 1.5rem 0;
+            color: #6b9b99;
         }}
         
         .plan-badge {{
             display: inline-flex;
             align-items: center;
             gap: 0.5rem;
-            background: var(--color-emerald);
+            background: linear-gradient(135deg, #6b9b99, #ff9500);
             color: white;
-            padding: 0.5rem 1rem;
-            border-radius: 20px;
+            padding: 0.75rem 1.5rem;
+            border-radius: 50px;
+            font-family: "Satoshi", sans-serif;
             font-weight: 600;
             font-size: 0.875rem;
-            margin-bottom: 1rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 4px 12px rgba(107, 155, 153, 0.3);
         }}
         
         .plan-badge.free {{
-            background: var(--color-gray-600);
+            background: rgba(107, 155, 153, 0.6);
+        }}
+        
+        .verified-badge {{
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: linear-gradient(135deg, #6b9b99, #ff9500);
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border-radius: 50px;
+            font-family: "Satoshi", sans-serif;
+            font-weight: 600;
+            font-size: 0.875rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 4px 12px rgba(107, 155, 153, 0.3);
         }}
         
         .subscription-details {{
-            background: var(--color-gray-50);
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(10px);
+            padding: 2rem;
+            border-radius: 16px;
+            margin: 1.5rem 0;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }}
+        
+        .verification-benefits {{
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(10px);
+            padding: 2rem;
+            border-radius: 16px;
+            margin: 1.5rem 0;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            font-family: "Satoshi", sans-serif;
+            line-height: 1.6;
+        }}
+        
+        .verification-pending {{
+            background: rgba(255, 149, 0, 0.1);
+            backdrop-filter: blur(10px);
             padding: 1.5rem;
             border-radius: 12px;
             margin: 1.5rem 0;
+            border: 1px solid rgba(255, 149, 0, 0.3);
+            font-family: "Satoshi", sans-serif;
+        }}
+        
+        .status-pending {{
+            color: #ff9500;
+            font-weight: 600;
         }}
         
         .btn-manage {{
-            background: linear-gradient(135deg, var(--color-emerald), var(--color-sage));
+            font-family: "Satoshi", sans-serif;
+            background: linear-gradient(135deg, #6b9b99, #ff9500);
             color: white;
             padding: 1rem 2rem;
             border: none;
-            border-radius: 12px;
+            border-radius: 50px;
             font-weight: 600;
             cursor: pointer;
             transition: all 0.3s ease;
-            font-size: 1rem;
+            font-size: 0.875rem;
             text-decoration: none;
             display: inline-block;
+            margin: 0.5rem;
+            box-shadow: 0 4px 12px rgba(107, 155, 153, 0.3);
         }}
         
         .btn-manage:hover {{
             transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(22, 122, 96, 0.3);
+            box-shadow: 0 8px 24px rgba(107, 155, 153, 0.4);
         }}
         
         .btn-upgrade {{
-            background: linear-gradient(135deg, var(--color-sage), var(--color-lavender));
-            color: var(--color-charcoal);
+            background: linear-gradient(135deg, rgba(107, 155, 153, 0.8), rgba(198, 225, 155, 0.8));
+            color: #2d2d2d;
         }}
         
         .btn-cancel {{
-            background: var(--color-gray-600);
+            background: rgba(45, 45, 45, 0.6);
             color: white;
+        }}
+        
+        .btn-verify {{
+            font-family: "Satoshi", sans-serif;
+            background: linear-gradient(135deg, #6b9b99, #ff9500);
+            color: white;
+            padding: 1rem 2rem;
+            border: none;
+            border-radius: 50px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.875rem;
+            box-shadow: 0 4px 12px rgba(107, 155, 153, 0.3);
+        }}
+        
+        .btn-verify:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(107, 155, 153, 0.4);
         }}
         
         .usage-stats {{
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 1rem;
+            gap: 1.5rem;
             margin: 1.5rem 0;
         }}
         
         .usage-stat {{
             text-align: center;
-            padding: 1rem;
-            background: var(--color-white);
-            border-radius: 12px;
-            border: 1px solid var(--color-gray-200);
+            padding: 1.5rem;
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
         }}
         
         .stat-number {{
             font-family: 'Clash Display', sans-serif;
-            font-size: 1.5rem;
-            font-weight: 600;
-            color: var(--color-emerald);
+            font-size: 2rem;
+            font-weight: 700;
+            color: #6b9b99;
+            margin-bottom: 0.5rem;
         }}
         
         .stat-label {{
+            font-family: "Satoshi", sans-serif;
             font-size: 0.75rem;
-            color: var(--color-gray-600);
+            color: rgba(45, 45, 45, 0.7);
             text-transform: uppercase;
             letter-spacing: 0.1em;
+            font-weight: 600;
+        }}
+        
+        .back-link {{
+            font-family: "Satoshi", sans-serif;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: #6b9b99;
+            text-decoration: none;
+            font-weight: 500;
+            margin: 1rem;
+            padding: 0.75rem 1.5rem;
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(10px);
+            border-radius: 50px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: all 0.3s ease;
+        }}
+        
+        .back-link:hover {{
+            transform: translateY(-2px);
+            background: rgba(255, 255, 255, 0.9);
+            color: #2d2d2d;
+        }}
+        
+        /* Flash message styling */
+        .flash-messages {{
+            margin-bottom: 2rem;
+        }}
+        
+        .flash-error {{
+            background: rgba(255, 149, 0, 0.9);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 149, 0, 0.5);
+            color: white;
+            padding: 1rem 1.5rem;
+            border-radius: 12px;
+            margin-bottom: 1rem;
+            font-family: "Satoshi", sans-serif;
+            font-size: 0.875rem;
+        }}
+        
+        .flash-success {{
+            background: rgba(107, 155, 153, 0.9);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(107, 155, 153, 0.5);
+            color: white;
+            padding: 1rem 1.5rem;
+            border-radius: 12px;
+            margin-bottom: 1rem;
+            font-family: "Satoshi", sans-serif;
+            font-size: 0.875rem;
+        }}
+        
+        /* Responsive design */
+        @media (max-width: 768px) {{
+            .settings-container {{
+                padding: 1rem;
+            }}
+            
+            .settings-header {{
+                padding: 1.5rem 1rem;
+            }}
+            
+            .subscription-section,
+            .verification-section {{
+                padding: 1.5rem;
+            }}
+            
+            .settings-title {{
+                font-size: 2rem;
+            }}
         }}
     </style>
     
     <div class="settings-container">
+        {flash_html}
+        
         <div class="settings-header">
             <h1 class="settings-title">Profile Settings</h1>
             <p>Manage your account, subscription, and privacy settings</p>
@@ -5476,7 +5722,7 @@ def profile_settings():
         {subscription_html}
         {verification_html}
         
-        <div style="text-align: center;">
+        <div style="text-align: center; margin-top: 3rem;">
             <a href="/edit-profile" class="back-link">Edit Full Profile</a>
             <a href="/dashboard" class="back-link">Back to Dashboard</a>
         </div>
