@@ -11482,6 +11482,28 @@ def terms_of_service():
 # ============================================================================
 # SUBSCRIPTION MANAGEMENT
 # ============================================================================
+@app.route('/admin/cleanup-customers')
+def cleanup_invalid_customers():
+    """Clean up invalid Stripe customer IDs - REMOVE AFTER USE"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Clear invalid customer IDs
+        cursor.execute('''
+            UPDATE user_subscriptions 
+            SET stripe_customer_id = NULL, stripe_subscription_id = NULL, status = 'inactive'
+            WHERE stripe_customer_id IS NOT NULL
+        ''')
+        
+        rows_updated = cursor.rowcount
+        conn.commit()
+        conn.close()
+        
+        return f"Cleaned up {rows_updated} invalid customer records"
+        
+    except Exception as e:
+        return f"Error: {e}"
 
 @app.route('/subscription/check')
 @login_required
@@ -11495,18 +11517,20 @@ def check_subscription():
 @login_required
 def subscribe():
     """Create Stripe checkout session"""
-    try:
-        user_id = session['user_id']
-        result = subscription_manager.create_checkout_session(user_id, request.url_root)
-        
-        if result['success']:
-            return redirect(result['checkout_url'])
-        else:
-            flash(f"Error creating checkout: {result['error']}", 'error')
-            return redirect('/subscription/plans')
-    except Exception as e:
-        print(f"Subscription error: {e}")
-        flash("Unable to process subscription. Please try again.", 'error')
+    user_id = session['user_id']
+    
+    # Check if user already has active subscription
+    status = subscription_manager.get_user_subscription_status(user_id)
+    if status['is_subscribed']:
+        flash('You already have an active subscription!', 'success')
+        return redirect('/profile-settings')
+    
+    result = subscription_manager.create_checkout_session(user_id, request.url_root)
+    
+    if result['success']:
+        return redirect(result['checkout_url'])
+    else:
+        flash(f"Error creating checkout: {result['error']}", 'error')
         return redirect('/subscription/plans')
 
 @app.route('/subscription/plans')
