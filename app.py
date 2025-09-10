@@ -11413,13 +11413,18 @@ def check_subscription():
 @login_required
 def subscribe():
     """Create Stripe checkout session"""
-    user_id = session['user_id']
-    result = subscription_manager.create_checkout_session(user_id)
-    
-    if result['success']:
-        return redirect(result['checkout_url'])
-    else:
-        flash(f"Error creating checkout: {result['error']}", 'error')
+    try:
+        user_id = session['user_id']
+        result = subscription_manager.create_checkout_session(user_id, request.url_root)
+        
+        if result['success']:
+            return redirect(result['checkout_url'])
+        else:
+            flash(f"Error creating checkout: {result['error']}", 'error')
+            return redirect('/subscription/plans')
+    except Exception as e:
+        print(f"Subscription error: {e}")
+        flash("Unable to process subscription. Please try again.", 'error')
         return redirect('/subscription/plans')
 
 @app.route('/subscription/plans')
