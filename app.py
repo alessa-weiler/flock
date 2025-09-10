@@ -11861,45 +11861,50 @@ def subscription_cancelled():
 
 @app.route('/webhook/stripe', methods=['POST'])
 def stripe_webhook():
-    """Handle Stripe webhooks"""
+    """Handle Stripe webhooks with detailed debugging"""
     payload = request.get_data()
     sig_header = request.headers.get('Stripe-Signature')
     endpoint_secret = os.environ.get('STRIPE_WEBHOOK_SECRET')
     
+    # Debug logging
+    print(f"Webhook received:")
+    print(f"  Payload length: {len(payload)}")
+    print(f"  Signature header: {sig_header}")
+    print(f"  Endpoint secret configured: {bool(endpoint_secret)}")
+    print(f"  Endpoint secret prefix: {endpoint_secret[:10] if endpoint_secret else 'None'}...")
+    
     try:
+        if not endpoint_secret:
+            print("ERROR: No webhook secret configured")
+            return jsonify({'status': 'no webhook secret'}), 400
+            
+        if not sig_header:
+            print("ERROR: No signature header in request")
+            return jsonify({'status': 'no signature header'}), 400
+        
+        # Try to construct the event
         event = stripe.Webhook.construct_event(payload, sig_header, endpoint_secret)
         
-        print(f"Received Stripe webhook: {event['type']}")
+        print(f"✓ Webhook signature verified successfully")
+        print(f"  Event type: {event['type']}")
+        print(f"  Event ID: {event['id']}")
         
-        # Handle checkout completion
+        # Handle the events
         if event['type'] == 'checkout.session.completed':
             session = event['data']['object']
             handle_checkout_completion(session)
-        
-        # Handle subscription events
-        elif event['type'] == 'customer.subscription.created':
-            subscription = event['data']['object']
-            handle_subscription_created(subscription)
-            
-        elif event['type'] == 'customer.subscription.updated':
-            subscription = event['data']['object']
-            handle_subscription_updated(subscription)
-            
-        elif event['type'] == 'customer.subscription.deleted':
-            subscription = event['data']['object']
-            handle_subscription_deleted(subscription)
             
         return jsonify({'status': 'success'}), 200
         
-    except ValueError as e:
-        print(f"Invalid payload: {e}")
-        return jsonify({'status': 'invalid payload'}), 400
     except stripe.error.SignatureVerificationError as e:
-        print(f"Invalid signature: {e}")
-        return jsonify({'status': 'invalid signature'}), 400
+        print(f"Signature verification failed: {str(e)}")
+        print(f"  Raw error: {repr(e)}")
+        return jsonify({'status': 'invalid signature', 'error': str(e)}), 400
     except Exception as e:
-        print(f"Webhook error: {e}")
-        return jsonify({'status': 'error'}), 500
+        print(f"Webhook processing error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'status': 'error', 'error': str(e)}), 500
 
 def handle_checkout_completion(session):
     """Handle successful checkout"""
