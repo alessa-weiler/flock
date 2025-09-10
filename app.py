@@ -387,6 +387,13 @@ class UserAuthSystem:
         except Exception as e:
             print(f"Subscription columns may already exist: {e}")
         
+        try:
+            cursor.execute('ALTER TABLE user_subscriptions ADD COLUMN IF NOT EXISTS current_period_end TIMESTAMP')
+            cursor.execute('ALTER TABLE user_subscriptions ADD COLUMN IF NOT EXISTS cancel_at_period_end BOOLEAN DEFAULT FALSE')
+            print("✓ Updated subscription table schema")
+        except Exception as e:
+            print(f"Schema update error: {e}")
+        
         #Add linkedin URL
         try:
             cursor.execute('ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS linkedin_url TEXT')
@@ -11838,19 +11845,154 @@ def stripe_webhook():
     try:
         event = stripe.Webhook.construct_event(payload, sig_header, endpoint_secret)
         
-        # Handle the event
-        if subscription_manager.handle_subscription_event(event):
-            return jsonify({'status': 'success'}), 200
-        else:
-            return jsonify({'status': 'error'}), 400
+        print(f"Received Stripe webhook: {event['type']}")
+        
+        # Handle checkout completion
+        if event['type'] == 'checkout.session.completed':
+            session = event['data']['object']
+            handle_checkout_completion(session)
+        
+        # Handle subscription events
+        elif event['type'] == 'customer.subscription.created':
+            subscription = event['data']['object']
+            handle_subscription_created(subscription)
             
-    except ValueError:
+        elif event['type'] == 'customer.subscription.updated':
+            subscription = event['data']['object']
+            handle_subscription_updated(subscription)
+            
+        elif event['type'] == 'customer.subscription.deleted':
+            subscription = event['data']['object']
+            handle_subscription_deleted(subscription)
+            
+        return jsonify({'status': 'success'}), 200
+        
+    except ValueError as e:
+        print(f"Invalid payload: {e}")
         return jsonify({'status': 'invalid payload'}), 400
-    except stripe.error.SignatureVerificationError:
+    except stripe.error.SignatureVerificationError as e:
+        print(f"Invalid signature: {e}")
         return jsonify({'status': 'invalid signature'}), 400
     except Exception as e:
         print(f"Webhook error: {e}")
         return jsonify({'status': 'error'}), 500
+
+def handle_checkout_completion(session):
+    """Handle successful checkout"""
+    try:
+        user_id = int(session['metadata']['user_id'])
+        customer_id = session['customer']
+        subscription_id = session['subscription']
+        
+        print(f"Processing checkout completion for user {user_id}")
+        
+        # Update or create subscription record
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Check if subscription record exists
+        cursor.execute('SELECT id FROM user_subscriptions WHERE user_id = %s', (user_id,))
+        existing = cursor.fetchone()
+        
+        if existing:
+            # Update existing record
+            cursor.execute('''
+                UPDATE user_subscriptions 
+                SET stripe_customer_id = %s, stripe_subscription_id = %s, 
+                    status = 'active', updated_at = CURRENT_TIMESTAMP
+                WHERE user_id = %s
+            ''', (customer_id, subscription_id, user_id))
+        else:
+            # Create new record
+            cursor.execute('''
+                INSERT INTO user_subscriptions 
+                (user_id, stripe_customer_id, stripe_subscription_id, status, created_at, updated_at)
+                VALUES (%s, %s, %s, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ''', (user_id, customer_id, subscription_id))
+        
+        conn.commit()
+        conn.close()
+        
+        print(f"✓ Subscription activated for user {user_id}")
+        
+    except Exception as e:
+        print(f"Error handling checkout completion: {e}")
+
+def handle_subscription_created(subscription):
+    """Handle subscription creation"""
+    try:
+        customer_id = subscription['customer']
+        subscription_id = subscription['id']
+        status = subscription['status']
+        
+        # Find user by customer ID
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT user_id FROM user_subscriptions WHERE stripe_customer_id = %s', (customer_id,))
+        result = cursor.fetchone()
+        
+        if result:
+            user_id = result['user_id']
+            cursor.execute('''
+                UPDATE user_subscriptions 
+                SET stripe_subscription_id = %s, status = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE user_id = %s
+            ''', (subscription_id, status, user_id))
+            conn.commit()
+            print(f"✓ Subscription created for user {user_id}")
+        
+        conn.close()
+        
+    except Exception as e:
+        print(f"Error handling subscription creation: {e}")
+
+def handle_subscription_updated(subscription):
+    """Handle subscription updates"""
+    try:
+        subscription_id = subscription['id']
+        status = subscription['status']
+        current_period_end = subscription['current_period_end']
+        cancel_at_period_end = subscription['cancel_at_period_end']
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            UPDATE user_subscriptions 
+            SET status = %s, current_period_end = to_timestamp(%s), 
+                cancel_at_period_end = %s, updated_at = CURRENT_TIMESTAMP
+            WHERE stripe_subscription_id = %s
+        ''', (status, current_period_end, cancel_at_period_end, subscription_id))
+        
+        conn.commit()
+        conn.close()
+        
+        print(f"✓ Subscription {subscription_id} updated to status: {status}")
+        
+    except Exception as e:
+        print(f"Error handling subscription update: {e}")
+
+def handle_subscription_deleted(subscription):
+    """Handle subscription cancellation"""
+    try:
+        subscription_id = subscription['id']
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            UPDATE user_subscriptions 
+            SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+            WHERE stripe_subscription_id = %s
+        ''', (subscription_id,))
+        
+        conn.commit()
+        conn.close()
+        
+        print(f"✓ Subscription {subscription_id} cancelled")
+        
+    except Exception as e:
+        print(f"Error handling subscription deletion: {e}")
 # ============================================================================
 # DEBUG AND TESTING
 # ============================================================================
