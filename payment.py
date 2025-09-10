@@ -211,24 +211,44 @@ class SubscriptionManager:
         except Exception as e:
             print(f"Error updating subscription: {e}")
     
-    def cancel_subscription(self, subscription: Dict):
-        """Cancel subscription in database"""
+    def cancel_subscription(self, user_id: int) -> Dict[str, Any]:
+        """Cancel user's subscription"""
         try:
             conn = self.get_db_connection()
             cursor = conn.cursor()
             
+            # Get subscription info
+            cursor.execute('''
+                SELECT stripe_subscription_id, stripe_customer_id 
+                FROM user_subscriptions 
+                WHERE user_id = %s AND status = 'active'
+            ''', (user_id,))
+            
+            result = cursor.fetchone()
+            if not result:
+                return {'success': False, 'error': 'No active subscription found'}
+            
+            # Cancel the subscription in Stripe (at period end)
+            stripe.Subscription.modify(
+                result['stripe_subscription_id'],
+                cancel_at_period_end=True
+            )
+            
+            # Update local database
             cursor.execute('''
                 UPDATE user_subscriptions 
-                SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
-                WHERE stripe_subscription_id = %s
-            ''', (subscription['id'],))
+                SET cancel_at_period_end = TRUE, updated_at = CURRENT_TIMESTAMP
+                WHERE user_id = %s
+            ''', (user_id,))
             
             conn.commit()
             conn.close()
             
+            return {'success': True}
+            
         except Exception as e:
             print(f"Error cancelling subscription: {e}")
-    
+            return {'success': False, 'error': str(e)}
     def record_matching_usage(self, user_id: int, is_free: bool = False):
         """Record when user runs matching"""
         try:

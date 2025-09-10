@@ -5343,46 +5343,23 @@ def verification_status():
 @app.route('/profile-settings')
 @login_required
 def profile_settings():
-    """Profile settings page with verification option"""
+    """Profile settings page with verification and subscription management"""
     user_id = session['user_id']
     user_info = user_auth.get_user_info(user_id)
     verification_status = verification_system.get_verification_status(user_id)
+    subscription_status = subscription_manager.get_user_subscription_status(user_id)
     
-    # Render verification section based on status
+    # Render verification section
     verification_html = render_verification_section(verification_status)
+    
+    # Render subscription management section
+    subscription_html = render_subscription_management_section(subscription_status)
     
     content = f'''
     <style>
-        .settings-container {{
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 2rem;
-            font-family: 'Satoshi', -apple-system, BlinkMacSystemFont, sans-serif;
-        }}
+        /* Your existing styles... */
         
-        .settings-header {{
-            text-align: center;
-            margin-bottom: 3rem;
-            padding: 2.5rem 2rem;
-            background: rgba(255, 255, 255, 0.7);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-        }}
-        
-        .settings-title {{
-            font-family: "Clash Display", sans-serif;
-            font-size: 2.5rem;
-            font-weight: 500;
-            margin: 0 0 1rem 0;
-            color: var(--color-charcoal);
-            background: linear-gradient(135deg, #2d2d2d, #6b9b99);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }}
-        
-        .verification-section {{
+        .subscription-section {{
             background: var(--color-white);
             border-radius: 20px;
             padding: 2.5rem;
@@ -5391,11 +5368,20 @@ def profile_settings():
             border-left: 4px solid var(--color-emerald);
         }}
         
-        .verified-badge {{
+        .subscription-active {{
+            border-left-color: var(--color-emerald);
+            background: linear-gradient(135deg, rgba(22, 122, 96, 0.05), rgba(198, 225, 155, 0.05));
+        }}
+        
+        .subscription-free {{
+            border-left-color: var(--color-sage);
+        }}
+        
+        .plan-badge {{
             display: inline-flex;
             align-items: center;
             gap: 0.5rem;
-            background: #007bff;
+            background: var(--color-emerald);
             color: white;
             padding: 0.5rem 1rem;
             border-radius: 20px;
@@ -5404,23 +5390,19 @@ def profile_settings():
             margin-bottom: 1rem;
         }}
         
-        .verification-pending {{
-            background: linear-gradient(135deg, var(--color-sage), var(--color-lavender));
-            color: var(--color-charcoal);
-            padding: 1.5rem;
-            border-radius: 12px;
-            margin: 1rem 0;
+        .plan-badge.free {{
+            background: var(--color-gray-600);
         }}
         
-        .verification-benefits {{
+        .subscription-details {{
             background: var(--color-gray-50);
             padding: 1.5rem;
             border-radius: 12px;
             margin: 1.5rem 0;
         }}
         
-        .btn-verify {{
-            background: linear-gradient(135deg, #007bff, #0056b3);
+        .btn-manage {{
+            background: linear-gradient(135deg, var(--color-emerald), var(--color-sage));
             color: white;
             padding: 1rem 2rem;
             border: none;
@@ -5429,58 +5411,62 @@ def profile_settings():
             cursor: pointer;
             transition: all 0.3s ease;
             font-size: 1rem;
-        }}
-        
-        .btn-verify:hover {{
-            transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(0, 123, 255, 0.3);
-        }}
-        
-        .btn-verify:disabled {{
-            background: var(--color-gray-600);
-            cursor: not-allowed;
-            transform: none;
-        }}
-        
-        .status-pending {{
-            color: #ffc107;
-            font-weight: 600;
-        }}
-        
-        .status-approved {{
-            color: #28a745;
-            font-weight: 600;
-        }}
-        
-        .status-rejected {{
-            color: #dc3545;
-            font-weight: 600;
-        }}
-        
-        .back-link {{
-            display: inline-block;
-            background: var(--color-emerald);
-            color: white;
-            padding: 0.75rem 1.5rem;
-            border-radius: 8px;
             text-decoration: none;
-            font-weight: 500;
-            margin-top: 2rem;
-            transition: all 0.3s ease;
+            display: inline-block;
         }}
         
-        .back-link:hover {{
-            background: #0f5942;
-            transform: translateY(-1px);
+        .btn-manage:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(22, 122, 96, 0.3);
+        }}
+        
+        .btn-upgrade {{
+            background: linear-gradient(135deg, var(--color-sage), var(--color-lavender));
+            color: var(--color-charcoal);
+        }}
+        
+        .btn-cancel {{
+            background: var(--color-gray-600);
+            color: white;
+        }}
+        
+        .usage-stats {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+            margin: 1.5rem 0;
+        }}
+        
+        .usage-stat {{
+            text-align: center;
+            padding: 1rem;
+            background: var(--color-white);
+            border-radius: 12px;
+            border: 1px solid var(--color-gray-200);
+        }}
+        
+        .stat-number {{
+            font-family: 'Clash Display', sans-serif;
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--color-emerald);
+        }}
+        
+        .stat-label {{
+            font-size: 0.75rem;
+            color: var(--color-gray-600);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
         }}
     </style>
     
     <div class="settings-container">
         <div class="settings-header">
             <h1 class="settings-title">Profile Settings</h1>
-            <p>Manage your account verification and privacy settings</p>
+            <p>Manage your account, subscription, and privacy settings</p>
         </div>
         
+        {subscription_html}
         {verification_html}
         
         <div style="text-align: center;">
@@ -5612,6 +5598,95 @@ def render_verification_section(verification_status: Dict) -> str:
         </div>
         '''
 
+def render_subscription_management_section(subscription_status: Dict) -> str:
+    """Render subscription management section based on user's current status"""
+    
+    if subscription_status['is_subscribed']:
+        # Active subscription
+        expires_at = subscription_status.get('expires_at', 'Unknown')
+        next_billing = subscription_status.get('current_period_end', 'Unknown')
+        
+        return f'''
+        <div class="subscription-section subscription-active">
+            <h3 style="color: var(--color-emerald); margin-bottom: 1rem;">Subscription Management</h3>
+            
+            <div class="plan-badge">
+                ✓ Premium Plan Active
+            </div>
+            
+            <div class="subscription-details">
+                <div class="usage-stats">
+                    <div class="usage-stat">
+                        <div class="stat-number">∞</div>
+                        <div class="stat-label">Matches Available</div>
+                    </div>
+                    <div class="usage-stat">
+                        <div class="stat-number">{subscription_status.get('matches_this_month', 0)}</div>
+                        <div class="stat-label">Used This Month</div>
+                    </div>
+                </div>
+                
+                <p><strong>Next billing:</strong> {next_billing}</p>
+                <p><strong>Plan:</strong> Premium Matching (£9.99/month)</p>
+            </div>
+            
+            <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+                <a href="/subscription/manage" class="btn-manage">
+                    Manage Billing
+                </a>
+                <a href="/subscription/cancel" class="btn-manage btn-cancel">
+                    Cancel Subscription
+                </a>
+            </div>
+            
+            <div style="margin-top: 1.5rem; font-size: 0.875rem; color: var(--color-gray-600);">
+                Your subscription includes unlimited matching, enhanced AI analysis, and priority support.
+            </div>
+        </div>
+        '''
+    else:
+        # Free plan
+        remaining = subscription_status['free_matches_remaining']
+        used = subscription_status.get('free_matches_used', 0)
+        
+        return f'''
+        <div class="subscription-section subscription-free">
+            <h3 style="color: var(--color-emerald); margin-bottom: 1rem;">Subscription Management</h3>
+            
+            <div class="plan-badge free">
+                Free Plan
+            </div>
+            
+            <div class="subscription-details">
+                <div class="usage-stats">
+                    <div class="usage-stat">
+                        <div class="stat-number">{remaining}</div>
+                        <div class="stat-label">Matches Remaining</div>
+                    </div>
+                    <div class="usage-stat">
+                        <div class="stat-number">{used}</div>
+                        <div class="stat-label">Used This Month</div>
+                    </div>
+                    <div class="usage-stat">
+                        <div class="stat-number">1</div>
+                        <div class="stat-label">Free Monthly Limit</div>
+                    </div>
+                </div>
+                
+                <p>You're currently on the free plan with {remaining} match{"" if remaining == 1 else "es"} remaining this month.</p>
+            </div>
+            
+            <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+                <a href="/subscription/plans" class="btn-manage btn-upgrade">
+                    Upgrade to Premium
+                </a>
+            </div>
+            
+            <div style="margin-top: 1.5rem; font-size: 0.875rem; color: var(--color-gray-600);">
+                Upgrade to Premium for unlimited matching, enhanced AI analysis, and priority support.
+            </div>
+        </div>
+        '''
 # ============================================================================
 # ADMIN VERIFICATION MANAGEMENT ROUTES
 # ============================================================================
@@ -11660,6 +11735,91 @@ def subscription_success():
             flash('Subscription activated successfully!', 'success')
     
     return redirect('/dashboard')
+
+@app.route('/subscription/manage')
+@login_required
+def manage_subscription():
+    """Redirect to Stripe customer portal for subscription management"""
+    user_id = session['user_id']
+    
+    try:
+        # Get the customer's Stripe customer ID
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT stripe_customer_id FROM user_subscriptions WHERE user_id = %s', (user_id,))
+        result = cursor.fetchone()
+        conn.close()
+        
+        if not result or not result['stripe_customer_id']:
+            flash('No active subscription found', 'error')
+            return redirect('/profile-settings')
+        
+        # Create Stripe customer portal session
+        portal_session = stripe.billing_portal.Session.create(
+            customer=result['stripe_customer_id'],
+            return_url=request.url_root + 'profile-settings'
+        )
+        
+        return redirect(portal_session.url)
+        
+    except Exception as e:
+        print(f"Error creating portal session: {e}")
+        flash('Unable to access subscription management. Please try again.', 'error')
+        return redirect('/profile-settings')
+
+@app.route('/subscription/cancel', methods=['GET', 'POST'])
+@login_required
+def cancel_subscription():
+    """Cancel subscription confirmation page"""
+    user_id = session['user_id']
+    user_info = user_auth.get_user_info(user_id)
+    
+    if request.method == 'POST':
+        confirm = request.form.get('confirm_cancel')
+        if confirm == 'yes':
+            try:
+                result = subscription_manager.cancel_subscription(user_id)
+                if result['success']:
+                    flash('Subscription cancelled successfully. You can continue using Premium features until your current billing period ends.', 'success')
+                else:
+                    flash(f'Error cancelling subscription: {result["error"]}', 'error')
+            except Exception as e:
+                flash('Unable to cancel subscription. Please contact support.', 'error')
+        
+        return redirect('/profile-settings')
+    
+    # Show cancellation confirmation page
+    content = '''
+    <div class="container" style="max-width: 600px;">
+        <h1 style="color: #dc3545; text-align: center; margin-bottom: 2rem;">Cancel Subscription</h1>
+        
+        <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 1.5rem; border-radius: 12px; margin-bottom: 2rem;">
+            <h3 style="color: #856404; margin-bottom: 1rem;">Before you cancel:</h3>
+            <ul style="color: #856404;">
+                <li>You'll lose access to unlimited matching</li>
+                <li>You'll return to 1 free match per month</li>
+                <li>Enhanced AI analysis will no longer be available</li>
+                <li>You can resubscribe anytime</li>
+            </ul>
+        </div>
+        
+        <form method="POST">
+            <div style="text-align: center;">
+                <p style="margin-bottom: 2rem;">Are you sure you want to cancel your Premium subscription?</p>
+                
+                <div style="display: flex; gap: 1rem; justify-content: center;">
+                    <a href="/profile-settings" class="btn btn-secondary">Keep Subscription</a>
+                    <button type="submit" name="confirm_cancel" value="yes" 
+                            class="btn" style="background: #dc3545; color: white;">
+                        Yes, Cancel Subscription
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+    '''
+    
+    return render_template_with_header("Cancel Subscription", content, user_info)
 
 @app.route('/subscription/cancelled')
 @login_required
