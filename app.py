@@ -1019,17 +1019,66 @@ class UserAuthSystem:
             conn = get_db_connection()
             cursor = conn.cursor()
             
-            # Get requester info
-            cursor.execute('SELECT first_name, last_name, phone FROM users WHERE id = %s', (requester_id,))
+            print(f"DEBUG: Getting requester info for user {requester_id}")
+            
+            # Get requester info - Use encrypted columns and handle both old and new schema
+            cursor.execute('''
+                SELECT first_name_encrypted, last_name_encrypted, phone_encrypted,
+                    first_name, last_name, phone 
+                FROM users WHERE id = %s
+            ''', (requester_id,))
             requester = cursor.fetchone()
             
+            print(f"DEBUG: Getting requested user info for user {requested_id}")
+            
             # Get requested user info
-            cursor.execute('SELECT first_name, last_name, phone FROM users WHERE id = %s', (requested_id,))
+            cursor.execute('''
+                SELECT first_name_encrypted, last_name_encrypted, phone_encrypted,
+                    first_name, last_name, phone 
+                FROM users WHERE id = %s
+            ''', (requested_id,))
             requested = cursor.fetchone()
             
             if not requester or not requested:
+                print(f"DEBUG: User not found - requester: {requester is not None}, requested: {requested is not None}")
                 conn.close()
                 return {'success': False, 'error': 'User not found'}
+            
+            print(f"DEBUG: Processing user data")
+            
+            # Try to get names from encrypted columns first, fall back to unencrypted
+            try:
+                if requester['first_name_encrypted']:
+                    requester_first = self.encryption.decrypt_sensitive_data(requester['first_name_encrypted'])
+                    requester_last = self.encryption.decrypt_sensitive_data(requester['last_name_encrypted']) if requester['last_name_encrypted'] else ''
+                    requester_phone = self.encryption.decrypt_sensitive_data(requester['phone_encrypted']) if requester['phone_encrypted'] else ''
+                else:
+                    # Fallback to unencrypted columns
+                    requester_first = requester['first_name'] or ''
+                    requester_last = requester['last_name'] or ''
+                    requester_phone = requester['phone'] or ''
+                    
+                if requested['first_name_encrypted']:
+                    requested_first = self.encryption.decrypt_sensitive_data(requested['first_name_encrypted'])
+                    requested_last = self.encryption.decrypt_sensitive_data(requested['last_name_encrypted']) if requested['last_name_encrypted'] else ''
+                    requested_phone = self.encryption.decrypt_sensitive_data(requested['phone_encrypted']) if requested['phone_encrypted'] else ''
+                else:
+                    # Fallback to unencrypted columns
+                    requested_first = requested['first_name'] or ''
+                    requested_last = requested['last_name'] or ''
+                    requested_phone = requested['phone'] or ''
+                    
+            except Exception as decrypt_error:
+                print(f"DEBUG: Decryption error: {decrypt_error}")
+                # Use unencrypted columns as fallback
+                requester_first = requester['first_name'] or 'User'
+                requester_last = requester['last_name'] or ''
+                requester_phone = requester['phone'] or ''
+                requested_first = requested['first_name'] or 'User'
+                requested_last = requested['last_name'] or ''
+                requested_phone = requested['phone'] or ''
+            
+            print(f"DEBUG: Checking for existing requests")
             
             # Check if request already exists
             cursor.execute('SELECT id, status FROM contact_requests WHERE requester_id = %s AND requested_id = %s', (requester_id, requested_id))
@@ -1037,10 +1086,14 @@ class UserAuthSystem:
             
             if existing:
                 conn.close()
-                if existing[1] == 'pending':
+                if existing['status'] == 'pending':
                     return {'success': False, 'error': 'Request already pending'}
                 else:
-                    return {'success': False, 'error': f'Previous request was {existing[1]}'}
+                    return {'success': False, 'error': f'Previous request was {existing["status"]}'}
+            
+            print(f"DEBUG: Creating contact request")
+            print(f"DEBUG: Data - requester: '{requester_first} {requester_last}' ({requester_phone})")
+            print(f"DEBUG: Data - requested: '{requested_first} {requested_last}' ({requested_phone})")
             
             # Create contact request
             cursor.execute('''
@@ -1050,91 +1103,144 @@ class UserAuthSystem:
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
             ''', (
                 requester_id, requested_id,
-                f"{requester[0]} {requester[1]}",
-                f"{requested[0]} {requested[1]}",
-                requester[2], requested[2], message
+                f"{requester_first} {requester_last}".strip(),
+                f"{requested_first} {requested_last}".strip(),
+                requester_phone, requested_phone, message
             ))
+            
+            print(f"DEBUG: Insert completed, committing transaction")
             
             conn.commit()
             conn.close()
+            
+            print(f"DEBUG: Contact request created successfully")
             return {'success': True, 'message': 'Contact request sent successfully'}
             
         except Exception as e:
-            print(f"Error sending contact request: {e}")
-            return {'success': False, 'error': 'Failed to send request'}
-    
+            print(f"ERROR in send_contact_request: {e}")
+            import traceback
+            traceback.print_exc()
+            if 'conn' in locals():
+                try:
+                    conn.rollback()
+                    conn.close()
+                except:
+                    pass
+            return {'success': False, 'error': f'Failed to send request: {str(e)}'}
     def get_contact_requests(self, user_id: int, request_type: str = 'received') -> List[Dict[str, Any]]:
-            """Get contact requests for a user (received or sent)"""
-            try:
-                conn = get_db_connection()
-                cursor = conn.cursor()
-                
-                if request_type == 'received':
-                    cursor.execute('''
-                        SELECT id, requester_id, requester_name, requester_phone, message, status, created_at
-                        FROM contact_requests WHERE requested_id = %s ORDER BY created_at DESC
-                    ''', (user_id,))
-                else:  # sent
-                    cursor.execute('''
-                        SELECT id, requested_id, requested_name, requested_phone, message, status, created_at
-                        FROM contact_requests WHERE requester_id = %s ORDER BY created_at DESC
-                    ''', (user_id,))
-                
-                requests = cursor.fetchall()
-                conn.close()
-                
-                results = []
-                for req in requests:
-                    results.append({
-                        'id': req[0], 'other_user_id': req[1], 'other_user_name': req[2],
-                        'other_user_phone': req[3], 'message': req[4], 'status': req[5], 'created_at': req[6]
-                    })
-                return results
-                
-            except Exception as e:
-                print(f"Error getting contact requests: {e}")
-                return []
+        """Get contact requests for a user (received or sent)"""
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            print(f"DEBUG: Getting {request_type} contact requests for user {user_id}")
+            
+            if request_type == 'received':
+                cursor.execute('''
+                    SELECT id, requester_id, requester_name, requester_phone, message, status, created_at
+                    FROM contact_requests WHERE requested_id = %s ORDER BY created_at DESC
+                ''', (user_id,))
+            else:  # sent
+                cursor.execute('''
+                    SELECT id, requested_id, requested_name, requested_phone, message, status, created_at
+                    FROM contact_requests WHERE requester_id = %s ORDER BY created_at DESC
+                ''', (user_id,))
+            
+            requests = cursor.fetchall()
+            conn.close()
+            
+            print(f"DEBUG: Found {len(requests)} {request_type} requests")
+            
+            results = []
+            for req in requests:
+                try:
+                    request_dict = {
+                        'id': req['id'],
+                        'other_user_id': req['requester_id'] if request_type == 'received' else req['requested_id'],
+                        'other_user_name': req['requester_name'] if request_type == 'received' else req['requested_name'],
+                        'other_user_phone': req['requester_phone'] if request_type == 'received' else req['requested_phone'],
+                        'message': req['message'],
+                        'status': req['status'],
+                        'created_at': req['created_at']
+                    }
+                    results.append(request_dict)
+                    print(f"DEBUG: Added request - {request_dict['other_user_name']} ({request_dict['status']})")
+                except Exception as req_error:
+                    print(f"DEBUG: Error processing request {req['id']}: {req_error}")
+                    continue
+            
+            print(f"DEBUG: Returning {len(results)} processed requests")
+            return results
+            
+        except Exception as e:
+            print(f"ERROR in get_contact_requests: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
     
     def respond_to_contact_request(self, request_id: int, user_id: int, response: str) -> Dict[str, Any]:
-            """Respond to a contact request (accept/deny)"""
-            try:
-                conn = get_db_connection()
-                cursor = conn.cursor()
-                
-                # Verify this request belongs to the user
-                cursor.execute('SELECT requester_id, requested_id, status FROM contact_requests WHERE id = %s', (request_id,))
-                result = cursor.fetchone()
-                
-                if not result or result[1] != user_id:
-                    conn.close()
-                    return {'success': False, 'error': 'Request not found or unauthorized'}
-                
-                if result[2] != 'pending':
-                    conn.close()
-                    return {'success': False, 'error': 'Request already responded to'}
-                
-                requester_id = result[0]
-                requested_id = result[1]
-                
-                # Update request status
-                cursor.execute('''
-                    UPDATE contact_requests SET status = %s, responded_at = CURRENT_TIMESTAMP WHERE id = %s
-                ''', (response, request_id))
-                
-                conn.commit()
+        """Respond to a contact request (accept/deny)"""
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            print(f"DEBUG: Processing response '{response}' for request {request_id} by user {user_id}")
+            
+            # Verify this request belongs to the user
+            cursor.execute('SELECT requester_id, requested_id, status FROM contact_requests WHERE id = %s', (request_id,))
+            result = cursor.fetchone()
+            
+            print(f"DEBUG: Found request - {result}")
+            
+            if not result or result['requested_id'] != user_id:
                 conn.close()
-                
-                # If accepted, schedule follow-up email
-                if response == 'accepted':
+                print(f"DEBUG: Request not found or unauthorized - result: {result}, user_id: {user_id}")
+                return {'success': False, 'error': 'Request not found or unauthorized'}
+            
+            if result['status'] != 'pending':
+                conn.close()
+                print(f"DEBUG: Request already responded to - status: {result['status']}")
+                return {'success': False, 'error': 'Request already responded to'}
+            
+            requester_id = result['requester_id']
+            requested_id = result['requested_id']
+            
+            print(f"DEBUG: Updating request status to '{response}'")
+            
+            # Update request status
+            cursor.execute('''
+                UPDATE contact_requests SET status = %s, responded_at = CURRENT_TIMESTAMP WHERE id = %s
+            ''', (response, request_id))
+            
+            print(f"DEBUG: Updated {cursor.rowcount} rows")
+            
+            conn.commit()
+            conn.close()
+            
+            # If accepted, schedule follow-up email
+            if response == 'accepted':
+                try:
+                    print(f"DEBUG: Scheduling follow-up email for request {request_id}")
                     email_followup.schedule_followup_email(request_id, requester_id, requested_id)
-                    print(f"✓ Follow-up email scheduled for contact request {request_id}")
-                
-                return {'success': True, 'message': f'Request {response} successfully'}
-                
-            except Exception as e:
-                print(f"Error responding to contact request: {e}")
-                return {'success': False, 'error': 'Failed to respond to request'}
-
+                    print(f"DEBUG: Follow-up email scheduled successfully")
+                except Exception as email_error:
+                    print(f"WARNING: Failed to schedule follow-up email: {email_error}")
+                    # Don't let email scheduling errors break the main flow
+            
+            print(f"DEBUG: Contact request response completed successfully")
+            return {'success': True, 'message': f'Request {response} successfully'}
+            
+        except Exception as e:
+            print(f"ERROR in respond_to_contact_request: {e}")
+            import traceback
+            traceback.print_exc()
+            if 'conn' in locals():
+                try:
+                    conn.rollback()
+                    conn.close()
+                except:
+                    pass
+            return {'success': False, 'error': f'Failed to respond to request: {str(e)}'}
 
     def get_request_status(self, requester_id: int, requested_id: int) -> Optional[str]:
         """Get status of contact request between two users"""
@@ -2937,227 +3043,1012 @@ def render_template_with_header(title: str, content: str, user_info: Dict = None
     </html>
     '''
 
-def enhance_dashboard_with_verification():
-    """Add verification badges to the existing dashboard rendering"""
+
+def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
+    """
+    Unified dashboard function that includes:
+    - Interactive 3D cube visualization
+    - Verification status and badges
+    - Subscription status banners
+    - Enhanced compatibility scoring
+    - Proper date formatting
+    - Flash message handling
+    - Tracking analytics
+    """
+    user_id = session['user_id']
     
-    # Modify the render_matches_dashboard function to include verification badges
-    global render_matches_dashboard
-    original_render_matches_dashboard = render_matches_dashboard
+    # Get flash messages and convert to HTML
+    flash_html = ""
+    messages = get_flashed_messages(with_categories=True)
+    if messages:
+        flash_html = '<div class="flash-messages">'
+        for category, message in messages:
+            flash_html += f'<div class="flash-{category}">{message}</div>'
+        flash_html += '</div>'
     
-    def render_matches_dashboard_with_verification(user_info: Dict, matches: List[Dict]) -> str:
-        """Enhanced dashboard with verification badges"""
-        user_id = session['user_id']
+    # Get user's verification status
+    user_verification = verification_system.get_verification_status(user_id)
+    user_verified_badge = ''
+    if user_verification.get('is_verified'):
+        user_verified_badge = '''
+        <div style="text-align: center; margin: 1rem 0;">
+            <div style="display: inline-flex; align-items: center; gap: 0.5rem; background: #007bff; color: white; padding: 0.5rem 1rem; border-radius: 20px; font-weight: 600; font-size: 0.875rem;">
+                ✓ Your Profile is Verified
+            </div>
+        </div>
+        '''
+    
+    # Get subscription status
+    subscription_status = subscription_manager.get_user_subscription_status(user_id)
+    subscription_banner = ""
+    if subscription_status['is_subscribed']:
+        subscription_banner = '''
+        <div style="background: linear-gradient(135deg, #6b9b99, #5a8b89); color: white; padding: 1rem; border-radius: 12px; text-align: center; margin-bottom: 2rem;">
+            ✓ Premium Member - Unlimited matching available
+        </div>
+        '''
+    else:
+        remaining = subscription_status['free_matches_remaining']
+        subscription_banner = f'''
+        <div style="background: linear-gradient(135deg, #f4e8ee, #e8dce2); color: #2d2d2d; padding: 1rem; border-radius: 12px; text-align: center; margin-bottom: 2rem;">
+            Free Plan - {remaining} free match{"" if remaining == 1 else "es"} remaining this month
+            <div style="margin-top: 0.5rem;">
+                <a href="/subscription/plans" style="color: #6b9b99; font-weight: 600; text-decoration: none;">
+                    Upgrade to Premium for unlimited matching →
+                </a>
+            </div>
+        </div>
+        '''
+    
+    # Process matches with enhanced features
+    matches_html = ""
+    
+    for i, match in enumerate(matches, 1):
+        # Check if the matched user is verified
+        matched_user_verified = False
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute('SELECT is_verified FROM users WHERE id = %s', (match['matched_user_id'],))
+            result = cursor.fetchone()
+            if result:
+                matched_user_verified = bool(result['is_verified'])
+            conn.close()
+        except:
+            pass
         
-        # Get user's own verification status
-        user_verification = verification_system.get_verification_status(user_id)
-        user_verified_badge = ''
-        if user_verification.get('is_verified'):
-            user_verified_badge = '''
-            <div style="text-align: center; margin: 1rem 0;">
-                <div style="display: inline-flex; align-items: center; gap: 0.5rem; background: #007bff; color: white; padding: 0.5rem 1rem; border-radius: 20px; font-weight: 600; font-size: 0.875rem;">
-                    ✓ Your Profile is Verified
+        # Verification badge for matched user
+        verification_badge = ""
+        if matched_user_verified:
+            verification_badge = '''
+            <div style="display: inline-flex; align-items: center; gap: 0.25rem; background: #007bff; color: white; padding: 0.25rem 0.75rem; border-radius: 15px; font-size: 0.75rem; font-weight: 600; margin-left: 0.5rem;">
+                ✓ Verified
+            </div>
+            '''
+        
+        # Enhanced compatibility badges
+        compatibility_badges = ""
+        
+        # Verification trust badge
+        if matched_user_verified:
+            compatibility_badges += '<span class="badge badge-verified">Identity Verified</span>'
+        
+        # Neural network confidence badge
+        neural_score = match.get('neural_score', 0)
+        data_confidence = match.get('data_confidence', 0)
+        
+        if data_confidence >= 70:
+            compatibility_badges += f'<span class="badge badge-ai">AI Confidence: {data_confidence}%</span>'
+        
+        if neural_score >= 85:
+            compatibility_badges += '<span class="badge badge-neural">High Neural Match</span>'
+        
+        # Simulation insights
+        sim_satisfaction = match.get('simulation_satisfaction', 0)
+        if sim_satisfaction >= 80:
+            compatibility_badges += '<span class="badge badge-simulation">Simulation Verified</span>'
+        
+        # Traditional badges
+        if match['personality_score'] >= 85:
+            compatibility_badges += '<span class="badge badge-personality">Excellent Personality Match</span>'
+        if match.get('values_score', 75) >= 85:
+            compatibility_badges += '<span class="badge badge-values">Strong Values Alignment</span>'
+        
+        # Get initials for avatar
+        name_parts = match['matched_user_name'].split()
+        initials = name_parts[0][0] + (name_parts[-1][0] if len(name_parts) > 1 else '')
+        
+        # Enhanced contact button logic with verification boost messaging
+        request_status = user_auth.get_request_status(user_id, match['matched_user_id'])
+        if request_status == 'pending':
+            contact_button = '<span class="btn btn-pending">Request Pending</span>'
+        elif request_status == 'accepted':
+            contact_button = f'<a href="tel:{match["matched_user_phone"]}" class="btn btn-success">Call {match["matched_user_phone"]}</a>'
+        elif request_status == 'denied':
+            contact_button = '<span class="btn btn-declined">Request Declined</span>'
+        else:
+            verification_boost_text = ""
+            if matched_user_verified:
+                verification_boost_text = " (Verified users have 40% higher response rates!)"
+            
+            contact_button = f'''
+                <div>
+                    <a href="/send-contact-request/{match["matched_user_id"]}" 
+                       onclick="trackContactIntention({match['matched_user_id']}, {match['overall_score']})"
+                       class="btn btn-primary">
+                       Connect with {match['matched_user_name']}
+                    </a>
+                    {f'<div style="font-size: 0.75rem; color: #007bff; margin-top: 0.5rem; text-align: center;">{verification_boost_text}</div>' if verification_boost_text else ''}
+                </div>
+            '''
+        
+        # Enhanced scoring display for AI-powered matches
+        enhanced_scores_html = ""
+        if data_confidence >= 50:
+            enhanced_scores_html = f'''
+            <div class="ai-scores-grid">
+                <div class="ai-score-card">
+                    <div class="score-label">Neural Score</div>
+                    <div class="score-value">{neural_score}</div>
+                    <div class="score-bar">
+                        <div class="score-fill" style="width: {neural_score}%;"></div>
+                    </div>
+                </div>
+                <div class="ai-score-card">
+                    <div class="score-label">Simulation</div>
+                    <div class="score-value">{sim_satisfaction}</div>
+                    <div class="score-bar">
+                        <div class="score-fill" style="width: {sim_satisfaction}%;"></div>
+                    </div>
+                </div>
+                <div class="ai-score-card">
+                    <div class="score-label">Confidence</div>
+                    <div class="score-value">{data_confidence}</div>
+                    <div class="score-bar">
+                        <div class="score-fill" style="width: {data_confidence}%;"></div>
+                    </div>
                 </div>
             </div>
             '''
         
-        # Get flash messages and convert to HTML
-        flash_html = ""
-        messages = get_flashed_messages(with_categories=True)
-        if messages:
-            flash_html = '<div class="flash-messages">'
-            for category, message in messages:
-                flash_html += f'<div class="flash-{category}">{message}</div>'
-            flash_html += '</div>'
-        
-        # Enhanced matches with verification status
-        matches_html = ""
-        
-        for i, match in enumerate(matches, 1):
-            # Check if the matched user is verified
-            matched_user_verified = False
-            try:
-                conn = get_db_connection()
-                cursor = conn.cursor()
-                cursor.execute('SELECT is_verified FROM users WHERE id = %s', (match['matched_user_id'],))
-                result = cursor.fetchone()
-                if result:
-                    matched_user_verified = bool(result['is_verified'])
-                conn.close()
-            except:
-                pass
+        match_html = f'''
+        <div class="match-card" data-match-id="{match['matched_user_id']}" onmouseenter="trackMatchView({match['matched_user_id']})">
+            <div class="match-number">{i}</div>
             
-            # Verification badge for matched user
-            verification_badge = ""
-            if matched_user_verified:
-                verification_badge = '''
-                <div style="display: inline-flex; align-items: center; gap: 0.25rem; background: #007bff; color: white; padding: 0.25rem 0.75rem; border-radius: 15px; font-size: 0.75rem; font-weight: 600; margin-left: 0.5rem;">
-                    ✓ Verified
-                </div>
-                '''
-            
-            # Enhanced compatibility badges
-            compatibility_badges = ""
-            
-            # Verification trust badge
-            if matched_user_verified:
-                compatibility_badges += '<span class="badge badge-verified">Identity Verified</span>'
-            
-            # Neural network confidence badge
-            neural_score = match.get('neural_score', 0)
-            data_confidence = match.get('data_confidence', 0)
-            
-            if data_confidence >= 70:
-                compatibility_badges += f'<span class="badge badge-ai">AI Confidence: {data_confidence}%</span>'
-            
-            if neural_score >= 85:
-                compatibility_badges += '<span class="badge badge-neural">High Neural Match</span>'
-            
-            # Traditional badges
-            if match['personality_score'] >= 85:
-                compatibility_badges += '<span class="badge badge-personality">Excellent Personality Match</span>'
-            if match['values_score'] >= 85:
-                compatibility_badges += '<span class="badge badge-values">Strong Values Alignment</span>'
-            
-            # Get initials for avatar
-            name_parts = match['matched_user_name'].split()
-            initials = name_parts[0][0] + (name_parts[-1][0] if len(name_parts) > 1 else '')
-            
-            # Enhanced contact button logic with verification boost messaging
-            request_status = user_auth.get_request_status(user_id, match['matched_user_id'])
-            if request_status == 'pending':
-                contact_button = '<span class="btn btn-pending">Request Pending</span>'
-            elif request_status == 'accepted':
-                contact_button = f'<a href="tel:{match["matched_user_phone"]}" class="btn btn-success">Call {match["matched_user_phone"]}</a>'
-            elif request_status == 'denied':
-                contact_button = '<span class="btn btn-declined">Request Declined</span>'
-            else:
-                verification_boost_text = ""
-                if matched_user_verified:
-                    verification_boost_text = " (Verified users have 40% higher response rates!)"
-                
-                contact_button = f'''
-                    <div>
-                        <a href="/send-contact-request/{match["matched_user_id"]}" 
-                           onclick="trackContactIntention({match['matched_user_id']}, {match['overall_score']})"
-                           class="btn btn-primary">
-                           Connect with {match['matched_user_name']}
-                        </a>
-                        {f'<div style="font-size: 0.75rem; color: #007bff; margin-top: 0.5rem; text-align: center;">{verification_boost_text}</div>' if verification_boost_text else ''}
+            <div class="match-header">
+                <div class="avatar">{initials}</div>
+                <div class="match-info">
+                    <div class="match-name">
+                        {match['matched_user_name']}
+                        {verification_badge}
                     </div>
-                '''
-            
-            match_html = f'''
-            <div class="match-card" data-match-id="{match['matched_user_id']}" onmouseenter="trackMatchView({match['matched_user_id']})">
-                <div class="match-number">{i}</div>
-                
-                <div class="match-header">
-                    <div class="avatar">{initials}</div>
-                    <div class="match-info">
-                        <div class="match-name">
-                            {match['matched_user_name']}
-                            {verification_badge}
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="compatibility-score">
-                    <div class="score-circle">
-                        <div class="score-number">{match['overall_score']}%</div>
-                        <div class="score-text">Overall Compatibility</div>
-                    </div>
-                </div>
-                
-                <div class="compatibility-badges">
-                    {compatibility_badges}
-                </div>
-                
-                <div class="detailed-scores">
-                    <div class="score-item">
-                        <div class="score-category">Personality</div>
-                        <div class="score-value-small">{match['personality_score']}</div>
-                        <div class="score-bar-small">
-                            <div class="score-fill-small" style="width: {match['personality_score']}%;"></div>
-                        </div>
-                    </div>
-                    <div class="score-item">
-                        <div class="score-category">Values</div>
-                        <div class="score-value-small">{match.get('values_score', 75)}</div>
-                        <div class="score-bar-small">
-                            <div class="score-fill-small" style="width: {match.get('values_score', 75)}%;"></div>
-                        </div>
-                    </div>
-                    <div class="score-item">
-                        <div class="score-category">Lifestyle</div>
-                        <div class="score-value-small">{match.get('lifestyle_score', 75)}</div>
-                        <div class="score-bar-small">
-                            <div class="score-fill-small" style="width: {match.get('lifestyle_score', 75)}%;"></div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="compatibility-analysis">
-                    {match['compatibility_analysis']}
-                </div>
-                
-                <div class="match-actions">
-                    {contact_button}
                 </div>
             </div>
-            '''
-            matches_html += match_html
-        
-        matches_count_section = f'''
-        <div class="canvas-container">
-            <canvas id="cube-canvas"></canvas>
-        </div>
-        
-        <div class="matches-header">
-            <h1 class="matches-title">Your Matches</h1>
-            <p class="matches-subtitle">Your agent found {len(matches)} perfect connections</p>
-            {user_verified_badge}
-            <div class="profile-updated">Profile updated: {user_info['profile_date'][:10] if user_info['profile_date'] else 'Recently'}</div>
-        </div>
-        '''
-        
-        # Add verification badge styling
-        additional_styles = '''
-        <style>
-            .badge-verified {
-                background: #007bff;
-                color: white;
-                border: 1px solid #0056b3;
-            }
             
-            .badge-verified::before {
-                content: '✓ ';
-                font-weight: bold;
-            }
-        </style>
-        '''
-        
-        # Get the original HTML and inject verification enhancements
-        original_html = original_render_matches_dashboard(user_info, matches)
-        
-        # Replace the content with enhanced version
-        enhanced_html = original_html.replace(
-            '<div class="dashboard-container">',
-            f'{additional_styles}<div class="dashboard-container">'
-        ).replace(
-            matches_count_section + matches_html,
-            matches_count_section + matches_html
-        )
-        
-        return f'''
-        {additional_styles}
-        <div class="dashboard-container">
-            {flash_html}
-            {matches_count_section}
-            {matches_html}
-            <!-- Enhanced Three.js script remains the same -->
+            <div class="compatibility-score">
+                <div class="score-circle">
+                    <div class="score-number">{match['overall_score']}%</div>
+                    <div class="score-text">Overall Compatibility</div>
+                </div>
+            </div>
+            
+            {enhanced_scores_html}
+            
+            <div class="compatibility-badges">
+                {compatibility_badges}
+            </div>
+            
+            <div class="detailed-scores">
+                <div class="score-item">
+                    <div class="score-category">Personality</div>
+                    <div class="score-value-small">{match['personality_score']}</div>
+                    <div class="score-bar-small">
+                        <div class="score-fill-small" style="width: {match['personality_score']}%;"></div>
+                    </div>
+                </div>
+                <div class="score-item">
+                    <div class="score-category">Values</div>
+                    <div class="score-value-small">{match.get('values_score', 75)}</div>
+                    <div class="score-bar-small">
+                        <div class="score-fill-small" style="width: {match.get('values_score', 75)}%;"></div>
+                    </div>
+                </div>
+                <div class="score-item">
+                    <div class="score-category">Lifestyle</div>
+                    <div class="score-value-small">{match.get('lifestyle_score', 75)}</div>
+                    <div class="score-bar-small">
+                        <div class="score-fill-small" style="width: {match.get('lifestyle_score', 75)}%;"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="compatibility-analysis">
+                {match['compatibility_analysis']}
+            </div>
+            
+            <div class="match-actions">
+                {contact_button}
+            </div>
         </div>
         '''
+        matches_html += match_html
     
-    return render_matches_dashboard_with_verification
+    # Safe date formatting
+    def safe_format_date(date_obj):
+        """Safely format date object to string"""
+        if not date_obj:
+            return 'Recently'
+        
+        if isinstance(date_obj, str):
+            # Already a string, try to extract date part
+            return date_obj[:10] if len(date_obj) >= 10 else date_obj
+        
+        if hasattr(date_obj, 'strftime'):
+            # It's a datetime object
+            return date_obj.strftime('%Y-%m-%d')
+        
+        return 'Recently'
+    
+    profile_date = safe_format_date(user_info.get('profile_date'))
+    
+    matches_count_section = f'''
+    <div class="canvas-container">
+        <canvas id="cube-canvas"></canvas>
+    </div>
+    
+    <div class="matches-header">
+        <h1 class="matches-title">Your Matches</h1>
+        <p class="matches-subtitle">Your agent found {len(matches)} perfect connections</p>
+        {user_verified_badge}
+        <div class="profile-updated">Profile updated: {profile_date}</div>
+    </div>
+    '''
+    
+    return f'''
+    <style>
+        @import url("https://fonts.googleapis.com/css2?family=Clash+Display:wght@200..700&display=swap");
+        @import url("https://fonts.googleapis.com/css2?family=Satoshi:wght@300..900&display=swap");
+
+        body {{
+            background-color: #f4e8ee;
+            color: #2d2d2d;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+        }}
+        
+        .dashboard-container {{
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 2rem;
+        }}
+        
+        .canvas-container {{
+            width: 200px;
+            height: 200px;
+            margin: 3rem auto 2rem auto;
+            z-index: 2;
+        }}
+        
+        #cube-canvas {{
+            width: 100%;
+            height: 100%;
+            cursor: grab;
+        }}
+        
+        #cube-canvas:active {{
+            cursor: grabbing;
+        }}
+        
+        .matches-header {{
+            text-align: center;
+            margin-bottom: 3rem;
+            padding: 2.5rem 2rem;
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }}
+        
+        .matches-title {{
+            font-family: "Clash Display", sans-serif;
+            font-size: 2.5rem;
+            font-weight: 500;
+            margin: 0 0 1rem 0;
+            color: #2d2d2d;
+            letter-spacing: -0.02em;
+            background: linear-gradient(135deg, #2d2d2d, #6b9b99);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }}
+        
+        .matches-subtitle {{
+            font-family: "Satoshi", sans-serif;
+            font-size: 1.125rem;
+            line-height: 1.6;
+            color: #6b9b99;
+            margin: 0 0 1rem 0;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }}
+        
+        .profile-updated {{
+            font-family: "Satoshi", sans-serif;
+            font-size: 0.875rem;
+            color: rgba(107, 155, 153, 0.8);
+            font-weight: 500;
+        }}
+        
+        .match-card {{
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(20px);
+            border-radius: 24px;
+            padding: 2.5rem;
+            margin: 2rem 0;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            position: relative;
+            transition: all 0.3s ease;
+        }}
+        
+        .match-card:hover {{
+            transform: translateY(-4px);
+            border-color: rgba(107, 155, 153, 0.3);
+        }}
+        
+        .match-number {{
+            position: absolute;
+            top: -1rem;
+            left: 2rem;
+            background: linear-gradient(135deg, #6b9b99, #ff9500);
+            color: white;
+            border-radius: 50%;
+            width: 48px;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: "Satoshi", sans-serif;
+            font-weight: 700;
+            font-size: 1.25rem;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }}
+        
+        .match-header {{
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+            margin: 1rem 0 2rem 1rem;
+        }}
+        
+        .avatar {{
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #6b9b99, #ff9500);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-family: "Clash Display", sans-serif;
+            font-size: 2rem;
+            font-weight: 700;
+        }}
+        
+        .match-info {{
+            flex: 1;
+        }}
+        
+        .match-name {{
+            font-family: "Clash Display", sans-serif;
+            font-size: 1.75rem;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+            color: #2d2d2d;
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }}
+        
+        .compatibility-score {{
+            text-align: center;
+            margin: 2rem 0;
+        }}
+        
+        .score-circle {{
+            display: inline-block;
+            padding: 2rem;
+            background: linear-gradient(135deg, #6b9b99, #ff9500);
+            border-radius: 20px;
+            color: white;
+            min-width: 200px;
+            box-shadow: 0 8px 24px rgba(107, 155, 153, 0.3);
+        }}
+        
+        .score-number {{
+            font-family: "Clash Display", sans-serif;
+            font-size: 3rem;
+            font-weight: 700;
+            line-height: 1;
+            margin-bottom: 0.5rem;
+        }}
+        
+        .score-text {{
+            font-family: "Satoshi", sans-serif;
+            font-size: 1rem;
+            font-weight: 500;
+            opacity: 0.9;
+        }}
+        
+        .ai-scores-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1.5rem;
+            margin: 2rem 0;
+            padding: 2rem;
+            background: rgba(45, 45, 45, 0.9);
+            border-radius: 16px;
+        }}
+        
+        .ai-score-card {{
+            text-align: center;
+            color: white;
+        }}
+        
+        .score-label {{
+            font-family: "Satoshi", sans-serif;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 0.75rem;
+            opacity: 0.8;
+            font-weight: 600;
+        }}
+        
+        .score-value {{
+            font-family: "Clash Display", sans-serif;
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 0.75rem;
+        }}
+        
+        .score-bar {{
+            width: 100%;
+            height: 4px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 2px;
+            overflow: hidden;
+        }}
+        
+        .score-fill {{
+            height: 100%;
+            background: linear-gradient(90deg, #6b9b99, #ff9500);
+            border-radius: 2px;
+            transition: width 1s ease;
+        }}
+        
+        .compatibility-badges {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            margin: 2rem 0;
+            justify-content: center;
+        }}
+        
+        .badge {{
+            font-family: "Satoshi", sans-serif;
+            padding: 0.5rem 1rem;
+            border-radius: 50px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }}
+        
+        .badge-verified {{
+            background: #007bff;
+            color: white;
+            border: 1px solid #0056b3;
+        }}
+        
+        .badge-verified::before {{
+            content: '✓ ';
+            font-weight: bold;
+        }}
+        
+        .badge-ai {{
+            background: rgba(255, 149, 0, 0.8);
+            color: white;
+        }}
+        
+        .badge-neural {{
+            background: linear-gradient(135deg, #6b9b99, #ff9500);
+            color: white;
+        }}
+        
+        .badge-simulation {{
+            background: rgba(107, 155, 153, 0.8);
+            color: white;
+        }}
+        
+        .badge-personality {{
+            background: rgba(255, 255, 255, 0.8);
+            color: #2d2d2d;
+        }}
+        
+        .badge-values {{
+            background: rgba(255, 255, 255, 0.8);
+            color: #2d2d2d;
+        }}
+        
+        .detailed-scores {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin: 2rem 0;
+            padding: 2rem;
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+        }}
+        
+        .score-item {{
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }}
+        
+        .score-category {{
+            font-family: "Satoshi", sans-serif;
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: #2d2d2d;
+            min-width: 80px;
+        }}
+        
+        .score-value-small {{
+            font-family: "Clash Display", sans-serif;
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #2d2d2d;
+            min-width: 40px;
+        }}
+        
+        .score-bar-small {{
+            flex: 1;
+            height: 6px;
+            background: rgba(107, 155, 153, 0.2);
+            border-radius: 3px;
+            overflow: hidden;
+        }}
+        
+        .score-fill-small {{
+            height: 100%;
+            background: linear-gradient(90deg, #6b9b99, #ff9500);
+            border-radius: 3px;
+            transition: width 1s ease;
+        }}
+        
+        .compatibility-analysis {{
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(10px);
+            padding: 2rem;
+            border-radius: 16px;
+            margin: 2rem 0;
+            border-left: 4px solid #6b9b99;
+            font-family: "Satoshi", sans-serif;
+            font-size: 1rem;
+            line-height: 1.6;
+            color: #2d2d2d;
+        }}
+        
+        .match-actions {{
+            text-align: center;
+            margin-top: 2rem;
+            padding-top: 2rem;
+            border-top: 1px solid rgba(107, 155, 153, 0.2);
+        }}
+        
+        .btn {{
+            font-family: "Satoshi", sans-serif;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 1rem 2rem;
+            border-radius: 50px;
+            font-weight: 600;
+            font-size: 0.875rem;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            border: none;
+            cursor: pointer;
+            backdrop-filter: blur(10px);
+        }}
+        
+        .btn-primary {{
+            background: linear-gradient(135deg, #6b9b99, #ff9500);
+            color: white;
+            box-shadow: 0 4px 16px rgba(107, 155, 153, 0.3);
+        }}
+        
+        .btn-primary:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(107, 155, 153, 0.4);
+        }}
+        
+        .btn-pending {{
+            background: rgba(255, 149, 0, 0.8);
+            color: white;
+            border: 1px solid rgba(255, 149, 0, 0.5);
+        }}
+        
+        .btn-success {{
+            background: rgba(107, 155, 153, 0.8);
+            color: white;
+            text-decoration: none;
+            border: 1px solid rgba(107, 155, 153, 0.5);
+        }}
+        
+        .btn-success:hover {{
+            transform: translateY(-2px);
+            background: linear-gradient(135deg, #6b9b99, #ff9500);
+        }}
+        
+        .btn-declined {{
+            background: rgba(255, 255, 255, 0.5);
+            color: rgba(45, 45, 45, 0.6);
+            border: 1px solid rgba(45, 45, 45, 0.2);
+        }}
+        
+        /* Flash message styling */
+        .flash-messages {{
+            margin-bottom: 2rem;
+        }}
+        
+        .flash-error {{
+            background: rgba(255, 149, 0, 0.9);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 149, 0, 0.5);
+            color: white;
+            padding: 1rem 1.5rem;
+            border-radius: 12px;
+            margin-bottom: 1rem;
+            font-family: "Satoshi", sans-serif;
+            font-size: 0.875rem;
+        }}
+        
+        .flash-success {{
+            background: rgba(107, 155, 153, 0.9);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(107, 155, 153, 0.5);
+            color: white;
+            padding: 1rem 1.5rem;
+            border-radius: 12px;
+            margin-bottom: 1rem;
+            font-family: "Satoshi", sans-serif;
+            font-size: 0.875rem;
+        }}
+        
+        /* Responsive design */
+        @media (max-width: 768px) {{
+            .canvas-container {{
+                width: 150px;
+                height: 150px;
+            }}
+            
+            .matches-header {{
+                padding: 1.5rem 1rem;
+            }}
+            
+            .match-card {{
+                padding: 1.5rem;
+            }}
+            
+            .match-name {{
+                font-size: 1.5rem;
+            }}
+            
+            .ai-scores-grid {{
+                grid-template-columns: 1fr;
+                padding: 1rem;
+            }}
+            
+            .detailed-scores {{
+                grid-template-columns: 1fr;
+                padding: 1rem;
+            }}
+        }}
+    </style>
+    
+    <!-- Include required libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
+    <div class="dashboard-container">
+        {flash_html}
+        {subscription_banner}
+        {matches_count_section}
+        {matches_html}
+        
+        <script>
+        let viewStartTimes = {{}};
+        
+        function trackMatchView(matchUserId) {{
+            if (!viewStartTimes[matchUserId]) {{
+                viewStartTimes[matchUserId] = Date.now();
+                
+                setTimeout(() => {{
+                    if (viewStartTimes[matchUserId]) {{
+                        const timeSpent = (Date.now() - viewStartTimes[matchUserId]) / 1000;
+                        fetch('/api/track-interaction', {{
+                            method: 'POST',
+                            headers: {{'Content-Type': 'application/json'}},
+                            body: JSON.stringify({{
+                                interaction_type: 'profile_view',
+                                target_user_id: matchUserId,
+                                time_spent: timeSpent
+                            }})
+                        }});
+                    }}
+                }}, 3000);
+            }}
+        }}
+        
+        function trackContactIntention(matchUserId, compatibilityScore) {{
+            fetch('/api/track-interaction', {{
+                method: 'POST',
+                headers: {{'Content-Type': 'application/json'}},
+                body: JSON.stringify({{
+                    interaction_type: 'contact_intention',
+                    target_user_id: matchUserId,
+                    compatibility_score: compatibilityScore
+                }})
+            }});
+        }}
+        
+        // Three.js scene setup
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
+        camera.position.z = 3;
+
+        const canvas = document.querySelector("#cube-canvas");
+        const renderer = new THREE.WebGLRenderer({{
+            canvas: canvas,
+            antialias: true,
+            alpha: true
+        }});
+        renderer.setSize(200, 200);
+        renderer.setPixelRatio(window.devicePixelRatio);
+
+        // Create cube with teal wireframe
+        const cubeGeometry = new THREE.BoxGeometry(1.5, 1.5, 1.5);
+        const cubeMaterial = new THREE.MeshBasicMaterial({{ 
+            color: 0x000000, 
+            transparent: true, 
+            opacity: 0 
+        }});
+        const cube = new THREE.Mesh(cubeGeometry, cubeMaterial);
+
+        // Add wireframe edges
+        const edges = new THREE.EdgesGeometry(cubeGeometry);
+        const lineMaterial = new THREE.LineBasicMaterial({{ 
+            color: 0x6b9b99,
+            linewidth: 2
+        }});
+        const wireframe = new THREE.LineSegments(edges, lineMaterial);
+        cube.add(wireframe);
+
+        // Create user's orange sphere (centered)
+        const userSphereGeometry = new THREE.SphereGeometry(0.15, 16, 16);
+        const userSphereMaterial = new THREE.MeshPhongMaterial({{ 
+            color: 0xff9500,
+            shininess: 30
+        }});
+        const userSphere = new THREE.Mesh(userSphereGeometry, userSphereMaterial);
+        userSphere.position.set(0, 0, 0);
+        cube.add(userSphere);
+
+        // Create teal match spheres - positioned around the cube
+        const numMatches = {len(matches)};
+        const matchSpheres = [];
+        const matchSphereGeometry = new THREE.SphereGeometry(0.12, 16, 16);
+        const matchSphereMaterial = new THREE.MeshPhongMaterial({{ 
+            color: 0x6b9b99,
+            shininess: 30
+        }});
+
+        // Position match spheres in a distributed pattern within the cube
+        const positions = [
+            {{x: 0.4, y: 0.4, z: 0.4}},
+            {{x: -0.4, y: 0.4, z: 0.4}},
+            {{x: 0.4, y: -0.4, z: 0.4}},
+            {{x: -0.4, y: -0.4, z: 0.4}},
+            {{x: 0.4, y: 0.4, z: -0.4}},
+            {{x: -0.4, y: 0.4, z: -0.4}},
+            {{x: 0.4, y: -0.4, z: -0.4}},
+            {{x: -0.4, y: -0.4, z: -0.4}},
+            {{x: 0, y: 0.5, z: 0}},
+            {{x: 0, y: -0.5, z: 0}},
+            {{x: 0.5, y: 0, z: 0}},
+            {{x: -0.5, y: 0, z: 0}},
+            {{x: 0, y: 0, z: 0.5}},
+            {{x: 0, y: 0, z: -0.5}},
+            {{x: 0.3, y: 0.3, z: 0}},
+            {{x: -0.3, y: -0.3, z: 0}},
+        ];
+
+        for (let i = 0; i < Math.min(numMatches, positions.length); i++) {{
+            const matchSphere = new THREE.Mesh(matchSphereGeometry, matchSphereMaterial.clone());
+            const pos = positions[i];
+            matchSphere.position.set(pos.x, pos.y, pos.z);
+            matchSphere.userData = {{ originalPosition: {{ ...pos }} }};
+            matchSpheres.push(matchSphere);
+            cube.add(matchSphere);
+        }}
+
+        scene.add(cube);
+
+        // Lighting for the spheres
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+        
+        const pointLight = new THREE.PointLight(0xffffff, 0.8);
+        pointLight.position.set(2, 2, 2);
+        scene.add(pointLight);
+
+        // Mouse interaction variables
+        let isDragging = false;
+        let previousMousePosition = {{ x: 0, y: 0 }};
+        let isClicked = false;
+
+        // Auto rotation and floating animation
+        function autoRotate() {{
+            if (!isDragging) {{
+                cube.rotation.x += 0.003;
+                cube.rotation.y += 0.005;
+                
+                // Gentle floating for spheres
+                const time = Date.now() * 0.002;
+                
+                // User sphere gentle movement
+                userSphere.position.y = Math.sin(time) * 0.05;
+                
+                // Match spheres subtle floating
+                matchSpheres.forEach((sphere, index) => {{
+                    const offset = index * 0.3;
+                    const originalPos = sphere.userData.originalPosition;
+                    sphere.position.x = originalPos.x + Math.sin(time + offset) * 0.03;
+                    sphere.position.y = originalPos.y + Math.cos(time + offset * 1.2) * 0.03;
+                    sphere.position.z = originalPos.z + Math.sin(time + offset * 0.8) * 0.03;
+                }});
+            }}
+        }}
+
+        // Mouse event handlers
+        function onMouseDown(event) {{
+            isDragging = true;
+            canvas.style.cursor = 'grabbing';
+            
+            const rect = canvas.getBoundingClientRect();
+            previousMousePosition = {{
+                x: event.clientX - rect.left,
+                y: event.clientY - rect.top
+            }};
+        }}
+
+        function onMouseMove(event) {{
+            if (!isDragging) return;
+
+            const rect = canvas.getBoundingClientRect();
+            const currentMousePosition = {{
+                x: event.clientX - rect.left,
+                y: event.clientY - rect.top
+            }};
+
+            const deltaMove = {{
+                x: currentMousePosition.x - previousMousePosition.x,
+                y: currentMousePosition.y - previousMousePosition.y
+            }};
+
+            const deltaRotationQuaternion = new THREE.Quaternion()
+                .setFromEuler(new THREE.Euler(
+                    toRadians(deltaMove.y * 0.5),
+                    toRadians(deltaMove.x * 0.5),
+                    0,
+                    'XYZ'
+                ));
+
+            cube.quaternion.multiplyQuaternions(deltaRotationQuaternion, cube.quaternion);
+            previousMousePosition = currentMousePosition;
+        }}
+
+        function onMouseUp() {{
+            isDragging = false;
+            canvas.style.cursor = 'grab';
+        }}
+
+        function onClick(event) {{
+            if (!isClicked) {{
+                isClicked = true;
+                
+                // Scale animation on click
+                const originalScale = {{ x: 1, y: 1, z: 1 }};
+                const targetScale = {{ x: 0.9, y: 0.9, z: 0.9 }};
+                
+                animateScale(cube.scale, targetScale, 100, () => {{
+                    animateScale(cube.scale, {{ x: 1.05, y: 1.05, z: 1.05 }}, 100, () => {{
+                        animateScale(cube.scale, originalScale, 100, () => {{
+                            // Scroll to first match instead of redirecting
+                            const firstMatch = document.querySelector('.match-card');
+                            if (firstMatch) {{
+                                firstMatch.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
+                            }}
+                            isClicked = false;
+                        }});
+                    }});
+                }});
+            }}
+        }}
+
+        // Simple scale animation function
+        function animateScale(object, target, duration, callback) {{
+            const start = {{ x: object.x, y: object.y, z: object.z }};
+            const startTime = Date.now();
+            
+            function update() {{
+                const elapsed = Date.now() - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                
+                object.x = start.x + (target.x - start.x) * progress;
+                object.y = start.y + (target.y - start.y) * progress;
+                object.z = start.z + (target.z - start.z) * progress;
+                
+                if (progress < 1) {{
+                    requestAnimationFrame(update);
+                }} else if (callback) {{
+                    callback();
+                }}
+            }}
+            
+            update();
+        }}
+
+        function toRadians(angle) {{
+            return angle * (Math.PI / 180);
+        }}
+
+        // Add event listeners
+        canvas.addEventListener('mousedown', onMouseDown);
+        canvas.addEventListener('mousemove', onMouseMove);
+        canvas.addEventListener('mouseup', onMouseUp);
+        canvas.addEventListener('mouseleave', onMouseUp);
+        canvas.addEventListener('click', onClick);
+
+        // Animation loop
+        function animate() {{
+            requestAnimationFrame(animate);
+            autoRotate();
+            renderer.render(scene, camera);
+        }}
+
+        animate();
+
+        // Handle window resize
+        window.addEventListener('resize', () => {{
+            const containerSize = window.innerWidth < 768 ? 150 : 200;
+            renderer.setSize(containerSize, containerSize);
+            
+            const container = document.querySelector('.canvas-container');
+            container.style.width = containerSize + 'px';
+            container.style.height = containerSize + 'px';
+        }});
+        </script>
+    </div>
+    '''
 
 def enhance_matching_with_verification():
     """Add verification boost to existing matching system"""
@@ -6139,919 +7030,6 @@ def dashboard():
     
     return render_template_with_header("Dashboard", content, user_info)
 
-def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
-    """Render dashboard with interactive cube containing user's orange sphere + teal match spheres"""
-    user_id = session['user_id']
-    
-    # Get flash messages and convert to HTML
-    flash_html = ""
-    messages = get_flashed_messages(with_categories=True)
-    if messages:
-        flash_html = '<div class="flash-messages">'
-        for category, message in messages:
-            flash_html += f'<div class="flash-{category}">{message}</div>'
-        flash_html += '</div>'
-    
-    matches_html = ""
-    
-    for i, match in enumerate(matches, 1):
-        # Enhanced compatibility badges
-        compatibility_badges = ""
-        
-        # Neural network confidence badge
-        neural_score = match.get('neural_score', 0)
-        data_confidence = match.get('data_confidence', 0)
-        
-        if data_confidence >= 70:
-            compatibility_badges += f'<span class="badge badge-ai">Compatibility: {data_confidence}%</span>'
-        
-        if neural_score >= 85:
-            compatibility_badges += '<span class="badge badge-neural">High Match</span>'
-        
-        # Simulation insights
-        sim_satisfaction = match.get('simulation_satisfaction', 0)
-        if sim_satisfaction >= 80:
-            compatibility_badges += '<span class="badge badge-simulation">Simulation Verified</span>'
-        
-        # Traditional badges
-        if match['personality_score'] >= 85:
-            compatibility_badges += '<span class="badge badge-personality">Excellent Personality Match</span>'
-        if match['values_score'] >= 85:
-            compatibility_badges += '<span class="badge badge-values">Strong Values Alignment</span>'
-        
-        # Get initials for avatar
-        name_parts = match['matched_user_name'].split()
-        initials = name_parts[0][0] + (name_parts[-1][0] if len(name_parts) > 1 else '')
-        
-        # Enhanced contact button logic
-        request_status = user_auth.get_request_status(user_id, match['matched_user_id'])
-        if request_status == 'pending':
-            contact_button = '<span class="btn btn-pending">Request Pending</span>'
-        elif request_status == 'accepted':
-            contact_button = f'<a href="tel:{match["matched_user_phone"]}" class="btn btn-success">Call {match["matched_user_phone"]}</a>'
-        elif request_status == 'denied':
-            contact_button = '<span class="btn btn-declined">Request Declined</span>'
-        else:
-            contact_button = f'''
-                <a href="/send-contact-request/{match["matched_user_id"]}" 
-                   onclick="trackContactIntention({match['matched_user_id']}, {match['overall_score']})"
-                   class="btn btn-primary">
-                   Connect with {match['matched_user_name']}
-                </a>
-            '''
-        
-        # Enhanced scoring display
-        enhanced_scores_html = ""
-        if data_confidence >= 50:
-            enhanced_scores_html = f'''
-            <div class="ai-scores-grid">
-                <div class="ai-score-card">
-                    <div class="score-label">Score</div>
-                    <div class="score-value">{neural_score}</div>
-                    <div class="score-bar">
-                        <div class="score-fill" style="width: {neural_score}%;"></div>
-                    </div>
-                </div>
-                <div class="ai-score-card">
-                    <div class="score-label">Simulation</div>
-                    <div class="score-value">{sim_satisfaction}</div>
-                    <div class="score-bar">
-                        <div class="score-fill" style="width: {sim_satisfaction}%;"></div>
-                    </div>
-                </div>
-                <div class="ai-score-card">
-                    <div class="score-label">Confidence</div>
-                    <div class="score-value">{data_confidence}</div>
-                    <div class="score-bar">
-                        <div class="score-fill" style="width: {data_confidence}%;"></div>
-                    </div>
-                </div>
-            </div>
-            '''
-        
-        match_html = f'''
-        <div class="match-card" data-match-id="{match['matched_user_id']}" onmouseenter="trackMatchView({match['matched_user_id']})">
-            <div class="match-number">{i}</div>
-            
-            <div class="match-header">
-                <div class="avatar">{initials}</div>
-                <div class="match-info">
-                    <div class="match-name">{match['matched_user_name']}</div>
-                </div>
-            </div>
-            
-            <div class="compatibility-score">
-                <div class="score-circle">
-                    <div class="score-number">{match['overall_score']}%</div>
-                    <div class="score-text">Overall Compatibility</div>
-                </div>
-            </div>
-            
-            {enhanced_scores_html}
-            
-            <div class="compatibility-badges">
-                {compatibility_badges}
-            </div>
-            
-            <div class="detailed-scores">
-                <div class="score-item">
-                    <div class="score-category">Personality</div>
-                    <div class="score-value-small">{match['personality_score']}</div>
-                    <div class="score-bar-small">
-                        <div class="score-fill-small" style="width: {match['personality_score']}%;"></div>
-                    </div>
-                </div>
-                <div class="score-item">
-                    <div class="score-category">Values</div>
-                    <div class="score-value-small">{match.get('values_score', 75)}</div>
-                    <div class="score-bar-small">
-                        <div class="score-fill-small" style="width: {match.get('values_score', 75)}%;"></div>
-                    </div>
-                </div>
-                <div class="score-item">
-                    <div class="score-category">Lifestyle</div>
-                    <div class="score-value-small">{match.get('lifestyle_score', 75)}</div>
-                    <div class="score-bar-small">
-                        <div class="score-fill-small" style="width: {match.get('lifestyle_score', 75)}%;"></div>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="compatibility-analysis">
-                {match['compatibility_analysis']}
-            </div>
-            
-            <div class="match-actions">
-                {contact_button}
-            </div>
-        </div>
-        '''
-        matches_html += match_html
-    
-    matches_count_section = f'''
-    <div class="canvas-container">
-        <canvas id="cube-canvas"></canvas>
-    </div>
-    
-    <div class="matches-header">
-        <h1 class="matches-title">Your Matches</h1>
-        <p class="matches-subtitle">Your agent found {len(matches)} perfect connections</p>
-        <div class="profile-updated">Profile updated: {user_info['profile_date'][:10] if user_info['profile_date'] else 'Recently'}</div>
-    </div>
-    '''
-    
-    return f'''
-    <style>
-        @import url("https://fonts.googleapis.com/css2?family=Clash+Display:wght@200..700&display=swap");
-        @import url("https://fonts.googleapis.com/css2?family=Satoshi:wght@300..900&display=swap");
-
-        body {{
-            background-color: #f4e8ee;
-            color: #2d2d2d;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            margin: 0;
-            padding: 0;
-            min-height: 100vh;
-        }}
-        
-        .dashboard-container {{
-            max-width: 1000px;
-            margin: 0 auto;
-            padding: 2rem;
-        }}
-        
-        .canvas-container {{
-            width: 200px;
-            height: 200px;
-            margin: 3rem auto 2rem auto;
-            z-index: 2;
-        }}
-        
-        #cube-canvas {{
-            width: 100%;
-            height: 100%;
-            cursor: grab;
-        }}
-        
-        #cube-canvas:active {{
-            cursor: grabbing;
-        }}
-        
-        .matches-header {{
-            text-align: center;
-            margin-bottom: 3rem;
-            padding: 2.5rem 2rem;
-            background: rgba(255, 255, 255, 0.7);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-        }}
-        
-        .matches-title {{
-            font-family: "Clash Display", sans-serif;
-            font-size: 2.5rem;
-            font-weight: 500;
-            margin: 0 0 1rem 0;
-            color: #2d2d2d;
-            letter-spacing: -0.02em;
-            background: linear-gradient(135deg, #2d2d2d, #6b9b99);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }}
-        
-        .matches-subtitle {{
-            font-family: "Satoshi", sans-serif;
-            font-size: 1.125rem;
-            line-height: 1.6;
-            color: #6b9b99;
-            margin: 0 0 1rem 0;
-            max-width: 600px;
-            margin-left: auto;
-            margin-right: auto;
-        }}
-        
-        .profile-updated {{
-            font-family: "Satoshi", sans-serif;
-            font-size: 0.875rem;
-            color: rgba(107, 155, 153, 0.8);
-            font-weight: 500;
-        }}
-        
-        .match-card {{
-            background: rgba(255, 255, 255, 0.9);
-            backdrop-filter: blur(20px);
-            border-radius: 24px;
-            padding: 2.5rem;
-            margin: 2rem 0;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            position: relative;
-            transition: all 0.3s ease;
-        }}
-        
-        .match-card:hover {{
-            transform: translateY(-4px);
-            border-color: rgba(107, 155, 153, 0.3);
-        }}
-        
-        .match-number {{
-            position: absolute;
-            top: -1rem;
-            left: 2rem;
-            background: linear-gradient(135deg, #6b9b99, #ff9500);
-            color: white;
-            border-radius: 50%;
-            width: 48px;
-            height: 48px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-family: "Satoshi", sans-serif;
-            font-weight: 700;
-            font-size: 1.25rem;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        }}
-        
-        .match-header {{
-            display: flex;
-            align-items: center;
-            gap: 1.5rem;
-            margin: 1rem 0 2rem 1rem;
-        }}
-        
-        .avatar {{
-            width: 80px;
-            height: 80px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, #6b9b99, #ff9500);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-family: "Clash Display", sans-serif;
-            font-size: 2rem;
-            font-weight: 700;
-        }}
-        
-        .match-info {{
-            flex: 1;
-        }}
-        
-        .match-name {{
-            font-family: "Clash Display", sans-serif;
-            font-size: 1.75rem;
-            font-weight: 600;
-            margin-bottom: 0.25rem;
-            color: #2d2d2d;
-        }}
-        
-        .compatibility-score {{
-            text-align: center;
-            margin: 2rem 0;
-        }}
-        
-        .score-circle {{
-            display: inline-block;
-            padding: 2rem;
-            background: linear-gradient(135deg, #6b9b99, #ff9500);
-            border-radius: 20px;
-            color: white;
-            min-width: 200px;
-            box-shadow: 0 8px 24px rgba(107, 155, 153, 0.3);
-        }}
-        
-        .score-number {{
-            font-family: "Clash Display", sans-serif;
-            font-size: 3rem;
-            font-weight: 700;
-            line-height: 1;
-            margin-bottom: 0.5rem;
-        }}
-        
-        .score-text {{
-            font-family: "Satoshi", sans-serif;
-            font-size: 1rem;
-            font-weight: 500;
-            opacity: 0.9;
-        }}
-        
-        .ai-scores-grid {{
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 1.5rem;
-            margin: 2rem 0;
-            padding: 2rem;
-            background: rgba(45, 45, 45, 0.9);
-            border-radius: 16px;
-        }}
-        
-        .ai-score-card {{
-            text-align: center;
-            color: white;
-        }}
-        
-        .score-label {{
-            font-family: "Satoshi", sans-serif;
-            font-size: 0.75rem;
-            text-transform: uppercase;
-            letter-spacing: 0.1em;
-            margin-bottom: 0.75rem;
-            opacity: 0.8;
-            font-weight: 600;
-        }}
-        
-        .score-value {{
-            font-family: "Clash Display", sans-serif;
-            font-size: 1.5rem;
-            font-weight: 700;
-            margin-bottom: 0.75rem;
-        }}
-        
-        .score-bar {{
-            width: 100%;
-            height: 4px;
-            background: rgba(255,255,255,0.2);
-            border-radius: 2px;
-            overflow: hidden;
-        }}
-        
-        .score-fill {{
-            height: 100%;
-            background: linear-gradient(90deg, #6b9b99, #ff9500);
-            border-radius: 2px;
-            transition: width 1s ease;
-        }}
-        
-        .compatibility-badges {{
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.75rem;
-            margin: 2rem 0;
-            justify-content: center;
-        }}
-        
-        .badge {{
-            font-family: "Satoshi", sans-serif;
-            padding: 0.5rem 1rem;
-            border-radius: 50px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-        }}
-        
-        .badge-ai {{
-            background: rgba(255, 149, 0, 0.8);
-            color: white;
-        }}
-        
-        .badge-neural {{
-            background: linear-gradient(135deg, #6b9b99, #ff9500);
-            color: white;
-        }}
-        
-        .badge-simulation {{
-            background: rgba(107, 155, 153, 0.8);
-            color: white;
-        }}
-        
-        .badge-personality {{
-            background: rgba(255, 255, 255, 0.8);
-            color: #2d2d2d;
-        }}
-        
-        .badge-values {{
-            background: rgba(255, 255, 255, 0.8);
-            color: #2d2d2d;
-        }}
-        
-        .detailed-scores {{
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1.5rem;
-            margin: 2rem 0;
-            padding: 2rem;
-            background: rgba(255, 255, 255, 0.7);
-            backdrop-filter: blur(10px);
-            border-radius: 16px;
-        }}
-        
-        .score-item {{
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-        }}
-        
-        .score-category {{
-            font-family: "Satoshi", sans-serif;
-            font-size: 0.875rem;
-            font-weight: 600;
-            color: #2d2d2d;
-            min-width: 80px;
-        }}
-        
-        .score-value-small {{
-            font-family: "Clash Display", sans-serif;
-            font-size: 1.25rem;
-            font-weight: 600;
-            color: #2d2d2d;
-            min-width: 40px;
-        }}
-        
-        .score-bar-small {{
-            flex: 1;
-            height: 6px;
-            background: rgba(107, 155, 153, 0.2);
-            border-radius: 3px;
-            overflow: hidden;
-        }}
-        
-        .score-fill-small {{
-            height: 100%;
-            background: linear-gradient(90deg, #6b9b99, #ff9500);
-            border-radius: 3px;
-            transition: width 1s ease;
-        }}
-        
-        .compatibility-analysis {{
-            background: rgba(255, 255, 255, 0.8);
-            backdrop-filter: blur(10px);
-            padding: 2rem;
-            border-radius: 16px;
-            margin: 2rem 0;
-            border-left: 4px solid #6b9b99;
-            font-family: "Satoshi", sans-serif;
-            font-size: 1rem;
-            line-height: 1.6;
-            color: #2d2d2d;
-        }}
-        
-        .match-actions {{
-            text-align: center;
-            margin-top: 2rem;
-            padding-top: 2rem;
-            border-top: 1px solid rgba(107, 155, 153, 0.2);
-        }}
-        
-        .btn {{
-            font-family: "Satoshi", sans-serif;
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-            padding: 1rem 2rem;
-            border-radius: 50px;
-            font-weight: 600;
-            font-size: 0.875rem;
-            text-decoration: none;
-            transition: all 0.3s ease;
-            border: none;
-            cursor: pointer;
-            backdrop-filter: blur(10px);
-        }}
-        
-        .btn-primary {{
-            background: linear-gradient(135deg, #6b9b99, #ff9500);
-            color: white;
-            box-shadow: 0 4px 16px rgba(107, 155, 153, 0.3);
-        }}
-        
-        .btn-primary:hover {{
-            transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(107, 155, 153, 0.4);
-        }}
-        
-        .btn-pending {{
-            background: rgba(255, 149, 0, 0.8);
-            color: white;
-            border: 1px solid rgba(255, 149, 0, 0.5);
-        }}
-        
-        .btn-success {{
-            background: rgba(107, 155, 153, 0.8);
-            color: white;
-            text-decoration: none;
-            border: 1px solid rgba(107, 155, 153, 0.5);
-        }}
-        
-        .btn-success:hover {{
-            transform: translateY(-2px);
-            background: linear-gradient(135deg, #6b9b99, #ff9500);
-        }}
-        
-        .btn-declined {{
-            background: rgba(255, 255, 255, 0.5);
-            color: rgba(45, 45, 45, 0.6);
-            border: 1px solid rgba(45, 45, 45, 0.2);
-        }}
-        
-        /* Flash message styling */
-        .flash-messages {{
-            margin-bottom: 2rem;
-        }}
-        
-        .flash-error {{
-            background: rgba(255, 149, 0, 0.9);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 149, 0, 0.5);
-            color: white;
-            padding: 1rem 1.5rem;
-            border-radius: 12px;
-            margin-bottom: 1rem;
-            font-family: "Satoshi", sans-serif;
-            font-size: 0.875rem;
-        }}
-        
-        .flash-success {{
-            background: rgba(107, 155, 153, 0.9);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(107, 155, 153, 0.5);
-            color: white;
-            padding: 1rem 1.5rem;
-            border-radius: 12px;
-            margin-bottom: 1rem;
-            font-family: "Satoshi", sans-serif;
-            font-size: 0.875rem;
-        }}
-        
-        /* Responsive design */
-        @media (max-width: 768px) {{
-            .canvas-container {{
-                width: 150px;
-                height: 150px;
-            }}
-            
-            .matches-header {{
-                padding: 1.5rem 1rem;
-            }}
-            
-            .match-card {{
-                padding: 1.5rem;
-            }}
-        }}
-    </style>
-    
-    <!-- Include required libraries -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    
-    <div class="dashboard-container">
-        {flash_html}
-        {matches_count_section}
-        {matches_html}
-        
-        <script>
-        let viewStartTimes = {{}};
-        
-        function trackMatchView(matchUserId) {{
-            if (!viewStartTimes[matchUserId]) {{
-                viewStartTimes[matchUserId] = Date.now();
-                
-                setTimeout(() => {{
-                    if (viewStartTimes[matchUserId]) {{
-                        const timeSpent = (Date.now() - viewStartTimes[matchUserId]) / 1000;
-                        fetch('/api/track-interaction', {{
-                            method: 'POST',
-                            headers: {{'Content-Type': 'application/json'}},
-                            body: JSON.stringify({{
-                                interaction_type: 'profile_view',
-                                target_user_id: matchUserId,
-                                time_spent: timeSpent
-                            }})
-                        }});
-                    }}
-                }}, 3000);
-            }}
-        }}
-        
-        function trackContactIntention(matchUserId, compatibilityScore) {{
-            fetch('/api/track-interaction', {{
-                method: 'POST',
-                headers: {{'Content-Type': 'application/json'}},
-                body: JSON.stringify({{
-                    interaction_type: 'contact_intention',
-                    target_user_id: matchUserId,
-                    compatibility_score: compatibilityScore
-                }})
-            }});
-        }}
-        
-        // Three.js scene setup
-        const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
-        camera.position.z = 3;
-
-        const canvas = document.querySelector("#cube-canvas");
-        const renderer = new THREE.WebGLRenderer({{
-            canvas: canvas,
-            antialias: true,
-            alpha: true
-        }});
-        renderer.setSize(200, 200);
-        renderer.setPixelRatio(window.devicePixelRatio);
-
-        // Create cube with teal wireframe
-        const cubeGeometry = new THREE.BoxGeometry(1.5, 1.5, 1.5);
-        const cubeMaterial = new THREE.MeshBasicMaterial({{ 
-            color: 0x000000, 
-            transparent: true, 
-            opacity: 0 
-        }});
-        const cube = new THREE.Mesh(cubeGeometry, cubeMaterial);
-
-        // Add wireframe edges
-        const edges = new THREE.EdgesGeometry(cubeGeometry);
-        const lineMaterial = new THREE.LineBasicMaterial({{ 
-            color: 0x6b9b99,
-            linewidth: 2
-        }});
-        const wireframe = new THREE.LineSegments(edges, lineMaterial);
-        cube.add(wireframe);
-
-        // Create user's orange sphere (centered)
-        const userSphereGeometry = new THREE.SphereGeometry(0.15, 16, 16);
-        const userSphereMaterial = new THREE.MeshPhongMaterial({{ 
-            color: 0xff9500,
-            shininess: 30
-        }});
-        const userSphere = new THREE.Mesh(userSphereGeometry, userSphereMaterial);
-        userSphere.position.set(0, 0, 0);
-        cube.add(userSphere);
-
-        // Create teal match spheres - positioned around the cube
-        const numMatches = {len(matches)};
-        const matchSpheres = [];
-        const matchSphereGeometry = new THREE.SphereGeometry(0.12, 16, 16);
-        const matchSphereMaterial = new THREE.MeshPhongMaterial({{ 
-            color: 0x6b9b99,
-            shininess: 30
-        }});
-
-        // Position match spheres in a distributed pattern within the cube
-        const positions = [
-            {{x: 0.4, y: 0.4, z: 0.4}},
-            {{x: -0.4, y: 0.4, z: 0.4}},
-            {{x: 0.4, y: -0.4, z: 0.4}},
-            {{x: -0.4, y: -0.4, z: 0.4}},
-            {{x: 0.4, y: 0.4, z: -0.4}},
-            {{x: -0.4, y: 0.4, z: -0.4}},
-            {{x: 0.4, y: -0.4, z: -0.4}},
-            {{x: -0.4, y: -0.4, z: -0.4}},
-            {{x: 0, y: 0.5, z: 0}},
-            {{x: 0, y: -0.5, z: 0}},
-            {{x: 0.5, y: 0, z: 0}},
-            {{x: -0.5, y: 0, z: 0}},
-            {{x: 0, y: 0, z: 0.5}},
-            {{x: 0, y: 0, z: -0.5}},
-            {{x: 0.3, y: 0.3, z: 0}},
-            {{x: -0.3, y: -0.3, z: 0}},
-        ];
-
-        for (let i = 0; i < Math.min(numMatches, positions.length); i++) {{
-            const matchSphere = new THREE.Mesh(matchSphereGeometry, matchSphereMaterial.clone());
-            const pos = positions[i];
-            matchSphere.position.set(pos.x, pos.y, pos.z);
-            matchSphere.userData = {{ originalPosition: {{ ...pos }} }};
-            matchSpheres.push(matchSphere);
-            cube.add(matchSphere);
-        }}
-
-        scene.add(cube);
-
-        // Lighting for the spheres
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-        scene.add(ambientLight);
-        
-        const pointLight = new THREE.PointLight(0xffffff, 0.8);
-        pointLight.position.set(2, 2, 2);
-        scene.add(pointLight);
-
-        // Mouse interaction variables
-        let isDragging = false;
-        let previousMousePosition = {{ x: 0, y: 0 }};
-        let isClicked = false;
-
-        // Auto rotation and floating animation
-        function autoRotate() {{
-            if (!isDragging) {{
-                cube.rotation.x += 0.003;
-                cube.rotation.y += 0.005;
-                
-                // Gentle floating for spheres
-                const time = Date.now() * 0.002;
-                
-                // User sphere gentle movement
-                userSphere.position.y = Math.sin(time) * 0.05;
-                
-                // Match spheres subtle floating
-                matchSpheres.forEach((sphere, index) => {{
-                    const offset = index * 0.3;
-                    const originalPos = sphere.userData.originalPosition;
-                    sphere.position.x = originalPos.x + Math.sin(time + offset) * 0.03;
-                    sphere.position.y = originalPos.y + Math.cos(time + offset * 1.2) * 0.03;
-                    sphere.position.z = originalPos.z + Math.sin(time + offset * 0.8) * 0.03;
-                }});
-            }}
-        }}
-
-        // Mouse event handlers
-        function onMouseDown(event) {{
-            isDragging = true;
-            canvas.style.cursor = 'grabbing';
-            
-            const rect = canvas.getBoundingClientRect();
-            previousMousePosition = {{
-                x: event.clientX - rect.left,
-                y: event.clientY - rect.top
-            }};
-        }}
-
-        function onMouseMove(event) {{
-            if (!isDragging) return;
-
-            const rect = canvas.getBoundingClientRect();
-            const currentMousePosition = {{
-                x: event.clientX - rect.left,
-                y: event.clientY - rect.top
-            }};
-
-            const deltaMove = {{
-                x: currentMousePosition.x - previousMousePosition.x,
-                y: currentMousePosition.y - previousMousePosition.y
-            }};
-
-            const deltaRotationQuaternion = new THREE.Quaternion()
-                .setFromEuler(new THREE.Euler(
-                    toRadians(deltaMove.y * 0.5),
-                    toRadians(deltaMove.x * 0.5),
-                    0,
-                    'XYZ'
-                ));
-
-            cube.quaternion.multiplyQuaternions(deltaRotationQuaternion, cube.quaternion);
-            previousMousePosition = currentMousePosition;
-        }}
-
-        function onMouseUp() {{
-            isDragging = false;
-            canvas.style.cursor = 'grab';
-        }}
-
-        function onClick(event) {{
-            if (!isClicked) {{
-                isClicked = true;
-                
-                // Scale animation on click
-                const originalScale = {{ x: 1, y: 1, z: 1 }};
-                const targetScale = {{ x: 0.9, y: 0.9, z: 0.9 }};
-                
-                animateScale(cube.scale, targetScale, 100, () => {{
-                    animateScale(cube.scale, {{ x: 1.05, y: 1.05, z: 1.05 }}, 100, () => {{
-                        animateScale(cube.scale, originalScale, 100, () => {{
-                            // Scroll to first match instead of redirecting
-                            const firstMatch = document.querySelector('.match-card');
-                            if (firstMatch) {{
-                                firstMatch.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
-                            }}
-                            isClicked = false;
-                        }});
-                    }});
-                }});
-            }}
-        }}
-
-        // Simple scale animation function
-        function animateScale(object, target, duration, callback) {{
-            const start = {{ x: object.x, y: object.y, z: object.z }};
-            const startTime = Date.now();
-            
-            function update() {{
-                const elapsed = Date.now() - startTime;
-                const progress = Math.min(elapsed / duration, 1);
-                
-                object.x = start.x + (target.x - start.x) * progress;
-                object.y = start.y + (target.y - start.y) * progress;
-                object.z = start.z + (target.z - start.z) * progress;
-                
-                if (progress < 1) {{
-                    requestAnimationFrame(update);
-                }} else if (callback) {{
-                    callback();
-                }}
-            }}
-            
-            update();
-        }}
-
-        function toRadians(angle) {{
-            return angle * (Math.PI / 180);
-        }}
-
-        // Add event listeners
-        canvas.addEventListener('mousedown', onMouseDown);
-        canvas.addEventListener('mousemove', onMouseMove);
-        canvas.addEventListener('mouseup', onMouseUp);
-        canvas.addEventListener('mouseleave', onMouseUp);
-        canvas.addEventListener('click', onClick);
-
-        // Animation loop
-        function animate() {{
-            requestAnimationFrame(animate);
-            autoRotate();
-            renderer.render(scene, camera);
-        }}
-
-        animate();
-
-        // Handle window resize
-        window.addEventListener('resize', () => {{
-            const containerSize = window.innerWidth < 768 ? 150 : 200;
-            renderer.setSize(containerSize, containerSize);
-            
-            const container = document.querySelector('.canvas-container');
-            container.style.width = containerSize + 'px';
-            container.style.height = containerSize + 'px';
-        }});
-        </script>
-    </div>
-    '''
-def render_matches_dashboard_with_subscription(user_info: Dict, matches: List[Dict]) -> str:
-    """Enhanced dashboard with subscription status"""
-    user_id = session['user_id']
-    status = subscription_manager.get_user_subscription_status(user_id)
-    
-    # Add subscription banner
-    subscription_banner = ""
-    if status['is_subscribed']:
-        subscription_banner = '''
-        <div style="background: linear-gradient(135deg, var(--color-emerald), var(--color-sage)); color: white; padding: 1rem; border-radius: 12px; text-align: center; margin-bottom: 2rem;">
-            ✓ Premium Member - Unlimited matching available
-        </div>
-        '''
-    else:
-        remaining = status['free_matches_remaining']
-        subscription_banner = f'''
-        <div style="background: linear-gradient(135deg, var(--color-lavender), var(--color-sage)); color: var(--color-charcoal); padding: 1rem; border-radius: 12px; text-align: center; margin-bottom: 2rem;">
-            Free Plan - {remaining} free match{"" if remaining == 1 else "es"} remaining this month
-            <div style="margin-top: 0.5rem;">
-                <a href="/subscription/plans" style="color: var(--color-emerald); font-weight: 600; text-decoration: none;">
-                    Upgrade to Premium for unlimited matching →
-                </a>
-            </div>
-        </div>
-        '''
-    
-    # Get original dashboard content
-    original_content = render_matches_dashboard(user_info, matches)
-    
-    # Insert subscription banner after flash messages
-    enhanced_content = original_content.replace(
-        '<div class="dashboard-container">',
-        f'<div class="dashboard-container">{subscription_banner}'
-    )
-    
-    return enhanced_content
-render_matches_dashboard = enhance_dashboard_with_verification()
 
 def render_no_matches_dashboard() -> str:
     """Render no matches dashboard with small orange sphere in draggable teal cube"""
@@ -10423,23 +10401,39 @@ def send_contact_request_with_tracking(requested_id):
                 compatibility_score = match['overall_score']
                 break
         
-        result = user_auth.send_contact_request(user_id, requested_id, message)
-        
-        if result['success']:
-            # Track successful contact request
-            interaction_tracker.track_contact_request(user_id, requested_id, compatibility_score)
-            flash(f'Contact request sent to {requested_user_info["first_name"]}!', 'success')
-            return redirect('/dashboard')
-        else:
-            flash(result['error'], 'error')
+        try:
+            # Add detailed error logging
+            print(f"Attempting to send contact request from user {user_id} to user {requested_id}")
+            result = user_auth.send_contact_request(user_id, requested_id, message)
+            print(f"Contact request result: {result}")
+            
+            if result['success']:
+                # Track successful contact request
+                try:
+                    interaction_tracker.track_contact_request(user_id, requested_id, compatibility_score)
+                except Exception as track_error:
+                    print(f"Warning: Failed to track interaction: {track_error}")
+                    # Don't let tracking errors break the main flow
+                
+                flash(f'Contact request sent to {requested_user_info["first_name"]}!', 'success')
+                return redirect('/dashboard')
+            else:
+                flash(result['error'], 'error')
+                print(f"Contact request failed with error: {result['error']}")
+                
+        except Exception as e:
+            print(f"Exception in contact request route: {e}")
+            import traceback
+            traceback.print_exc()
+            flash('An error occurred while sending the request. Please try again.', 'error')
     
-    # Show contact request form (same as before)
+    # Show contact request form
     content = f'''
     <div class="container" style="max-width: 600px;">
         <h1 style="font-size: 28px; text-align: center; margin-bottom: 32px;">Request Contact Information</h1>
         
         <div style="background: #f8f9fa; border-radius: 8px; padding: 20px; margin-bottom: 30px; text-align: center;">
-            <div style="font-size: 20px; font-weight: bold; margin-bottom: 10px;">{requested_user_info['first_name']} {requested_user_info['last_name']}</div>
+            <div style="font-size: 20px; font-weight: bold; margin-bottom: 10px;">{requested_user_info.get('first_name', 'User')} {requested_user_info.get('last_name', '')}</div>
             <div style="font-size: 14px; color: #666;">You'd like to connect with this person</div>
         </div>
         
@@ -10487,7 +10481,7 @@ def contact_requests_route():
                     <div class="avatar">{initials}</div>
                     <div class="request-info">
                         <div class="request-name">{req['other_user_name']}</div>
-                        <div class="request-date">{req['created_at'][:10]}</div>
+                        <div class="request-date">{req['created_at'].strftime('%Y-%m-%d') if hasattr(req['created_at'], 'strftime') else str(req['created_at'])[:10]}</div>
                     </div>
                     <div class="request-actions">
                         <a href="/respond-contact-request/{req['id']}/accept" class="btn btn-accept">
@@ -10502,7 +10496,7 @@ def contact_requests_route():
                 {f'<div class="request-message">"{req["message"]}"</div>' if req['message'] else ''}
                 
                 <div class="privacy-notice">
-                    <div class="privacy-icon">🔒</div>
+                    
                     <div class="privacy-text">
                         <strong>If you accept:</strong> {req['other_user_name']} will receive your contact number/email: <strong>{user_info['phone']}</strong>
                     </div>
@@ -10558,7 +10552,7 @@ def contact_requests_route():
                     <div class="avatar">{initials}</div>
                     <div class="request-info">
                         <div class="request-name">{req['other_user_name']}</div>
-                        <div class="request-date">{req['created_at'][:10]}</div>
+                        <div class="request-date">{req['created_at'].strftime('%Y-%m-%d') if hasattr(req['created_at'], 'strftime') else str(req['created_at'])[:10]}</div>
                     </div>
                     <div class="status-badge" style="background: {config['bg']}; color: {config['color']};">
                         <span class="status-icon">{config['icon']}</span>
