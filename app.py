@@ -9,6 +9,7 @@ os.environ['CUDA_VISIBLE_DEVICES'] = ''
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import urllib.parse
+import logging
 
 import os
 import base64
@@ -11751,6 +11752,227 @@ def cleanup_invalid_customers():
     except Exception as e:
         return f"Error: {e}"
 
+
+@app.route('/admin/webhook-test')
+def webhook_test_page():
+    """Admin page to test webhook configuration"""
+    admin_password = request.args.get('password')
+    if admin_password != os.environ.get('ADMIN_PASSWORD', 'admin123'):
+        return '''
+        <form method="GET">
+            <h2>Admin Access Required</h2>
+            <input type="password" name="password" placeholder="Admin Password" required>
+            <button type="submit">Access Admin Panel</button>
+        </form>
+        '''
+    
+    webhook_secret = os.environ.get('STRIPE_WEBHOOK_SECRET')
+    
+    return f'''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Webhook Configuration Test</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; padding: 20px; }}
+            .status {{ padding: 10px; margin: 10px 0; border-radius: 4px; }}
+            .success {{ background: #d4edda; border: 1px solid #c3e6cb; color: #155724; }}
+            .error {{ background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; }}
+            .warning {{ background: #fff3cd; border: 1px solid #ffeaa7; color: #856404; }}
+        </style>
+    </head>
+    <body>
+        <h1>Webhook Configuration Test</h1>
+        
+        <h2>Environment Check</h2>
+        <div class="status {'success' if webhook_secret else 'error'}">
+            <strong>STRIPE_WEBHOOK_SECRET:</strong> {'✓ Configured' if webhook_secret else '✗ Missing'}
+        </div>
+        
+        <div class="status {'success' if webhook_secret and webhook_secret.startswith('whsec_') else 'warning'}">
+            <strong>Webhook Secret Format:</strong> 
+            {'✓ Valid format' if webhook_secret and webhook_secret.startswith('whsec_') else '⚠ Should start with whsec_'}
+        </div>
+        
+        <h2>Test Instructions</h2>
+        <ol>
+            <li>In Stripe Dashboard, go to Developers → Webhooks</li>
+            <li>Create endpoint: <code>https://yourdomain.com/webhook/stripe</code></li>
+            <li>Select events: 
+                <ul>
+                    <li>checkout.session.completed</li>
+                    <li>customer.subscription.created</li>
+                    <li>customer.subscription.updated</li>
+                    <li>customer.subscription.deleted</li>
+                    <li>invoice.payment_failed</li>
+                    <li>invoice.payment_succeeded</li>
+                </ul>
+            </li>
+            <li>Copy the signing secret and set STRIPE_WEBHOOK_SECRET environment variable</li>
+            <li>Use "Send test webhook" in Stripe Dashboard to test</li>
+        </ol>
+        
+        <h2>Recent Webhook Events</h2>
+        <a href="/admin/webhook-logs?password={admin_password}">View Webhook Logs</a>
+        
+        <h2>Quick Test</h2>
+        <form action="/admin/test-webhook-endpoint" method="POST">
+            <input type="hidden" name="password" value="{admin_password}">
+            <button type="submit">Test Webhook Endpoint Availability</button>
+        </form>
+    </body>
+    </html>
+    '''
+
+
+@app.route('/admin/test-webhook-endpoint', methods=['POST'])
+def test_webhook_endpoint():
+    """Test that the webhook endpoint is accessible"""
+    admin_password = request.form.get('password')
+    if admin_password != os.environ.get('ADMIN_PASSWORD', 'admin123'):
+        return "Unauthorized", 401
+    
+    # This would normally be called by Stripe with proper headers
+    # We're just testing that the endpoint responds correctly to invalid requests
+    
+    try:
+        # Test with missing signature (should fail gracefully)
+        response = app.test_client().post('/webhook/stripe', 
+                                        data='{"test": "data"}',
+                                        headers={'Content-Type': 'application/json'})
+        
+        if response.status_code == 400:
+            return '''
+            <h2>✓ Webhook Endpoint Test Passed</h2>
+            <p>Endpoint correctly rejected request without valid signature.</p>
+            <p><a href="/admin/webhook-test">Back to Webhook Test</a></p>
+            '''
+        else:
+            return f'''
+            <h2>⚠ Unexpected Response</h2>
+            <p>Expected 400, got {response.status_code}</p>
+            <p>Response: {response.get_data(as_text=True)}</p>
+            '''
+            
+    except Exception as e:
+        return f'''
+        <h2>✗ Test Failed</h2>
+        <p>Error: {e}</p>
+        <p><a href="/admin/webhook-test">Back to Webhook Test</a></p>
+        '''
+
+
+@app.route('/admin/webhook-logs')
+def webhook_logs():
+    """Show recent webhook processing logs"""
+    admin_password = request.args.get('password')
+    if admin_password != os.environ.get('ADMIN_PASSWORD', 'admin123'):
+        return "Unauthorized", 401
+    
+    try:
+        # Get recent subscription changes
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT user_id, status, stripe_customer_id, stripe_subscription_id, 
+                   updated_at, created_at
+            FROM user_subscriptions 
+            ORDER BY updated_at DESC 
+            LIMIT 20
+        ''')
+        
+        subscriptions = cursor.fetchall()
+        conn.close()
+        
+        logs_html = '''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Webhook Logs</title>
+            <style>
+                body { font-family: Arial, sans-serif; padding: 20px; }
+                table { border-collapse: collapse; width: 100%; }
+                th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+                th { background-color: #f2f2f2; }
+                .status-active { color: green; font-weight: bold; }
+                .status-cancelled { color: red; }
+                .status-past_due { color: orange; }
+            </style>
+        </head>
+        <body>
+            <h1>Recent Subscription Changes</h1>
+            <table>
+                <tr>
+                    <th>User ID</th>
+                    <th>Status</th>
+                    <th>Customer ID</th>
+                    <th>Subscription ID</th>
+                    <th>Updated</th>
+                    <th>Created</th>
+                </tr>
+        '''
+        
+        for sub in subscriptions:
+            status_class = f"status-{sub['status']}"
+            logs_html += f'''
+            <tr>
+                <td>{sub['user_id']}</td>
+                <td class="{status_class}">{sub['status']}</td>
+                <td>{sub['stripe_customer_id'] or 'N/A'}</td>
+                <td>{sub['stripe_subscription_id'] or 'N/A'}</td>
+                <td>{sub['updated_at']}</td>
+                <td>{sub['created_at']}</td>
+            </tr>
+            '''
+        
+        logs_html += '''
+            </table>
+            <p><a href="/admin/webhook-test">Back to Webhook Test</a></p>
+        </body>
+        </html>
+        '''
+        
+        return logs_html
+        
+    except Exception as e:
+        return f"Error retrieving logs: {e}"
+
+
+# Add webhook event logging for production monitoring
+def log_webhook_event(event_type, event_id, user_id=None, status="success", error=None):
+    """Log webhook events for monitoring and debugging"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Create webhook_logs table if it doesn't exist
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS webhook_logs (
+                id SERIAL PRIMARY KEY,
+                event_type TEXT NOT NULL,
+                event_id TEXT NOT NULL,
+                user_id INTEGER,
+                status TEXT NOT NULL,
+                error_message TEXT,
+                processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Insert log entry
+        cursor.execute('''
+            INSERT INTO webhook_logs (event_type, event_id, user_id, status, error_message)
+            VALUES (%s, %s, %s, %s, %s)
+        ''', (event_type, event_id, user_id, status, error))
+        
+        conn.commit()
+        conn.close()
+        
+    except Exception as e:
+        # Don't let logging errors break webhook processing
+        logger.error(f"Failed to log webhook event: {e}")
+
+
 @app.route('/subscription/check')
 @login_required
 def check_subscription():
@@ -12105,46 +12327,329 @@ def subscription_cancelled():
     flash('Subscription cancelled. You can upgrade anytime from your dashboard.', 'error')
     return redirect('/subscription/plans')
 
-@app.route('/webhook/stripe', methods=['POST'])
-def stripe_webhook():
-    """Process webhooks without signature verification temporarily"""
-    try:
-        payload = request.get_data()
-        event = json.loads(payload.decode('utf-8'))
-        
-        print(f"Processing event: {event['type']}")
-        
-        if event['type'] == 'checkout.session.completed':
-            session = event['data']['object']
-            user_id = int(session['metadata']['user_id'])
+
+
+def handle_checkout_completion_secure(session):
+        """Handle successful checkout with proper error handling"""
+        try:
+            user_id = session['metadata'].get('user_id')
+            if not user_id:
+                logger.error(f"Missing user_id in session metadata: {session['id']}")
+                return
+            
+            user_id = int(user_id)
             customer_id = session['customer']
             subscription_id = session['subscription']
+            
+            logger.info(f"Processing checkout completion for user {user_id}, session {session['id']}")
             
             conn = get_db_connection()
             cursor = conn.cursor()
             
-            cursor.execute('''
-                INSERT INTO user_subscriptions 
-                (user_id, stripe_customer_id, stripe_subscription_id, status, created_at, updated_at)
-                VALUES (%s, %s, %s, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                ON CONFLICT (user_id) 
-                DO UPDATE SET 
-                    stripe_customer_id = EXCLUDED.stripe_customer_id,
-                    stripe_subscription_id = EXCLUDED.stripe_subscription_id,
-                    status = 'active',
-                    updated_at = CURRENT_TIMESTAMP
-            ''', (user_id, customer_id, subscription_id))
+            try:
+                # Use INSERT ... ON CONFLICT for atomic upsert
+                cursor.execute('''
+                    INSERT INTO user_subscriptions 
+                    (user_id, stripe_customer_id, stripe_subscription_id, status, created_at, updated_at)
+                    VALUES (%s, %s, %s, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    ON CONFLICT (user_id) 
+                    DO UPDATE SET 
+                        stripe_customer_id = EXCLUDED.stripe_customer_id,
+                        stripe_subscription_id = EXCLUDED.stripe_subscription_id,
+                        status = 'active',
+                        updated_at = CURRENT_TIMESTAMP
+                ''', (user_id, customer_id, subscription_id))
+                
+                conn.commit()
+                logger.info(f"Successfully activated subscription for user {user_id}")
+                
+            except Exception as db_error:
+                conn.rollback()
+                logger.error(f"Database error for user {user_id}: {db_error}")
+                raise
+                
+            finally:
+                conn.close()
+                
+        except Exception as e:
+            logger.error(f"Error handling checkout completion: {e}")
+            raise
+
+
+def handle_subscription_created_secure(subscription):
+        """Handle subscription creation with validation"""
+        try:
+            customer_id = subscription['customer']
+            subscription_id = subscription['id']
+            status = subscription['status']
             
-            conn.commit()
-            conn.close()
+            # Get subscription details from Stripe
+            current_period_end = subscription.get('current_period_end')
+            cancel_at_period_end = subscription.get('cancel_at_period_end', False)
             
-            print(f"Subscription activated for user {user_id}")
+            logger.info(f"Processing subscription creation: {subscription_id}")
+            
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            try:
+                # Find user by customer ID and update subscription details
+                cursor.execute('''
+                    UPDATE user_subscriptions 
+                    SET stripe_subscription_id = %s, 
+                        status = %s,
+                        current_period_end = to_timestamp(%s),
+                        cancel_at_period_end = %s,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE stripe_customer_id = %s
+                ''', (subscription_id, status, current_period_end, cancel_at_period_end, customer_id))
+                
+                if cursor.rowcount == 0:
+                    logger.warning(f"No user found for customer {customer_id}")
+                else:
+                    logger.info(f"Updated subscription {subscription_id} for customer {customer_id}")
+                
+                conn.commit()
+                
+            except Exception as db_error:
+                conn.rollback()
+                logger.error(f"Database error for subscription {subscription_id}: {db_error}")
+                raise
+                
+            finally:
+                conn.close()
+                
+        except Exception as e:
+            logger.error(f"Error handling subscription creation: {e}")
+            raise
+
+
+def handle_subscription_updated_secure(subscription):
+        """Handle subscription updates with comprehensive field updates"""
+        try:
+            subscription_id = subscription['id']
+            status = subscription['status']
+            current_period_end = subscription.get('current_period_end')
+            cancel_at_period_end = subscription.get('cancel_at_period_end', False)
+            
+            logger.info(f"Processing subscription update: {subscription_id} -> {status}")
+            
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            try:
+                cursor.execute('''
+                    UPDATE user_subscriptions 
+                    SET status = %s, 
+                        current_period_end = to_timestamp(%s), 
+                        cancel_at_period_end = %s, 
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE stripe_subscription_id = %s
+                ''', (status, current_period_end, cancel_at_period_end, subscription_id))
+                
+                if cursor.rowcount == 0:
+                    logger.warning(f"No subscription found with ID {subscription_id}")
+                else:
+                    logger.info(f"Updated subscription {subscription_id} to status: {status}")
+                
+                conn.commit()
+                
+            except Exception as db_error:
+                conn.rollback()
+                logger.error(f"Database error updating subscription {subscription_id}: {db_error}")
+                raise
+                
+            finally:
+                conn.close()
+                
+        except Exception as e:
+            logger.error(f"Error handling subscription update: {e}")
+            raise
+
+
+def handle_subscription_deleted_secure(subscription):
+        """Handle subscription cancellation"""
+        try:
+            subscription_id = subscription['id']
+            
+            logger.info(f"Processing subscription deletion: {subscription_id}")
+            
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            try:
+                cursor.execute('''
+                    UPDATE user_subscriptions 
+                    SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+                    WHERE stripe_subscription_id = %s
+                ''', (subscription_id,))
+                
+                if cursor.rowcount == 0:
+                    logger.warning(f"No subscription found with ID {subscription_id}")
+                else:
+                    logger.info(f"Cancelled subscription {subscription_id}")
+                
+                conn.commit()
+                
+            except Exception as db_error:
+                conn.rollback()
+                logger.error(f"Database error cancelling subscription {subscription_id}: {db_error}")
+                raise
+                
+            finally:
+                conn.close()
+                
+        except Exception as e:
+            logger.error(f"Error handling subscription deletion: {e}")
+            raise
+
+
+def handle_payment_failed_secure(invoice):
+        """Handle failed payment attempts"""
+        try:
+            subscription_id = invoice.get('subscription')
+            customer_id = invoice['customer']
+            attempt_count = invoice.get('attempt_count', 0)
+            
+            logger.warning(f"Payment failed for customer {customer_id}, attempt {attempt_count}")
+            
+            # You might want to:
+            # 1. Send notification email to user
+            # 2. Update subscription status if final attempt
+            # 3. Log for analytics
+            
+            if attempt_count >= 3:  # Stripe's default final attempt
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                
+                try:
+                    cursor.execute('''
+                        UPDATE user_subscriptions 
+                        SET status = 'past_due', updated_at = CURRENT_TIMESTAMP
+                        WHERE stripe_customer_id = %s
+                    ''', (customer_id,))
+                    
+                    conn.commit()
+                    logger.info(f"Marked subscription as past_due for customer {customer_id}")
+                    
+                except Exception as db_error:
+                    conn.rollback()
+                    logger.error(f"Database error marking past_due for customer {customer_id}: {db_error}")
+                    raise
+                    
+                finally:
+                    conn.close()
+            
+        except Exception as e:
+            logger.error(f"Error handling payment failure: {e}")
+            raise
+
+
+def handle_payment_succeeded_secure(invoice):
+        """Handle successful payment"""
+        try:
+            subscription_id = invoice.get('subscription')
+            customer_id = invoice['customer']
+            
+            logger.info(f"Payment succeeded for customer {customer_id}")
+            
+            # Ensure subscription is marked as active
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            try:
+                cursor.execute('''
+                    UPDATE user_subscriptions 
+                    SET status = 'active', updated_at = CURRENT_TIMESTAMP
+                    WHERE stripe_customer_id = %s AND status IN ('past_due', 'unpaid')
+                ''', (customer_id,))
+                
+                if cursor.rowcount > 0:
+                    logger.info(f"Reactivated subscription for customer {customer_id}")
+                
+                conn.commit()
+                
+            except Exception as db_error:
+                conn.rollback()
+                logger.error(f"Database error reactivating subscription for customer {customer_id}: {db_error}")
+                raise
+                
+            finally:
+                conn.close()
+            
+        except Exception as e:
+            logger.error(f"Error handling payment success: {e}")
+            raise
+
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+@app.route('/webhook/stripe', methods=['POST'])
+def secure_stripe_webhook():
+    """
+    Secure Stripe webhook handler with proper signature verification
+    """
+    payload = request.get_data()
+    sig_header = request.headers.get('Stripe-Signature')
+    endpoint_secret = os.environ.get('STRIPE_WEBHOOK_SECRET')
+    
+    if not endpoint_secret:
+        logger.error("STRIPE_WEBHOOK_SECRET not configured")
+        return jsonify({'error': 'Webhook secret not configured'}), 500
+    
+    if not sig_header:
+        logger.error("Missing Stripe signature header")
+        return jsonify({'error': 'Missing signature'}), 400
+    
+    try:
+        # Verify the webhook signature
+        event = stripe.Webhook.construct_event(
+            payload, sig_header, endpoint_secret
+        )
+        logger.info(f"Verified webhook event: {event['type']} - {event['id']}")
+        
+    except ValueError as e:
+        # Invalid payload
+        logger.error(f"Invalid payload: {e}")
+        return jsonify({'error': 'Invalid payload'}), 400
+        
+    except stripe.error.SignatureVerificationError as e:
+        # Invalid signature
+        logger.error(f"Invalid signature: {e}")
+        return jsonify({'error': 'Invalid signature'}), 400
+    
+    # Handle the verified event
+    try:
+        event_type = event['type']
+        
+        if event_type == 'checkout.session.completed':
+            handle_checkout_completion_secure(event['data']['object'])
+            
+        elif event_type == 'customer.subscription.created':
+            handle_subscription_created_secure(event['data']['object'])
+            
+        elif event_type == 'customer.subscription.updated':
+            handle_subscription_updated_secure(event['data']['object'])
+            
+        elif event_type == 'customer.subscription.deleted':
+            handle_subscription_deleted_secure(event['data']['object'])
+            
+        elif event_type == 'invoice.payment_failed':
+            handle_payment_failed_secure(event['data']['object'])
+            
+        elif event_type == 'invoice.payment_succeeded':
+            handle_payment_succeeded_secure(event['data']['object'])
+            
+        else:
+            logger.info(f"Unhandled event type: {event_type}")
         
         return jsonify({'status': 'success'}), 200
         
     except Exception as e:
-        print(f"Webhook error: {e}")
-        return jsonify({'status': 'error'}), 500
+        logger.error(f"Error processing webhook event {event['id']}: {e}")
+        return jsonify({'error': 'Processing failed'}), 500
+
 
 def handle_checkout_completion(session):
     """Handle successful checkout"""

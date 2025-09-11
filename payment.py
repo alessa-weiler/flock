@@ -2,6 +2,7 @@ import os
 import stripe
 from datetime import datetime, timedelta
 from typing import Dict, Any, Callable
+import logging
 
 class SubscriptionManager:
     """Handles Stripe subscriptions and payment processing"""
@@ -249,6 +250,7 @@ class SubscriptionManager:
         except Exception as e:
             print(f"Error cancelling subscription: {e}")
             return {'success': False, 'error': str(e)}
+    
     def record_matching_usage(self, user_id: int, is_free: bool = False):
         """Record when user runs matching"""
         try:
