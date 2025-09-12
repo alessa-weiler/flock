@@ -6770,14 +6770,11 @@ def render_subscription_management_section(subscription_status: Dict) -> str:
                     </div>
                 </div>
                 
-                <p><strong>Next billing:</strong> {next_billing}</p>
+                <p><strong>Expiry:</strong> {expires_at}</p>
                 <p><strong>Plan:</strong> Premium Matching (£9.99/month)</p>
             </div>
             
             <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
-                <a href="/subscription/manage" class="btn-manage">
-                    Manage Billing
-                </a>
                 <a href="/subscription/cancel" class="btn-manage btn-cancel">
                     Cancel Subscription
                 </a>
