@@ -78,6 +78,7 @@ import stripe
 
 from enhanced_matching_system import (
     MatchingSystem,
+    MatchingDataCollector,
     EnhancedMatchingSystem, 
     InteractionTracker, 
     integrate_enhanced_matching
@@ -347,6 +348,56 @@ class UserAuthSystem:
                 FOREIGN KEY (contact_request_id) REFERENCES contact_requests (id),
                 FOREIGN KEY (user1_id) REFERENCES users (id),
                 FOREIGN KEY (user2_id) REFERENCES users (id)
+            )
+        ''')
+        #tracking user interactions for ML
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS user_interactions (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                interaction_type TEXT NOT NULL,
+                target_user_id INTEGER,
+                context_data TEXT,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                session_id TEXT,
+                outcome TEXT,
+                FOREIGN KEY (user_id) REFERENCES users (id)
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS social_clusters (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                cluster_snapshot TEXT NOT NULL,
+                cluster_metrics TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (id)
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS training_data (
+                id SERIAL PRIMARY KEY,
+                feature_vector TEXT NOT NULL,
+                target_outcome REAL NOT NULL,
+                interaction_context TEXT,
+                user_pair TEXT,
+                confidence_score REAL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS model_performance (
+                id SERIAL PRIMARY KEY,
+                model_version TEXT NOT NULL,
+                accuracy REAL,
+                precision_score REAL,
+                recall_score REAL,
+                training_data_size INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
         
@@ -3774,6 +3825,7 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
             }}
         }}
         
+        
         function trackContactIntention(matchUserId, compatibilityScore) {{
             fetch('/api/track-interaction', {{
                 method: 'POST',
@@ -4023,6 +4075,7 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
             container.style.height = containerSize + 'px';
         }});
         </script>
+        
     </div>
     '''
 
@@ -4113,7 +4166,6 @@ enhance_matching_with_verification()
 # ============================================================================
 # ROUTES - AUTHENTICATION
 # ============================================================================
-
 
 @app.route('/')
 def home():
@@ -7022,6 +7074,7 @@ def admin_mark_photo_received():
         return f"<h2>Success</h2><p>Photos marked as received for user {result['user_id']}</p><a href='/admin/verification-queue?password={os.environ.get('ADMIN_PASSWORD', 'admin123')}'>Back to Queue</a>"
     else:
         return f"<h2>Error</h2><p>{result['error']}</p><a href='/admin/verification-queue?password={os.environ.get('ADMIN_PASSWORD', 'admin123')}'>Back to Queue</a>"
+
 
 
 # ============================================================================
@@ -11751,6 +11804,7 @@ def terms_of_service():
 # ============================================================================
 # SUBSCRIPTION MANAGEMENT
 # ============================================================================
+
 @app.route('/admin/cleanup-customers')
 def cleanup_invalid_customers():
     """Clean up invalid Stripe customer IDs - REMOVE AFTER USE"""
