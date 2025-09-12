@@ -46,15 +46,27 @@ class SubscriptionManager:
                 free_matches_used = 0
             
             if result and result['status'] == 'active':
-                return {
-                    'is_subscribed': True,
-                    'status': result['status'],
-                    'expires_at': result['current_period_end'],
-                    'cancel_at_period_end': result['cancel_at_period_end'],
-                    'can_run_matching': True,
-                    'free_matches_remaining': 0,
-                    'subscription_required': False
-                }
+                # Check if subscription is cancelled but still active (running until period end)
+                if result['cancel_at_period_end']:
+                    return {
+                        'is_subscribed': True,
+                        'status': 'cancelled',  # Changed from 'active' to 'cancelled'
+                        'expires_at': result['current_period_end'],
+                        'cancel_at_period_end': True,
+                        'can_run_matching': True,
+                        'free_matches_remaining': 0,
+                        'subscription_required': False
+                    }
+                else:
+                    return {
+                        'is_subscribed': True,
+                        'status': result['status'],
+                        'expires_at': result['current_period_end'],
+                        'cancel_at_period_end': False,
+                        'can_run_matching': True,
+                        'free_matches_remaining': 0,
+                        'subscription_required': False
+                    }
             else:
                 free_matches_remaining = max(0, 1 - free_matches_used)
                 return {
@@ -74,7 +86,7 @@ class SubscriptionManager:
                 'free_matches_remaining': 0,
                 'subscription_required': True
             }
-    
+
     def reset_free_matches(self, user_id: int):
         """Reset free matches counter monthly"""
         try:
@@ -170,7 +182,7 @@ class SubscriptionManager:
             if event_type in ['customer.subscription.created', 'customer.subscription.updated']:
                 self.update_subscription(subscription)
             elif event_type == 'customer.subscription.deleted':
-                self.cancel_subscription(subscription)
+                self.handle_subscription_deleted(subscription)  # Updated method name
             elif event_type == 'invoice.payment_succeeded':
                 self.handle_successful_payment(subscription)
             elif event_type == 'invoice.payment_failed':
@@ -181,7 +193,26 @@ class SubscriptionManager:
         except Exception as e:
             print(f"Error handling webhook: {e}")
             return False
-    
+
+    def handle_subscription_deleted(self, subscription: Dict):
+        """Handle when subscription is actually deleted/expired"""
+        try:
+            conn = self.get_db_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                UPDATE user_subscriptions 
+                SET status = 'inactive',
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE stripe_customer_id = %s
+            ''', (subscription['customer'],))
+            
+            conn.commit()
+            conn.close()
+            
+        except Exception as e:
+            print(f"Error handling subscription deletion: {e}")
+
     def update_subscription(self, subscription: Dict):
         """Update subscription in database"""
         try:
@@ -230,17 +261,19 @@ class SubscriptionManager:
                 return {'success': False, 'error': 'No active subscription found'}
             
             # Cancel the subscription in Stripe (at period end)
-            stripe.Subscription.modify(
+            updated_subscription = stripe.Subscription.modify(
                 result['stripe_subscription_id'],
                 cancel_at_period_end=True
             )
             
-            # Update local database
+            # Update local database to reflect the cancellation
             cursor.execute('''
                 UPDATE user_subscriptions 
-                SET cancel_at_period_end = TRUE, updated_at = CURRENT_TIMESTAMP
+                SET cancel_at_period_end = TRUE, 
+                    current_period_end = %s,
+                    updated_at = CURRENT_TIMESTAMP
                 WHERE user_id = %s
-            ''', (user_id,))
+            ''', (datetime.fromtimestamp(updated_subscription['current_period_end']), user_id))
             
             conn.commit()
             conn.close()
@@ -250,7 +283,7 @@ class SubscriptionManager:
         except Exception as e:
             print(f"Error cancelling subscription: {e}")
             return {'success': False, 'error': str(e)}
-    
+
     def record_matching_usage(self, user_id: int, is_free: bool = False):
         """Record when user runs matching"""
         try:

@@ -6746,45 +6746,100 @@ def render_subscription_management_section(subscription_status: Dict) -> str:
     """Render subscription management section based on user's current status"""
     
     if subscription_status['is_subscribed']:
-        # Active subscription
+        status = subscription_status.get('status')
         expires_at = subscription_status.get('expires_at', 'Unknown')
-        next_billing = subscription_status.get('current_period_end', 'Unknown')
         
-        return f'''
-        <div class="subscription-section subscription-active">
-            <h3 style="color: var(--color-emerald); margin-bottom: 1rem;">Subscription Management</h3>
-            
-            <div class="plan-badge">
-                ✓ Premium Plan Active
-            </div>
-            
-            <div class="subscription-details">
-                <div class="usage-stats">
-                    <div class="usage-stat">
-                        <div class="stat-number">∞</div>
-                        <div class="stat-label">Matches Available</div>
-                    </div>
-                    <div class="usage-stat">
-                        <div class="stat-number">{subscription_status.get('matches_this_month', 0)}</div>
-                        <div class="stat-label">Used This Month</div>
-                    </div>
+        # Format the date properly
+        if expires_at != 'Unknown':
+            try:
+                if isinstance(expires_at, str):
+                    # If it's a string, try to parse it
+                    from datetime import datetime
+                    expires_date = datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
+                else:
+                    # If it's already a datetime object
+                    expires_date = expires_at
+                expires_at_formatted = expires_date.strftime('%B %d, %Y')
+            except:
+                expires_at_formatted = str(expires_at)
+        else:
+            expires_at_formatted = 'Unknown'
+        
+        if status == 'cancelled':
+            # Subscription is cancelled but still active until expiry
+            return f'''
+            <div class="subscription-section subscription-active" style="border-left: 4px solid #ff9500;">
+                <h3 style="color: #ff9500; margin-bottom: 1rem;">Subscription Management</h3>
+                
+                <div class="plan-badge" style="background: linear-gradient(135deg, #ff9500, #dc3545);">
+                    ⚠ Premium Plan - Cancelled
                 </div>
                 
-                <p><strong>Expiry:</strong> {expires_at}</p>
-                <p><strong>Plan:</strong> Premium Matching (£9.99/month)</p>
+                <div class="subscription-details">
+                    <div class="usage-stats">
+                        <div class="usage-stat">
+                            <div class="stat-number">∞</div>
+                            <div class="stat-label">Matches Available</div>
+                        </div>
+                        <div class="usage-stat">
+                            <div class="stat-number">{subscription_status.get('matches_this_month', 0)}</div>
+                            <div class="stat-label">Used This Month</div>
+                        </div>
+                    </div>
+                    
+                    <p><strong>Expires:</strong> {expires_at_formatted}</p>
+                    <p><strong>Plan:</strong> Premium Matching (£9.99/month)</p>
+                    <p style="color: #ff9500; font-weight: 600;">Your subscription has been cancelled and will expire on {expires_at_formatted}. You'll continue to have premium access until then.</p>
+                </div>
+                
+                <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+                    <a href="/subscription/plans" class="btn-manage btn-upgrade">
+                        Reactivate Subscription
+                    </a>
+                </div>
+                
+                <div style="margin-top: 1.5rem; font-size: 0.875rem; color: var(--color-gray-600);">
+                    After expiry, you'll be moved to the free plan with 1 match per month.
+                </div>
             </div>
-            
-            <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
-                <a href="/subscription/cancel" class="btn-manage btn-cancel">
-                    Cancel Subscription
-                </a>
+            '''
+        else:
+            # Active subscription
+            return f'''
+            <div class="subscription-section subscription-active">
+                <h3 style="color: var(--color-emerald); margin-bottom: 1rem;">Subscription Management</h3>
+                
+                <div class="plan-badge">
+                    ✓ Premium Plan Active
+                </div>
+                
+                <div class="subscription-details">
+                    <div class="usage-stats">
+                        <div class="usage-stat">
+                            <div class="stat-number">∞</div>
+                            <div class="stat-label">Matches Available</div>
+                        </div>
+                        <div class="usage-stat">
+                            <div class="stat-number">{subscription_status.get('matches_this_month', 0)}</div>
+                            <div class="stat-label">Used This Month</div>
+                        </div>
+                    </div>
+                    
+                    <p><strong>Next Billing:</strong> {expires_at_formatted}</p>
+                    <p><strong>Plan:</strong> Premium Matching (£9.99/month)</p>
+                </div>
+                
+                <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+                    <a href="/subscription/cancel" class="btn-manage btn-cancel">
+                        Cancel Subscription
+                    </a>
+                </div>
+                
+                <div style="margin-top: 1.5rem; font-size: 0.875rem; color: var(--color-gray-600);">
+                    Your subscription includes unlimited matching, enhanced AI analysis, and priority support.
+                </div>
             </div>
-            
-            <div style="margin-top: 1.5rem; font-size: 0.875rem; color: var(--color-gray-600);">
-                Your subscription includes unlimited matching, enhanced AI analysis, and priority support.
-            </div>
-        </div>
-        '''
+            '''
     else:
         # Free plan
         remaining = subscription_status['free_matches_remaining']
@@ -6828,6 +6883,7 @@ def render_subscription_management_section(subscription_status: Dict) -> str:
             </div>
         </div>
         '''
+
 # ============================================================================
 # ADMIN VERIFICATION MANAGEMENT ROUTES
 # ============================================================================
