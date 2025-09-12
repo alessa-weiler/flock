@@ -131,7 +131,7 @@ class SubscriptionManager:
                     conn.close()
                     
                     # Return as expired subscription
-                    free_matches_remaining = max(0, 1 - free_matches_used)
+                    free_matches_remaining = max(0, 5 - free_matches_used)
                     return {
                         'is_subscribed': False,
                         'status': 'expired',
@@ -163,7 +163,7 @@ class SubscriptionManager:
                         'subscription_required': False
                     }
             else:
-                free_matches_remaining = max(0, 1 - free_matches_used)
+                free_matches_remaining = max(0, 5 - free_matches_used)
                 return {
                     'is_subscribed': False,
                     'status': 'inactive',
