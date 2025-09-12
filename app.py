@@ -3138,10 +3138,10 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
         data_confidence = match.get('data_confidence', 0)
         
         if data_confidence >= 70:
-            compatibility_badges += f'<span class="badge badge-ai">AI Confidence: {data_confidence}%</span>'
+            compatibility_badges += f'<span class="badge badge-ai">ML Confidence: {data_confidence}%</span>'
         
         if neural_score >= 85:
-            compatibility_badges += '<span class="badge badge-neural">High Neural Match</span>'
+            compatibility_badges += '<span class="badge badge-neural">High ML Match</span>'
         
         # Simulation insights
         sim_satisfaction = match.get('simulation_satisfaction', 0)
@@ -3188,7 +3188,7 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
             enhanced_scores_html = f'''
             <div class="ai-scores-grid">
                 <div class="ai-score-card">
-                    <div class="score-label">Neural Score</div>
+                    <div class="score-label">ML Score</div>
                     <div class="score-value">{neural_score}</div>
                     <div class="score-bar">
                         <div class="score-fill" style="width: {neural_score}%;"></div>
@@ -4401,15 +4401,14 @@ def home():
             
             <p class="hero-description">
                 We simulate dinner parties to match you with people who truly get you. 
-                Our AI creates virtual social scenarios to find your perfect friendship compatibility 
+                Our algorithm creates virtual social scenarios to find your perfect friendship compatibility 
                 before you even meet.
             </p>
 
             <div class="features-grid">
                 <div class="feature-card">
-                    
-                    <h3 class="feature-title">Dinner Simulation</h3>
-                    <p class="feature-description">AI agents simulate dinner conversations to test real compatibility</p>
+                    <h3 class="feature-title"> Dinner Simulation</h3>
+                    <p class="feature-description"> Agents simulate dinner conversations to test real compatibility</p>
                 </div>
                 
                 <div class="feature-card">
@@ -9707,7 +9706,7 @@ def live_matching(user_id):
             }}
             
             :root {{
-                --color-cream: #f1ece0;
+                --color-cream: #f8f9fa;
                 --color-emerald: #167a60;
                 --color-sage: #c6e19b;
                 --color-lavender: #c2b7ef;
@@ -9855,14 +9854,14 @@ def live_matching(user_id):
     <body>
         <!-- Status -->
         <div class="status" id="status">
-            Analyzing neural patterns...
+            Your agent (big circle) is mingling...
         </div>
         
         <!-- 3D Canvas -->
         <div id="threejs-container">
             <div class="loading" id="loading">
                 <div class="loading-spinner"></div>
-                Initializing 3D neural space...
+                Initializing 3D space...
             </div>
         </div>
         
@@ -9901,7 +9900,7 @@ def live_matching(user_id):
                 
                 // Scene
                 scene = new THREE.Scene();
-                scene.background = new THREE.Color(0xf1ece0); // cream background
+                scene.background = new THREE.Color(0xf8f9fa); // cream background
                 
                 // Camera
                 camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
