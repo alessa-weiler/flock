@@ -24,13 +24,52 @@ except ImportError:
 # ============================================================================
 # MATCHING SYSTEM
 # ============================================================================
-
+def get_user_bio_or_fallback(profile_data: Dict[str, Any]) -> str:
+        """
+        Get user's bio, or create a fallback from their onboarding responses
+        """
+        # First try to get the bio
+        bio = profile_data.get('bio', '').strip()
+        
+        if bio:
+            return bio
+        
+        # If no bio, create a composite from the 4 key fields
+        fallback_parts = []
+        
+        # Ideal friendship description
+        ideal_friendship = profile_data.get('ideal_friendship_description', '').strip()
+        if ideal_friendship:
+            fallback_parts.append(f"Ideal friendship: {ideal_friendship}")
+        
+        # Unique interest
+        unique_interest = profile_data.get('unique_interest', '').strip()
+        if unique_interest:
+            fallback_parts.append(f"Special interest: {unique_interest}")
+        
+        # Life experience impact
+        life_experience = profile_data.get('life_experience_impact', '').strip()
+        if life_experience:
+            fallback_parts.append(f"Formative experience: {life_experience}")
+        
+        # What energizes them
+        energized_by = profile_data.get('energized_by', '').strip()
+        if energized_by:
+            fallback_parts.append(f"I feel energized around people who {energized_by}")
+        
+        # Join the parts with line breaks, or return default message
+        if fallback_parts:
+            return " • ".join(fallback_parts)
+        else:
+            return "This user is still completing their profile."
+    
 class MatchingSystem:
     """Advanced friendship compatibility matching system"""
     
     def __init__(self, api_key: str):
         self.client = OpenAI(api_key=api_key) if api_key else None
         self.user_auth = UserAuthSystem()
+    
     
     def calculate_distance(self, postcode1: str, postcode2: str) -> float:
         """Calculate distance between two UK postcodes"""
@@ -395,11 +434,8 @@ class MatchingSystem:
             )
             
             # Generate AI analysis
-            if self.client:
-                analysis = self.get_ai_friendship_analysis(current_user_profile, potential_match['profile'])
-            else:
-                analysis = self.get_fallback_friendship_analysis(current_user_profile, potential_match['profile'])
-            
+            analysis = potential_match['profile'].get('bio', 'No bio available yet.')
+
             match_result = {
                 'matched_user_id': potential_match['user_id'],
                 'matched_user_name': potential_match['first_name'],
@@ -1284,6 +1320,45 @@ class EnhancedMatchingSystem:
         
         return user1_compatible and user2_compatible
     
+    def get_user_bio_or_fallback(profile_data: Dict[str, Any]) -> str:
+        """
+        Get user's bio, or create a fallback from their onboarding responses
+        """
+        # First try to get the bio
+        bio = profile_data.get('bio', '').strip()
+        
+        if bio:
+            return bio
+        
+        # If no bio, create a composite from the 4 key fields
+        fallback_parts = []
+        
+        # Ideal friendship description
+        ideal_friendship = profile_data.get('ideal_friendship_description', '').strip()
+        if ideal_friendship:
+            fallback_parts.append(f"Ideal friendship: {ideal_friendship}")
+        
+        # Unique interest
+        unique_interest = profile_data.get('unique_interest', '').strip()
+        if unique_interest:
+            fallback_parts.append(f"Special interest: {unique_interest}")
+        
+        # Life experience impact
+        life_experience = profile_data.get('life_experience_impact', '').strip()
+        if life_experience:
+            fallback_parts.append(f"Formative experience: {life_experience}")
+        
+        # What energizes them
+        energized_by = profile_data.get('energized_by', '').strip()
+        if energized_by:
+            fallback_parts.append(f"I feel energized around people who {energized_by}")
+        
+        # Join the parts with line breaks, or return default message
+        if fallback_parts:
+            return " • ".join(fallback_parts)
+        else:
+            return "This user is still completing their profile."
+    
     def run_matching(self, user_id: int) -> List[Dict[str, Any]]:
         """Run enhanced matching with real-time agent visualization"""
         print(f"\n=== Running Real-Time Enhanced Matching for {user_id} ===")
@@ -1438,10 +1513,7 @@ class EnhancedMatchingSystem:
                 'communication_score': round(detailed_scores['communication_score']),
                 'location_score': 85,
                 'overall_score': round(overall_score),
-                'compatibility_analysis': self._generate_match_analysis(
-                    current_user_profile, match_user['profile'], neural_compatibility, 
-                    detailed_scores, simulation_results
-                ),
+                'compatibility_analysis': get_user_bio_or_fallback(match_user['profile']),
                 'distance_miles': 0,
                 'final_position': final_agent.position if final_agent else (0, 0)
             }

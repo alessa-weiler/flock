@@ -2206,7 +2206,7 @@ All three items must be clearly visible in the photo(s).'''
                         </div>
                         
                         <div class="benefits">
-                            <strong>🚀 Benefits of being verified:</strong><br>
+                            <strong> Benefits of being verified:</strong><br>
                             • Higher match-to-meet conversion rates<br>
                             • Increased trust from other users<br>
                             • Priority in matching algorithms<br>
@@ -3043,7 +3043,6 @@ def render_template_with_header(title: str, content: str, user_info: Dict = None
     </html>
     '''
 
-
 def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
     """
     Unified dashboard function that includes:
@@ -3238,29 +3237,6 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
                 {compatibility_badges}
             </div>
             
-            <div class="detailed-scores">
-                <div class="score-item">
-                    <div class="score-category">Personality</div>
-                    <div class="score-value-small">{match['personality_score']}</div>
-                    <div class="score-bar-small">
-                        <div class="score-fill-small" style="width: {match['personality_score']}%;"></div>
-                    </div>
-                </div>
-                <div class="score-item">
-                    <div class="score-category">Values</div>
-                    <div class="score-value-small">{match.get('values_score', 75)}</div>
-                    <div class="score-bar-small">
-                        <div class="score-fill-small" style="width: {match.get('values_score', 75)}%;"></div>
-                    </div>
-                </div>
-                <div class="score-item">
-                    <div class="score-category">Lifestyle</div>
-                    <div class="score-value-small">{match.get('lifestyle_score', 75)}</div>
-                    <div class="score-bar-small">
-                        <div class="score-fill-small" style="width: {match.get('lifestyle_score', 75)}%;"></div>
-                    </div>
-                </div>
-            </div>
             
             <div class="compatibility-analysis">
                 {match['compatibility_analysis']}
@@ -10272,7 +10248,7 @@ def live_matching(user_id):
             function updateVisualization(data) {{
                 // Update status
                 document.getElementById('status').textContent = 
-                    data.status === 'completed' ? 'Analysis complete' : 'Analyzing neural patterns...';
+                    data.status === 'completed' ? 'Analysis complete' : 'Your agent (big circle) is mingling...';
                 
                 // Initialize agents
                 if (data.agents_metadata && Object.keys(agentsMetadata).length === 0) {{
