@@ -6750,7 +6750,7 @@ def render_subscription_management_section(subscription_status: Dict) -> str:
         expires_at = subscription_status.get('expires_at', 'Unknown')
         
         # Format the date properly
-        if expires_at != 'Unknown':
+        if expires_at and expires_at != 'Unknown' and str(expires_at).lower() != 'none':
             try:
                 if isinstance(expires_at, str):
                     # If it's a string, try to parse it
@@ -6761,9 +6761,9 @@ def render_subscription_management_section(subscription_status: Dict) -> str:
                     expires_date = expires_at
                 expires_at_formatted = expires_date.strftime('%B %d, %Y')
             except:
-                expires_at_formatted = str(expires_at)
+                expires_at_formatted = 'Date unavailable'
         else:
-            expires_at_formatted = 'Unknown'
+            expires_at_formatted = 'Date unavailable'
         
         if status == 'cancelled':
             # Subscription is cancelled but still active until expiry
@@ -6883,7 +6883,7 @@ def render_subscription_management_section(subscription_status: Dict) -> str:
             </div>
         </div>
         '''
-
+    
 # ============================================================================
 # ADMIN VERIFICATION MANAGEMENT ROUTES
 # ============================================================================
@@ -12343,7 +12343,7 @@ def cancel_subscription():
             <ul style="color: #856404;">
                 <li>You'll lose access to unlimited matching</li>
                 <li>You'll return to 1 free match per month</li>
-                <li>Enhanced AI analysis will no longer be available</li>
+                <li>Algorithm boost will no longer be available</li>
                 <li>You can resubscribe anytime</li>
             </ul>
         </div>
