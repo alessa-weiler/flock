@@ -11374,32 +11374,109 @@ def privacy_policy():
     content = '''
     <div class="container">
         <h1>Privacy Policy</h1>
-        <p><em>Last updated: [Current Date]</em></p>
-        
-        <h2>Data We Collect</h2>
+        <p><em>Last updated: September 16, 2025</em></p>
+
+        <p>Since our platform is all about building trust and meaningful human connections, 
+        we want to be clear about how we handle your data. This page explains what data we collect, 
+        how we use it, and how we protect it every step of the way.</p>
+
+        <h2>1. Who We Are</h2>
+        <p>Pont Diagnostics Ltd (“Pont”, “we”, “us”, “our”) is committed to protecting your privacy. 
+        We operate a human-to-human matchmaking and therapist-matching platform.</p>
         <ul>
-            <li>Contact information (email, phone) - encrypted</li>
-            <li>Profile responses - anonymized and encrypted</li>
-            <li>Usage analytics - anonymized</li>
+            <li><strong>Company name:</strong> Pont Diagnostics Ltd</li>
+            <li><strong>Company number:</strong> 16012024</li>
+            <li><strong>Registered office:</strong> 124 City Road, London, EC1V 2NX, United Kingdom</li>
+            <li><strong>Email:</strong> alessa@pont-diagnostics.com</li>
+            <li><strong>Data Protection Lead:</strong> Alessa Weiler</li>
         </ul>
-        
-        <h2>How We Protect Your Data</h2>
+
+        <h2>2. Where This Privacy Policy Applies</h2>
+        <p>This policy applies to all our services, including our app, website, and events. 
+        If a specific service has its own privacy policy, that one will apply instead.</p>
+
+        <h2>3. Data We Collect</h2>
+        <h3>Data you give us</h3>
         <ul>
-            <li>All personal data is encrypted using AES-256</li>
-            <li>Profile data is anonymized for matching</li>
-            <li>We never share personal information with third parties</li>
-            <li>You can export or delete your data at any time</li>
+            <li><strong>Account Data:</strong> email, phone number, date of birth, and password (encrypted)</li>
+            <li><strong>Profile Data:</strong> your responses, preferences, interests, and optional sensitive data (e.g. health, orientation)</li>
+            <li><strong>Content:</strong> photos, audio, text, or other content you share (including chats)</li>
+            <li><strong>Purchase Data:</strong> subscription or feature purchases (via secure third-party providers)</li>
         </ul>
-        
-        <h2>Your Rights</h2>
+
+        <h3>Data we collect automatically</h3>
+        <ul>
+            <li><strong>Usage Data:</strong> login times, features used, and interactions</li>
+            <li><strong>Technical Data:</strong> device ID, IP address, app settings, crash reports, cookies</li>
+            <li><strong>Geolocation Data:</strong> approximate location (if permission is granted)</li>
+        </ul>
+
+        <h3>Data from third parties</h3>
+        <ul>
+            <li>Basic info if you sign up via Apple/Google or link a social account</li>
+            <li>Information about you if reported by another member or through support requests</li>
+        </ul>
+
+        <h2>4. How We Use Data</h2>
+        <ul>
+            <li>Provide our service: set up accounts, recommend matches, personalize experiences</li>
+            <li>Improve Pont: test new features, analyze usage, make the platform safer</li>
+            <li>Process payments: subscriptions, purchases, billing</li>
+            <li>Keep the community safe: detect fraud, enforce terms, verify accounts</li>
+            <li>Comply with legal obligations</li>
+        </ul>
+        <p><strong>We never sell your personal data to third parties.</strong></p>
+
+        <h2>5. How We Protect and Share Data</h2>
+        <ul>
+            <li>All sensitive data is encrypted (AES-256)</li>
+            <li>Profile and diagnostic data anonymized for matching or research</li>
+            <li>Shared only as needed:
+                <ul>
+                    <li>With members: only what you choose to display</li>
+                    <li>With service providers: hosting, analytics, payments</li>
+                    <li>With therapists: only if you opt in</li>
+                    <li>With authorities: only if legally required</li>
+                </ul>
+            </li>
+        </ul>
+
+        <h2>6. Your Rights</h2>
         <ul>
             <li><a href="/privacy/export-data">Export your data</a></li>
             <li><a href="/privacy/delete-account">Delete your account</a></li>
-            <li>Contact us with privacy concerns</li>
+            <li>Update your profile anytime in settings</li>
+            <li>Withdraw consent (e.g. location, health data) via device settings or by emailing admin@pont.world</li>
+        </ul>
+
+        <h2>7. Data Retention</h2>
+        <ul>
+            <li>Profiles deleted immediately on account closure</li>
+            <li>Data retained for safety/legal reasons:
+                <ul>
+                    <li>3 months after account closure (safety window)</li>
+                    <li>Up to 10 years for financial transactions</li>
+                    <li>As long as necessary to prevent banned users rejoining</li>
+                </ul>
+            </li>
+            <li>Aggregated, anonymized data may be kept for research and product improvement</li>
+        </ul>
+
+        <h2>8. Children’s Privacy</h2>
+        <p>Pont is for adults 18+ only. We do not allow minors to use our service.</p>
+
+        <h2>9. Changes to this Policy</h2>
+        <p>We may update this policy as we grow and add features. 
+        If significant changes are made, we’ll notify you in advance.</p>
+
+        <h2>10. Contact Us</h2>
+        <p>If you have questions or concerns, contact us:</p>
+        <ul>
+            <li><strong>Email:</strong> alessa@pont-diagnostics.com</li>
+            <li><strong>Post:</strong> Pont Diagnostics Ltd, 124 City Road, London, EC1V 2NX, UK</li>
         </ul>
     </div>
     '''
-    
     return render_template_with_header("Privacy Policy", content)
 
 @app.route('/terms-of-service')
