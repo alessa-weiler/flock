@@ -455,9 +455,12 @@ class MatchingSystem:
             matches.append(match_result)
         
         # Sort by overall score and filter
+        # matches.sort(key=lambda x: x['overall_score'], reverse=True)
+        # matches = [m for m in matches if m['overall_score'] >= 60]
+        # Sort by overall score and return top 10
         matches.sort(key=lambda x: x['overall_score'], reverse=True)
-        matches = [m for m in matches if m['overall_score'] >= 60]
-        
+        matches = matches[:10]  # Take top 10 regardless of score
+                
         # Save matches to database
         self.user_auth.save_user_matches(user_id, matches)
         
@@ -1521,9 +1524,12 @@ class EnhancedMatchingSystem:
             matches.append(match_result)
         
         # Sort and save matches
+        # matches.sort(key=lambda x: x['overall_score'], reverse=True)
+        # matches = [m for m in matches if m['overall_score'] >= 60]
+        # Sort and save matches - return top 10
         matches.sort(key=lambda x: x['overall_score'], reverse=True)
-        matches = [m for m in matches if m['overall_score'] >= 60]
-        
+        matches = matches[:10]  # Take top 10 regardless of score
+                
         if self.user_auth:
             self.user_auth.save_user_matches(user_id, matches)
         
