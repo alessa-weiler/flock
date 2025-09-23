@@ -464,9 +464,95 @@ class UserAuthSystem:
             print("✓ Added linkedin_url column to user_profiles table")
         except psycopg2.Error as e:
             print(f"LinkedIn URL column may already exist: {e}")
-        
+
+        # Add V2 mode setting to users table
+        try:
+            cursor.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS matching_mode TEXT DEFAULT \'individual\'')
+            print("✓ Added matching_mode column to users table")
+        except psycopg2.Error as e:
+            print(f"Matching mode column may already exist: {e}")
+
+        # Create V2 network tables
+        self.create_v2_tables(cursor)
+
         conn.commit()
         conn.close()
+
+    def create_v2_tables(self, cursor):
+        """Create tables for V2 network functionality"""
+
+        # Networks table - stores network groups created by users
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS networks (
+                id SERIAL PRIMARY KEY,
+                owner_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                description TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                is_active BOOLEAN DEFAULT TRUE,
+                FOREIGN KEY (owner_id) REFERENCES users (id)
+            )
+        ''')
+
+        # Network people - stores individuals in a network with their LinkedIn data
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS network_people (
+                id SERIAL PRIMARY KEY,
+                network_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                linkedin_url TEXT,
+                linkedin_data_encrypted TEXT,
+                profile_summary TEXT,
+                skills TEXT,
+                experience_years INTEGER,
+                industry TEXT,
+                location TEXT,
+                education TEXT,
+                mutual_connections INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (network_id) REFERENCES networks (id) ON DELETE CASCADE
+            )
+        ''')
+
+        # Network relationships - stores compatibility scores and manual adjustments
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS network_relationships (
+                id SERIAL PRIMARY KEY,
+                network_id INTEGER NOT NULL,
+                person1_id INTEGER NOT NULL,
+                person2_id INTEGER NOT NULL,
+                compatibility_score DECIMAL(3,2) DEFAULT 0.0,
+                manual_score DECIMAL(3,2),
+                ai_reasoning TEXT,
+                manual_note TEXT,
+                relationship_strength DECIMAL(3,2) DEFAULT 0.0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (network_id) REFERENCES networks (id) ON DELETE CASCADE,
+                FOREIGN KEY (person1_id) REFERENCES network_people (id) ON DELETE CASCADE,
+                FOREIGN KEY (person2_id) REFERENCES network_people (id) ON DELETE CASCADE,
+                UNIQUE(person1_id, person2_id)
+            )
+        ''')
+
+        # Network visualization settings - stores user preferences for graph layout
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS network_viz_settings (
+                id SERIAL PRIMARY KEY,
+                network_id INTEGER NOT NULL,
+                layout_data TEXT,
+                node_positions TEXT,
+                view_settings TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (network_id) REFERENCES networks (id) ON DELETE CASCADE,
+                UNIQUE(network_id)
+            )
+        ''')
+
+        print("✓ Created V2 network tables")
 
     def create_user(self, email: str, password: str, first_name: str = None, 
                last_name: str = None, phone: str = None, min_age: int = 18, 
@@ -3867,6 +3953,205 @@ def enhance_matching_with_verification():
     # Replace the method
     MatchingSystem.calculate_compatibility_scores = calculate_compatibility_scores_with_verification
 
+# ============================================================================
+# NETWORK MANAGEMENT SYSTEM (V2)
+# ============================================================================
+
+class NetworkManager:
+    """Manages V2 network functionality including LinkedIn integration"""
+
+    def __init__(self, user_auth_system, encryption_system):
+        self.user_auth = user_auth_system
+        self.encryption = encryption_system
+
+    def create_network(self, user_id: int, name: str, description: str = "") -> Dict[str, Any]:
+        """Create a new network for the user"""
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                INSERT INTO networks (owner_id, name, description)
+                VALUES (%s, %s, %s)
+                RETURNING id
+            ''', (user_id, name, description))
+
+            network_id = cursor.fetchone()['id']
+            conn.commit()
+            conn.close()
+
+            return {"success": True, "network_id": network_id}
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def get_user_networks(self, user_id: int) -> List[Dict[str, Any]]:
+        """Get all networks owned by the user"""
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                SELECT id, name, description, created_at,
+                       (SELECT COUNT(*) FROM network_people WHERE network_id = networks.id) as people_count
+                FROM networks
+                WHERE owner_id = %s AND is_active = TRUE
+                ORDER BY created_at DESC
+            ''', (user_id,))
+
+            networks = cursor.fetchall()
+            conn.close()
+
+            return [dict(row) for row in networks]
+
+        except Exception as e:
+            print(f"Error fetching networks: {e}")
+            return []
+
+    def add_person_to_network(self, network_id: int, name: str, linkedin_url: str = "") -> Dict[str, Any]:
+        """Add a person to a network"""
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            # Validate network ownership would be added here
+
+            cursor.execute('''
+                INSERT INTO network_people (network_id, name, linkedin_url)
+                VALUES (%s, %s, %s)
+                RETURNING id
+            ''', (network_id, name, linkedin_url))
+
+            person_id = cursor.fetchone()['id']
+            conn.commit()
+            conn.close()
+
+            return {"success": True, "person_id": person_id}
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def import_people_from_csv(self, network_id: int, csv_data: str) -> Dict[str, Any]:
+        """Import people from CSV data"""
+        try:
+            import csv
+            import io
+
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            # Parse CSV
+            csv_file = io.StringIO(csv_data)
+            reader = csv.DictReader(csv_file)
+
+            imported_count = 0
+            errors = []
+
+            for row in reader:
+                try:
+                    name = row.get('name', '').strip()
+                    linkedin_url = row.get('linkedin_url', '').strip()
+
+                    if name:
+                        cursor.execute('''
+                            INSERT INTO network_people (network_id, name, linkedin_url)
+                            VALUES (%s, %s, %s)
+                        ''', (network_id, name, linkedin_url))
+                        imported_count += 1
+
+                except Exception as row_error:
+                    errors.append(f"Row error: {str(row_error)}")
+
+            conn.commit()
+            conn.close()
+
+            return {
+                "success": True,
+                "imported_count": imported_count,
+                "errors": errors
+            }
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def get_network_people(self, network_id: int) -> List[Dict[str, Any]]:
+        """Get all people in a network"""
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                SELECT id, name, linkedin_url, profile_summary, skills,
+                       industry, location, created_at
+                FROM network_people
+                WHERE network_id = %s
+                ORDER BY name
+            ''', (network_id,))
+
+            people = cursor.fetchall()
+            conn.close()
+
+            return [dict(row) for row in people]
+
+        except Exception as e:
+            print(f"Error fetching network people: {e}")
+            return []
+
+    def get_network_relationships(self, network_id: int) -> List[Dict[str, Any]]:
+        """Get all relationships in a network"""
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                SELECT nr.*,
+                       p1.name as person1_name,
+                       p2.name as person2_name
+                FROM network_relationships nr
+                JOIN network_people p1 ON nr.person1_id = p1.id
+                JOIN network_people p2 ON nr.person2_id = p2.id
+                WHERE nr.network_id = %s
+            ''', (network_id,))
+
+            relationships = cursor.fetchall()
+            conn.close()
+
+            return [dict(row) for row in relationships]
+
+        except Exception as e:
+            print(f"Error fetching network relationships: {e}")
+            return []
+
+    def update_relationship_score(self, network_id: int, person1_id: int, person2_id: int,
+                                 manual_score: float, note: str = "") -> Dict[str, Any]:
+        """Update manual relationship score"""
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            # Ensure person1_id < person2_id for consistency
+            if person1_id > person2_id:
+                person1_id, person2_id = person2_id, person1_id
+
+            cursor.execute('''
+                INSERT INTO network_relationships
+                    (network_id, person1_id, person2_id, manual_score, manual_note)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (person1_id, person2_id)
+                DO UPDATE SET
+                    manual_score = EXCLUDED.manual_score,
+                    manual_note = EXCLUDED.manual_note,
+                    updated_at = CURRENT_TIMESTAMP
+            ''', (network_id, person1_id, person2_id, manual_score, note))
+
+            conn.commit()
+            conn.close()
+
+            return {"success": True}
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
 # Initialize systems
 
 from data_safety import DataEncryption, GDPRCompliance
@@ -3881,6 +4166,7 @@ gdpr_compliance = GDPRCompliance(user_auth, data_encryption, get_db_connection)
 #matching_system = MatchingSystem(API_KEY)
 verification_system = IdentityVerificationSystem(user_auth)
 subscription_manager = SubscriptionManager(user_auth, get_db_connection)
+network_manager = NetworkManager(user_auth, data_encryption)
 try:
     enhanced_matching_system, interaction_tracker = integrate_enhanced_matching(app, user_auth, API_KEY, db_connection_func=get_db_connection)
     enhanced_matching_system.processing_status = processing_status
@@ -3897,7 +4183,7 @@ except Exception as e:
 email_followup = EmailFollowupSystem(user_auth, get_db_connection)
 enhance_matching_with_verification()
 
-add_onboarding_routes(app, login_required, user_auth, render_template_with_header)
+add_onboarding_routes(app, login_required, user_auth, render_template_with_header, get_db_connection, process_matching_background)
 # ============================================================================
 # ROUTES - AUTHENTICATION
 # ============================================================================
@@ -7286,6 +7572,706 @@ def generate_agents_metadata_for_user(current_user_id):
     return agents_metadata
 
 # ============================================================================
+# ROUTES - V2 NETWORK MANAGEMENT
+# ============================================================================
+
+def render_networks_list(networks):
+    """Helper function to render networks list"""
+    if networks:
+        network_items = []
+        for network in networks:
+            network_item = f'''
+            <div class="network-item">
+                <div class="network-info">
+                    <h4>{network['name']}</h4>
+                    <p>{network.get('description', '')} - {network['people_count']} people</p>
+                </div>
+                <div class="network-actions">
+                    <a href="/network/{network['id']}" class="btn">View</a>
+                </div>
+            </div>
+            '''
+            network_items.append(network_item)
+
+        networks_html = f'''
+        <div class="networks-list">
+            <h3>Your Networks ({len(networks)})</h3>
+            {chr(10).join(network_items)}
+        </div>
+        '''
+    else:
+        networks_html = '<div class="networks-list"><p style="text-align: center; color: #718096;">No networks created yet</p></div>'
+
+    return networks_html
+
+@app.route('/network-mode')
+@login_required
+def network_mode():
+    """V2 Network mode selection page"""
+    user_id = session['user_id']
+    user_info = user_auth.get_user_info(user_id)
+
+    if not user_info:
+        flash('Account information not found', 'error')
+        return redirect('/login')
+
+    # Check if user has completed profile
+    if not user_info.get('profile_completed', False):
+        flash('Please complete your profile first', 'warning')
+        return redirect('/onboarding')
+
+    # Get user's networks
+    networks = network_manager.get_user_networks(user_id)
+
+    content = f'''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Network Mode - Flock</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+            @import url("https://fonts.googleapis.com/css2?family=Clash+Display:wght@200..700&display=swap");
+            @import url("https://fonts.googleapis.com/css2?family=Satoshi:wght@300..900&display=swap");
+
+            * {{
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }}
+
+            body {{
+                font-family: "Satoshi", -apple-system, BlinkMacSystemFont, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                padding: 2rem;
+            }}
+
+            .container {{
+                max-width: 900px;
+                margin: 0 auto;
+                background: white;
+                border-radius: 20px;
+                padding: 3rem;
+                box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            }}
+
+            h1 {{
+                font-family: "Clash Display", sans-serif;
+                color: #2d3748;
+                font-size: 2.5rem;
+                font-weight: 600;
+                margin-bottom: 1rem;
+                text-align: center;
+            }}
+
+            .subtitle {{
+                text-align: center;
+                color: #718096;
+                font-size: 1.1rem;
+                margin-bottom: 3rem;
+            }}
+
+            .action-cards {{
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+                gap: 2rem;
+                margin-bottom: 3rem;
+            }}
+
+            .action-card {{
+                background: #f8fafc;
+                border: 2px solid #e2e8f0;
+                border-radius: 16px;
+                padding: 2rem;
+                text-align: center;
+                transition: all 0.3s ease;
+                cursor: pointer;
+            }}
+
+            .action-card:hover {{
+                border-color: #667eea;
+                transform: translateY(-2px);
+                box-shadow: 0 8px 20px rgba(102, 126, 234, 0.15);
+            }}
+
+            .action-card h3 {{
+                color: #2d3748;
+                font-size: 1.5rem;
+                margin-bottom: 1rem;
+                font-weight: 600;
+            }}
+
+            .action-card p {{
+                color: #718096;
+                margin-bottom: 1.5rem;
+                line-height: 1.6;
+            }}
+
+            .btn {{
+                background: #667eea;
+                color: white;
+                padding: 12px 24px;
+                border: none;
+                border-radius: 8px;
+                font-weight: 600;
+                text-decoration: none;
+                display: inline-block;
+                transition: background 0.3s ease;
+            }}
+
+            .btn:hover {{
+                background: #5a67d8;
+                text-decoration: none;
+                color: white;
+            }}
+
+            .btn-secondary {{
+                background: #718096;
+            }}
+
+            .btn-secondary:hover {{
+                background: #4a5568;
+            }}
+
+            .networks-list {{
+                margin-top: 2rem;
+            }}
+
+            .network-item {{
+                background: white;
+                border: 1px solid #e2e8f0;
+                border-radius: 12px;
+                padding: 1.5rem;
+                margin-bottom: 1rem;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }}
+
+            .network-info h4 {{
+                color: #2d3748;
+                margin-bottom: 0.5rem;
+            }}
+
+            .network-info p {{
+                color: #718096;
+                font-size: 0.9rem;
+            }}
+
+            .network-actions {{
+                display: flex;
+                gap: 1rem;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🌐 Network Mode</h1>
+            <p class="subtitle">Analyze and visualize connections within your network</p>
+
+            <div class="action-cards">
+                <div class="action-card" onclick="location.href='/create-network'">
+                    <h3>🚀 Create New Network</h3>
+                    <p>Import a list of people and their LinkedIn profiles to see predicted compatibility</p>
+                    <a href="/create-network" class="btn">Get Started</a>
+                </div>
+
+                <div class="action-card" onclick="location.href='/settings'">
+                    <h3>⚙️ Switch to Individual Mode</h3>
+                    <p>Go back to the traditional one-on-one matching experience</p>
+                    <a href="/settings" class="btn btn-secondary">Switch Mode</a>
+                </div>
+            </div>
+
+            {render_networks_list(networks)}
+        </div>
+    </body>
+    </html>
+    '''
+
+    return content
+
+@app.route('/create-network', methods=['GET', 'POST'])
+@login_required
+def create_network():
+    """Create a new network"""
+    user_id = session['user_id']
+
+    if request.method == 'POST':
+        name = request.form.get('name', '').strip()
+        description = request.form.get('description', '').strip()
+
+        if not name:
+            flash('Network name is required', 'error')
+            return redirect('/create-network')
+
+        result = network_manager.create_network(user_id, name, description)
+
+        if result['success']:
+            flash('Network created successfully!', 'success')
+            return redirect(f'/network/{result["network_id"]}/setup')
+        else:
+            flash(f'Error creating network: {result["error"]}', 'error')
+
+    content = '''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Create Network - Flock</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+            @import url("https://fonts.googleapis.com/css2?family=Clash+Display:wght@200..700&display=swap");
+            @import url("https://fonts.googleapis.com/css2?family=Satoshi:wght@300..900&display=swap");
+
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+
+            body {
+                font-family: "Satoshi", -apple-system, BlinkMacSystemFont, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                padding: 2rem;
+            }
+
+            .container {
+                max-width: 600px;
+                margin: 0 auto;
+                background: white;
+                border-radius: 20px;
+                padding: 3rem;
+                box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            }
+
+            h1 {
+                font-family: "Clash Display", sans-serif;
+                color: #2d3748;
+                font-size: 2.5rem;
+                font-weight: 600;
+                margin-bottom: 1rem;
+                text-align: center;
+            }
+
+            .form-group {
+                margin-bottom: 1.5rem;
+            }
+
+            label {
+                display: block;
+                color: #2d3748;
+                font-weight: 600;
+                margin-bottom: 0.5rem;
+            }
+
+            input, textarea {
+                width: 100%;
+                padding: 12px;
+                border: 2px solid #e2e8f0;
+                border-radius: 8px;
+                font-size: 16px;
+                transition: border-color 0.3s ease;
+            }
+
+            input:focus, textarea:focus {
+                outline: none;
+                border-color: #667eea;
+            }
+
+            textarea {
+                height: 100px;
+                resize: vertical;
+            }
+
+            .btn {
+                background: #667eea;
+                color: white;
+                padding: 12px 24px;
+                border: none;
+                border-radius: 8px;
+                font-weight: 600;
+                text-decoration: none;
+                display: inline-block;
+                width: 100%;
+                text-align: center;
+                font-size: 16px;
+                transition: background 0.3s ease;
+                cursor: pointer;
+            }
+
+            .btn:hover {
+                background: #5a67d8;
+            }
+
+            .back-link {
+                display: block;
+                text-align: center;
+                margin-top: 1rem;
+                color: #718096;
+                text-decoration: none;
+            }
+
+            .back-link:hover {
+                color: #667eea;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🚀 Create Network</h1>
+
+            <form method="POST">
+                <div class="form-group">
+                    <label for="name">Network Name *</label>
+                    <input type="text" id="name" name="name" required
+                           placeholder="e.g., Tech Meetup Group, College Friends">
+                </div>
+
+                <div class="form-group">
+                    <label for="description">Description</label>
+                    <textarea id="description" name="description"
+                              placeholder="Brief description of this network (optional)"></textarea>
+                </div>
+
+                <button type="submit" class="btn">Create Network</button>
+            </form>
+
+            <a href="/network-mode" class="back-link">← Back to Network Mode</a>
+        </div>
+    </body>
+    </html>
+    '''
+
+    return content
+
+def render_people_list(people):
+    """Helper function to render people list"""
+    if people:
+        people_items = []
+        for person in people:
+            person_item = f'''
+            <div class="person-item">
+                <div class="person-info">
+                    <h4>{person['name']}</h4>
+                    <p>{person['linkedin_url'] if person['linkedin_url'] else 'No LinkedIn URL'}</p>
+                </div>
+            </div>
+            '''
+            people_items.append(person_item)
+
+        return chr(10).join(people_items)
+    else:
+        return '<p style="text-align: center; color: #718096; padding: 2rem;">No people added yet</p>'
+
+def render_proceed_section(network_id, people_count):
+    """Helper function to render proceed section"""
+    if people_count >= 2:
+        return f'''
+        <div class="proceed-section">
+            <a href="/network/{network_id}" class="btn btn-success">
+                🚀 Generate Network Visualization ({people_count} people)
+            </a>
+        </div>
+        '''
+    else:
+        return '''
+        <div class="proceed-section">
+            <p style="color: #718096;">Add at least 2 people to generate network visualization</p>
+        </div>
+        '''
+
+@app.route('/network/<int:network_id>/setup', methods=['GET', 'POST'])
+@login_required
+def network_setup(network_id):
+    """Setup network by adding people"""
+    user_id = session['user_id']
+
+    if request.method == 'POST':
+        action = request.form.get('action')
+
+        if action == 'add_person':
+            name = request.form.get('name', '').strip()
+            linkedin_url = request.form.get('linkedin_url', '').strip()
+
+            if name:
+                result = network_manager.add_person_to_network(network_id, name, linkedin_url)
+                if result['success']:
+                    flash('Person added successfully!', 'success')
+                else:
+                    flash(f'Error adding person: {result["error"]}', 'error')
+
+        elif action == 'import_csv':
+            csv_data = request.form.get('csv_data', '').strip()
+
+            if csv_data:
+                result = network_manager.import_people_from_csv(network_id, csv_data)
+                if result['success']:
+                    flash(f'Imported {result["imported_count"]} people successfully!', 'success')
+                    if result['errors']:
+                        flash(f'Some errors occurred: {"; ".join(result["errors"])}', 'warning')
+                else:
+                    flash(f'Error importing CSV: {result["error"]}', 'error')
+
+        return redirect(f'/network/{network_id}/setup')
+
+    # Get current people in network
+    people = network_manager.get_network_people(network_id)
+
+    content = f'''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Setup Network - Flock</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+            @import url("https://fonts.googleapis.com/css2?family=Clash+Display:wght@200..700&display=swap");
+            @import url("https://fonts.googleapis.com/css2?family=Satoshi:wght@300..900&display=swap");
+
+            * {{
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }}
+
+            body {{
+                font-family: "Satoshi", -apple-system, BlinkMacSystemFont, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                padding: 2rem;
+            }}
+
+            .container {{
+                max-width: 800px;
+                margin: 0 auto;
+                background: white;
+                border-radius: 20px;
+                padding: 3rem;
+                box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            }}
+
+            h1 {{
+                font-family: "Clash Display", sans-serif;
+                color: #2d3748;
+                font-size: 2.5rem;
+                font-weight: 600;
+                margin-bottom: 1rem;
+                text-align: center;
+            }}
+
+            .tabs {{
+                display: flex;
+                margin-bottom: 2rem;
+                border-bottom: 2px solid #e2e8f0;
+            }}
+
+            .tab {{
+                padding: 1rem 2rem;
+                background: none;
+                border: none;
+                color: #718096;
+                font-weight: 600;
+                cursor: pointer;
+                border-bottom: 2px solid transparent;
+                transition: all 0.3s ease;
+            }}
+
+            .tab.active {{
+                color: #667eea;
+                border-bottom-color: #667eea;
+            }}
+
+            .tab-content {{
+                display: none;
+            }}
+
+            .tab-content.active {{
+                display: block;
+            }}
+
+            .form-group {{
+                margin-bottom: 1.5rem;
+            }}
+
+            label {{
+                display: block;
+                color: #2d3748;
+                font-weight: 600;
+                margin-bottom: 0.5rem;
+            }}
+
+            input, textarea {{
+                width: 100%;
+                padding: 12px;
+                border: 2px solid #e2e8f0;
+                border-radius: 8px;
+                font-size: 16px;
+                transition: border-color 0.3s ease;
+            }}
+
+            input:focus, textarea:focus {{
+                outline: none;
+                border-color: #667eea;
+            }}
+
+            textarea {{
+                height: 200px;
+                resize: vertical;
+                font-family: monospace;
+            }}
+
+            .btn {{
+                background: #667eea;
+                color: white;
+                padding: 12px 24px;
+                border: none;
+                border-radius: 8px;
+                font-weight: 600;
+                text-decoration: none;
+                display: inline-block;
+                transition: background 0.3s ease;
+                cursor: pointer;
+            }}
+
+            .btn:hover {{
+                background: #5a67d8;
+            }}
+
+            .btn-success {{
+                background: #48bb78;
+            }}
+
+            .btn-success:hover {{
+                background: #38a169;
+            }}
+
+            .people-list {{
+                margin-top: 2rem;
+                padding-top: 2rem;
+                border-top: 2px solid #e2e8f0;
+            }}
+
+            .person-item {{
+                background: #f8fafc;
+                border: 1px solid #e2e8f0;
+                border-radius: 8px;
+                padding: 1rem;
+                margin-bottom: 1rem;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }}
+
+            .person-info h4 {{
+                color: #2d3748;
+                margin-bottom: 0.25rem;
+            }}
+
+            .person-info p {{
+                color: #718096;
+                font-size: 0.9rem;
+            }}
+
+            .csv-example {{
+                background: #f8fafc;
+                padding: 1rem;
+                border-radius: 8px;
+                margin-bottom: 1rem;
+                font-family: monospace;
+                font-size: 0.9rem;
+                border: 1px solid #e2e8f0;
+            }}
+
+            .proceed-section {{
+                text-align: center;
+                margin-top: 2rem;
+                padding-top: 2rem;
+                border-top: 2px solid #e2e8f0;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>👥 Setup Your Network</h1>
+
+            <div class="tabs">
+                <button class="tab active" onclick="showTab('manual')">Add Manually</button>
+                <button class="tab" onclick="showTab('csv')">Import CSV</button>
+            </div>
+
+            <!-- Manual Entry Tab -->
+            <div id="manual" class="tab-content active">
+                <form method="POST">
+                    <input type="hidden" name="action" value="add_person">
+                    <div class="form-group">
+                        <label for="name">Person's Name *</label>
+                        <input type="text" id="name" name="name" required
+                               placeholder="e.g., John Smith">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="linkedin_url">LinkedIn URL (optional)</label>
+                        <input type="url" id="linkedin_url" name="linkedin_url"
+                               placeholder="https://linkedin.com/in/johnsmith">
+                    </div>
+
+                    <button type="submit" class="btn">Add Person</button>
+                </form>
+            </div>
+
+            <!-- CSV Import Tab -->
+            <div id="csv" class="tab-content">
+                <div class="csv-example">
+                    <strong>CSV Format Example:</strong><br>
+                    name,linkedin_url<br>
+                    John Smith,https://linkedin.com/in/johnsmith<br>
+                    Jane Doe,https://linkedin.com/in/janedoe<br>
+                    Bob Johnson,
+                </div>
+
+                <form method="POST">
+                    <input type="hidden" name="action" value="import_csv">
+                    <div class="form-group">
+                        <label for="csv_data">Paste CSV Data</label>
+                        <textarea id="csv_data" name="csv_data" required
+                                  placeholder="name,linkedin_url&#10;John Smith,https://linkedin.com/in/johnsmith&#10;Jane Doe,https://linkedin.com/in/janedoe"></textarea>
+                    </div>
+
+                    <button type="submit" class="btn">Import People</button>
+                </form>
+            </div>
+
+            <!-- Current People List -->
+            <div class="people-list">
+                <h3>People in Network ({len(people)})</h3>
+                {render_people_list(people)}
+            </div>
+
+            {render_proceed_section(network_id, len(people))}
+        </div>
+
+        <script>
+            function showTab(tabName) {{
+                // Hide all tabs
+                document.querySelectorAll('.tab-content').forEach(tab => {{
+                    tab.classList.remove('active');
+                }});
+                document.querySelectorAll('.tab').forEach(tab => {{
+                    tab.classList.remove('active');
+                }});
+
+                // Show selected tab
+                document.getElementById(tabName).classList.add('active');
+                event.target.classList.add('active');
+            }}
+        </script>
+    </body>
+    </html>
+    '''
+
+    return content
+
+# ============================================================================
 # ROUTES - PROCESSING & RESULTS
 # ============================================================================
 
@@ -7967,6 +8953,18 @@ def update_profile():
         
         print(f"✓ Updating profile for user {user_id}")
         
+        # Handle matching mode update
+        matching_mode = request.form.get('matching_mode', 'individual')
+        if matching_mode in ['individual', 'network']:
+            try:
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute('UPDATE users SET matching_mode = %s WHERE id = %s', (matching_mode, user_id))
+                conn.commit()
+                conn.close()
+            except Exception as e:
+                print(f"Error updating matching mode: {e}")
+
         # Clear existing blocked users and save updated profile
         user_auth.clear_blocked_users(user_id)
         user_auth.save_user_profile(user_id, profile_data)
@@ -7989,23 +8987,56 @@ def update_profile():
         thread.daemon = True
         thread.start()
         
-        flash('Profile updated successfully! Finding new matches...', 'success')
-        return redirect('/processing')
+        flash('Profile updated successfully!', 'success')
+
+        # Redirect based on matching mode
+        if matching_mode == 'network':
+            return redirect('/network-mode')
+        else:
+            flash('Finding new matches...', 'info')
+            return redirect('/processing')
     
     # GET request - show the update form
     existing_profile = user_auth.get_user_profile(user_id)
     existing_blocked = user_auth.get_blocked_users(user_id)
     
-    # Render update form (simplified version)
-    content = '''
+    # Get current matching mode
+    current_mode = user_info.get('matching_mode', 'individual')
+
+    # Render update form with matching mode toggle
+    content = f'''
     <div class="container">
         <h1 style="font-size: 28px; text-align: center; margin-bottom: 32px; color: #28a745;">Update Your Profile</h1>
-        
+
         <form method="POST">
-            <!-- Add simplified form fields here -->
+            <!-- Matching Mode Toggle -->
+            <div style="background: #f8f9fa; border-radius: 12px; padding: 20px; margin-bottom: 20px; border: 2px solid #e9ecef;">
+                <h3 style="color: #2d3748; margin-bottom: 15px; font-size: 18px;">Matching Mode</h3>
+                <p style="color: #6c757d; margin-bottom: 15px; font-size: 14px;">Choose how you want to use Flock:</p>
+
+                <div style="display: grid; gap: 10px;">
+                    <label style="display: flex; align-items: center; padding: 12px; background: {'#e6f3ff' if current_mode == 'individual' else 'white'}; border: 2px solid {'#007bff' if current_mode == 'individual' else '#dee2e6'}; border-radius: 8px; cursor: pointer;">
+                        <input type="radio" name="matching_mode" value="individual" {'checked' if current_mode == 'individual' else ''} style="margin-right: 10px;">
+                        <div>
+                            <strong style="color: #2d3748;">👤 Individual Mode</strong>
+                            <div style="font-size: 12px; color: #6c757d;">Traditional one-on-one matching</div>
+                        </div>
+                    </label>
+
+                    <label style="display: flex; align-items: center; padding: 12px; background: {'#e6f3ff' if current_mode == 'network' else 'white'}; border: 2px solid {'#007bff' if current_mode == 'network' else '#dee2e6'}; border-radius: 8px; cursor: pointer;">
+                        <input type="radio" name="matching_mode" value="network" {'checked' if current_mode == 'network' else ''} style="margin-right: 10px;">
+                        <div>
+                            <strong style="color: #2d3748;">🌐 Network Mode</strong>
+                            <div style="font-size: 12px; color: #6c757d;">Import and analyze connections within your network</div>
+                        </div>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Update Button -->
             <div style="text-align: center; margin-top: 30px;">
-                <button type="submit" class="btn" style="background: #28a745; color: white; padding: 16px 32px; font-size: 16px;">
-                    Update Profile & Re-run Matching
+                <button type="submit" class="btn" style="background: #28a745; color: white; padding: 16px 32px; font-size: 16px; border: none; border-radius: 8px; cursor: pointer;">
+                    Update Settings & Profile
                 </button>
             </div>
         </form>

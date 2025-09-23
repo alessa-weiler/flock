@@ -1,5 +1,6 @@
 from typing import Dict, List, Optional, Tuple, Any
 from flask import request, session, redirect, flash
+import threading
 
 
 
@@ -27,7 +28,7 @@ def get_initials(name: str) -> str:
         return parts[0][0] + parts[-1][0]
     return parts[0][0] if parts else "?"
 
-def render_onboarding_template(step, total_steps, step_title, step_description, step_content, profile, is_last_step):
+def render_onboarding_template(step, total_steps, step_title, step_description, step_content, profile, is_last_step, render_template_with_header):
     """Render onboarding template matching dashboard aesthetic"""
     progress_percent = (step / total_steps) * 100
     
@@ -1038,7 +1039,7 @@ def render_step_10_content(profile: Dict) -> str:
 # ============================================================================
 # ROUTES - PROFILE SETUP & ONBOARDING
 # ============================================================================
-def add_onboarding_routes(app, login_required, user_auth, render_template_with_header):
+def add_onboarding_routes(app, login_required, user_auth, render_template_with_header, get_db_connection, process_matching_background):
 
     @app.route('/profile-setup')
     @login_required 
@@ -1081,7 +1082,8 @@ def add_onboarding_routes(app, login_required, user_auth, render_template_with_h
             step_description=config['description'],
             step_content=step_content,
             profile=existing_profile,
-            is_last_step=(step == 10)
+            is_last_step=(step == 10),
+            render_template_with_header=render_template_with_header
         )
 
     @app.route('/edit-profile', methods=['GET', 'POST'])
