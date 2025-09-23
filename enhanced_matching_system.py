@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from collections import defaultdict
 import threading
 import time
+import json
 processing_status = {}
 # Neural network imports (you'll need to install these)
 try:
@@ -21,6 +22,7 @@ except ImportError:
     HAS_ML_LIBRARIES = False
     print("Warning: TensorFlow/sklearn not installed. Using fallback methods.")
 
+#from app import get_db_connection -> causes circular import error
 # ============================================================================
 # MATCHING SYSTEM
 # ============================================================================
@@ -630,21 +632,23 @@ class MatchingDataCollector:
     def get_training_data(self, min_interactions: int = 100) -> Tuple[np.ndarray, np.ndarray]:
         """Extract training data for neural network"""
         try:
-            conn = sqlite3.connect('users.db')
+            if not hasattr(self, 'get_db_connection') or not self.get_db_connection:
+                print("Warning: No database connection function available for training data")
+                return None, None
+
+            conn = self.get_db_connection()
             cursor = conn.cursor()
-            
-            # Get interaction data with outcomes
+
+            # Get interaction data with outcomes - simplified query for PostgreSQL
             cursor.execute('''
-                SELECT ui.user_id, ui.target_user_id, ui.interaction_type, 
-                       ui.context_data, ui.outcome, up1.profile_data, up2.profile_data
-                FROM user_interactions ui
-                JOIN user_profiles up1 ON ui.user_id = up1.user_id
-                LEFT JOIN user_profiles up2 ON ui.target_user_id = up2.user_id
-                WHERE ui.outcome IS NOT NULL
-                ORDER BY ui.timestamp DESC
-                LIMIT ?
+                SELECT user_id, target_user_id, interaction_type,
+                       context_data, outcome
+                FROM user_interactions
+                WHERE outcome IS NOT NULL
+                ORDER BY timestamp DESC
+                LIMIT %s
             ''', (min_interactions * 10,))
-            
+
             interactions = cursor.fetchall()
             conn.close()
             
@@ -676,61 +680,32 @@ class MatchingDataCollector:
     def _extract_features(self, interaction: Tuple) -> Optional[List[float]]:
         """Extract feature vector from interaction data - FIXED to 21 features"""
         try:
-            user_id, target_user_id, interaction_type, context_data, outcome, profile1, profile2 = interaction
+            user_id, target_user_id, interaction_type, context_data, outcome = interaction
             
-            # Parse profiles
-            profile1_data = json.loads(profile1) if profile1 else {}
-            profile2_data = json.loads(profile2) if profile2 else {}
+            # Parse context data
             context = json.loads(context_data) if context_data else {}
-            
-            # Create feature vector (standardized format)
+
+            # Create simple feature vector based on available data
             features = []
-            
-            # User 1 features (6 features)
+
+            # Interaction type features (one-hot encoded for common types)
+            interaction_types = ['profile_view', 'contact_request', 'contact_response', 'message']
+            for i_type in interaction_types:
+                features.append(1.0 if interaction_type == i_type else 0.0)
+
+            # Context features (4 features)
             features.extend([
-                float(profile1_data.get('age', 25)) / 100.0,
-                float(profile1_data.get('social_energy', 5)) / 10.0,
-                float(profile1_data.get('decision_making', 5)) / 10.0,
-                float(profile1_data.get('communication_depth', 5)) / 10.0,
-                float(profile1_data.get('personal_growth', 5)) / 10.0,
-                float(profile1_data.get('social_satisfaction', 5)) / 10.0,
+                float(context.get('time_spent', 0)) / 60.0,  # normalize to minutes
+                float(context.get('compatibility_score', 50)) / 100.0,
+                float(user_id % 10) / 10.0,  # simple user ID feature
+                float(target_user_id % 10) / 10.0,  # simple target user ID feature
             ])
-            
-            # User 2 features (6 features)
-            if profile2_data:
-                features.extend([
-                    float(profile2_data.get('age', 25)) / 100.0,
-                    float(profile2_data.get('social_energy', 5)) / 10.0,
-                    float(profile2_data.get('decision_making', 5)) / 10.0,
-                    float(profile2_data.get('communication_depth', 5)) / 10.0,
-                    float(profile2_data.get('personal_growth', 5)) / 10.0,
-                    float(profile2_data.get('social_satisfaction', 5)) / 10.0,
-                ])
-                
-                # Compatibility differences (4 features) 
-                features.append(abs(float(profile1_data.get('social_energy', 5)) - 
-                                float(profile2_data.get('social_energy', 5))) / 10.0)
-                features.append(abs(float(profile1_data.get('decision_making', 5)) - 
-                                float(profile2_data.get('decision_making', 5))) / 10.0)
-                features.append(abs(float(profile1_data.get('communication_depth', 5)) - 
-                                float(profile2_data.get('communication_depth', 5))) / 10.0)
-                features.append(abs(float(profile1_data.get('personal_growth', 5)) - 
-                                float(profile2_data.get('personal_growth', 5))) / 10.0)
-            else:
-                # Pad with zeros if no target user (10 features: 6 + 4)
-                features.extend([0.0] * 10)
-            
-            # Interaction context features (5 features)
-            features.extend([
-                1.0 if interaction_type == 'profile_view' else 0.0,
-                1.0 if interaction_type == 'contact_request' else 0.0,
-                1.0 if interaction_type == 'email_response' else 0.0,
-                float(context.get('time_spent', 0)) / 300.0,  # normalize to 5 minutes
-                float(context.get('compatibility_score', 0)) / 100.0,
-            ])
-            
-            # Total: 6 + 6 + 4 + 5 = 21 features
-            assert len(features) == 21, f"Expected 21 features, got {len(features)}"
+
+            # Pad to ensure consistent feature vector size (21 features total)
+            while len(features) < 21:
+                features.append(0.0)
+
+            # Ensure we have exactly 21 features
             return features
             
         except Exception as e:
@@ -764,6 +739,11 @@ class SocialPredictionNetwork:
         self.is_trained = False
         self.feature_size = 21  # Based on feature extraction
         self.data_collector = MatchingDataCollector()
+        self.data_source = None
+
+    def set_data_source(self, data_source):
+        """Set the data source for training data"""
+        self.data_source = data_source
         
     def build_model(self):
         """Build the neural network architecture"""
@@ -800,8 +780,11 @@ class SocialPredictionNetwork:
             return False
             
         try:
-            # Get training data
-            X, y = self.data_collector.get_training_data(min_data_points)
+            # Get training data from the enhanced matching system if available
+            if self.data_source and hasattr(self.data_source, 'get_training_data'):
+                X, y = self.data_source.get_training_data(min_data_points)
+            else:
+                X, y = self.data_collector.get_training_data(min_data_points)
             
             if X is None or len(X) < min_data_points:
                 print(f"Insufficient training data: {len(X) if X is not None else 0} samples")
@@ -1210,6 +1193,7 @@ class EnhancedMatchingSystem:
         self.user_auth = None  # Will be injected
         self.data_collector = MatchingDataCollector()
         self.neural_predictor = SocialPredictionNetwork()
+        self.neural_predictor.set_data_source(self)
         self.simulation = SocialSimulation()
         self.min_neural_data = 10  # Minimum interactions for neural network
         self.processing_status = {} 
@@ -1219,13 +1203,17 @@ class EnhancedMatchingSystem:
     def set_user_auth(self, user_auth_system):
         """Inject user authentication system"""
         self.user_auth = user_auth_system
+
+    def set_db_connection(self, db_connection_func):
+        """Inject database connection function"""
+        self.get_db_connection = db_connection_func
     
     def _initialize_neural_network(self):
         """Initialize and train neural network if enough data exists"""
         try:
             # Check if we have enough data for neural training
-            X, y = self.data_collector.get_training_data(self.min_neural_data)
-            
+            X, y = self.get_training_data(self.min_neural_data)
+
             if X is not None and len(X) >= self.min_neural_data:
                 print(f"Training neural network with {len(X)} samples...")
                 success = self.neural_predictor.train_model(self.min_neural_data)
@@ -1696,11 +1684,18 @@ class EnhancedMatchingSystem:
 class InteractionTracker:
     """Tracks user interactions for continuous learning"""
     
-    def __init__(self, matching_system: EnhancedMatchingSystem):
+    def __init__(self, matching_system: EnhancedMatchingSystem, db_connection_func=None):
         self.matching_system = matching_system
+        self.get_db_connection = db_connection_func  # Function to get DB connection
     
     def track_profile_view(self, user_id: int, viewed_user_id: int, time_spent: float):
         """Track when user views another user's profile"""
+        # Save to database first
+        self._save_interaction_to_db(
+            user_id, 'profile_view', viewed_user_id, 
+            {'time_spent': time_spent}
+        )
+        # Record interaction in matching system
         self.matching_system.record_user_interaction(
             user_id, 'profile_view', viewed_user_id,
             context={'time_spent': time_spent},
@@ -1710,6 +1705,12 @@ class InteractionTracker:
     def track_contact_request(self, user_id: int, requested_user_id: int, 
                             compatibility_score: float):
         """Track contact request (positive signal)"""
+        # Save to database first
+        self._save_interaction_to_db(
+            user_id, 'contact_request', requested_user_id,
+            {'compatibility_score': compatibility_score}
+        )
+
         self.matching_system.record_user_interaction(
             user_id, 'contact_request', requested_user_id,
             context={'compatibility_score': compatibility_score},
@@ -1719,6 +1720,12 @@ class InteractionTracker:
     def track_contact_response(self, user_id: int, requester_id: int, accepted: bool):
         """Track contact request response"""
         outcome = 'contact_accepted' if accepted else 'contact_declined'
+        
+        self._save_interaction_to_db(
+            user_id, 'contact_response', requester_id,
+            {'accepted': accepted}
+        )
+
         self.matching_system.record_user_interaction(
             user_id, 'contact_response', requester_id,
             outcome=outcome
@@ -1727,6 +1734,12 @@ class InteractionTracker:
     def track_email_response(self, user_id: int, other_user_id: int, would_meet_again: bool):
         """Track follow-up email response"""
         outcome = 'email_yes' if would_meet_again else 'email_no'
+        
+        self._save_interaction_to_db(
+            user_id, 'email_response', other_user_id,
+            {'would_meet_again': would_meet_again}
+        )
+
         self.matching_system.record_user_interaction(
             user_id, 'email_response', other_user_id,
             outcome=outcome
@@ -1734,16 +1747,54 @@ class InteractionTracker:
     
     def track_user_blocking(self, user_id: int, blocked_user_id: int):
         """Track when user blocks someone (strong negative signal)"""
+        self._save_interaction_to_db(
+            user_id, 'user_blocked', blocked_user_id,
+            {}
+        )
+        
         self.matching_system.record_user_interaction(
             user_id, 'user_blocked', blocked_user_id,
             outcome='blocked'
         )
+    #helper function to save interactions to DB for interaction tracking
+    def _save_interaction_to_db(self, user_id: int, interaction_type: str, 
+                               target_user_id: int, context_data: dict):
+        """Save interaction to database"""
+        if not self.get_db_connection:
+            print("Warning: No database connection function provided")
+            return False
+            
+        try:
+            conn = self.get_db_connection()
+            cursor = conn.cursor()
+            
+            query = '''
+            INSERT INTO user_interactions 
+            (user_id, interaction_type, target_user_id, context_data, timestamp) 
+            VALUES (%s, %s, %s, %s, NOW())
+            '''
+            
+            context_json = json.dumps(context_data) if context_data else None
+            
+            cursor.execute(query, (user_id, interaction_type, target_user_id, context_json))
+            conn.commit()
+            
+            print(f"Saved interaction: {user_id} -> {interaction_type} -> {target_user_id}")
+            
+            conn.close()
+            return True
+            
+        except Exception as e:
+            print(f"Error saving interaction to database: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
 
 # ============================================================================
 # INTEGRATION WITH EXISTING SYSTEM
 # ============================================================================
 
-def integrate_enhanced_matching(app, user_auth_system, api_key: str = None):
+def integrate_enhanced_matching(app, user_auth_system, api_key: str = None, db_connection_func=None):
     """Integration function to replace existing matching system"""
     
     # Initialize enhanced matching system
@@ -1751,7 +1802,7 @@ def integrate_enhanced_matching(app, user_auth_system, api_key: str = None):
     enhanced_matcher.set_user_auth(user_auth_system)
     
     # Initialize interaction tracker
-    interaction_tracker = InteractionTracker(enhanced_matcher)
+    interaction_tracker = InteractionTracker(enhanced_matcher, db_connection_func)
     
     # Replace the global matching system
     return enhanced_matcher, interaction_tracker
