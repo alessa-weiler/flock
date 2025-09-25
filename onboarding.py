@@ -42,8 +42,7 @@ def render_onboarding_template(step, total_steps, step_title, step_description, 
     # Content styled to match dashboard
     content = f'''
     <style>
-        @import url("https://fonts.googleapis.com/css2?family=Clash+Display:wght@200..700&display=swap");
-        @import url("https://fonts.googleapis.com/css2?family=Satoshi:wght@300..900&display=swap");
+        @import url("https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=sentient@400,500,600,700&display=swap");
         
         .onboarding-container {{
             max-width: 600px;
@@ -67,7 +66,7 @@ def render_onboarding_template(step, total_steps, step_title, step_description, 
         .step-counter {{
             font-family: "Satoshi", sans-serif;
             font-size: 0.875rem;
-            color: rgba(107, 155, 153, 0.8);
+            color: black;
             margin-bottom: 0.75rem;
             font-weight: 500;
             text-transform: uppercase;
@@ -75,23 +74,19 @@ def render_onboarding_template(step, total_steps, step_title, step_description, 
         }}
         
         .step-title {{
-            font-family: "Clash Display", sans-serif;
+            font-family: "Sentient", "Satoshi", sans-serif;
             font-size: 2.5rem;
             font-weight: 500;
             margin: 0 0 1rem 0;
-            color: #2d2d2d;
+            color: black;
             letter-spacing: -0.02em;
-            background: linear-gradient(135deg, #2d2d2d, #6b9b99);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
         }}
         
         .step-description {{
             font-family: "Satoshi", sans-serif;
             font-size: 1.125rem;
             line-height: 1.6;
-            color: #6b9b99;
+            color: black;
             margin: 0 0 1rem 0;
             max-width: 600px;
             margin-left: auto;
@@ -103,7 +98,7 @@ def render_onboarding_template(step, total_steps, step_title, step_description, 
         }}
         
         .progress-bar {{
-            background: rgba(107, 155, 153, 0.2);
+            background: rgba(0, 0, 0, 0.2);
             border-radius: 12px;
             height: 8px;
             overflow: hidden;
@@ -111,7 +106,7 @@ def render_onboarding_template(step, total_steps, step_title, step_description, 
         }}
         
         .progress-fill {{
-            background: linear-gradient(90deg, #6b9b99, #ff9500);
+            background: black;
             height: 100%;
             border-radius: 12px;
             width: {progress_percent}%;
@@ -229,7 +224,7 @@ def render_onboarding_template(step, total_steps, step_title, step_description, 
             width: 100%;
             height: 6px;
             border-radius: 3px;
-            background: rgba(107, 155, 153, 0.2);
+            background: rgba(0, 0, 0, 0.2);
             outline: none;
             margin: 1.5rem 0;
         }}
@@ -240,26 +235,26 @@ def render_onboarding_template(step, total_steps, step_title, step_description, 
             width: 20px;
             height: 20px;
             border-radius: 50%;
-            background: linear-gradient(135deg, #6b9b99, #ff9500);
+            background: black;
             cursor: pointer;
             border: 3px solid white;
-            box-shadow: 0 4px 12px rgba(107, 155, 153, 0.3);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
             transition: all 0.2s ease;
         }}
         
         input[type=range]::-webkit-slider-thumb:hover {{
             transform: scale(1.1);
-            box-shadow: 0 6px 18px rgba(107, 155, 153, 0.4);
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
         }}
         
         input[type=range]::-moz-range-thumb {{
             width: 20px;
             height: 20px;
             border-radius: 50%;
-            background: linear-gradient(135deg, #6b9b99, #ff9500);
+            background: black;
             cursor: pointer;
             border: 3px solid white;
-            box-shadow: 0 4px 12px rgba(107, 155, 153, 0.3);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
         }}
         
         .slider-labels {{
@@ -267,7 +262,7 @@ def render_onboarding_template(step, total_steps, step_title, step_description, 
             justify-content: space-between;
             font-family: "Satoshi", sans-serif;
             font-size: 0.8rem;
-            color: #6b9b99;
+            color: black;
             margin-top: 0.5rem;
             font-weight: 500;
         }}
@@ -307,17 +302,17 @@ def render_onboarding_template(step, total_steps, step_title, step_description, 
         }}
         
         .choice-item input:checked + .choice-label {{
-            background: linear-gradient(135deg, #6b9b99, #ff9500);
+            background: black;
             color: white;
-            border-color: transparent;
+            border-color: black;
             transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(107, 155, 153, 0.4);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
         }}
         
         .choice-label:hover {{
-            border-color: rgba(107, 155, 153, 0.3);
+            border-color: rgba(0, 0, 0, 0.3);
             transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(107, 155, 153, 0.15);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
         }}
         
         .navigation-controls {{
@@ -346,40 +341,40 @@ def render_onboarding_template(step, total_steps, step_title, step_description, 
         }}
         
         .btn-primary {{
-            background: linear-gradient(135deg, #6b9b99, #ff9500);
+            background: black;
             color: white;
-            box-shadow: 0 4px 16px rgba(107, 155, 153, 0.3);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
         }}
         
         .btn-primary:hover {{
             transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(107, 155, 153, 0.4);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
         }}
         
         .btn-secondary {{
-            background: rgba(255, 255, 255, 0.8);
-            color: #6b9b99;
-            border: 1px solid rgba(107, 155, 153, 0.3);
+            background: black;
+            color: white;
+            border: 1px solid black;
         }}
         
         .btn-secondary:hover {{
-            background: rgba(255, 255, 255, 0.9);
+            background: #333;
             transform: translateY(-2px);
-            border-color: #6b9b99;
-            box-shadow: 0 4px 12px rgba(107, 155, 153, 0.2);
+            border-color: black;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
         }}
         
         .btn-complete {{
-            background: linear-gradient(135deg, #167a60, #6b9b99);
+            background: black;
             color: white;
             padding: 1.25rem 2rem;
             font-size: 1rem;
-            box-shadow: 0 4px 16px rgba(22, 122, 96, 0.4);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
         }}
         
         .btn-complete:hover {{
             transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(22, 122, 96, 0.5);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
         }}
         
         @media (max-width: 768px) {{
@@ -491,10 +486,32 @@ def render_onboarding_step_content(step: int, profile: Dict) -> str:
 
 def render_step_1_content(profile: Dict) -> str:
     """Basic Information step - styled to match dashboard"""
+    current_mode = profile.get('matching_mode', 'individual')
     return f'''
+    <!--
+    <div class="form-group">
+        <label class="form-label">How would you like to use Connect?</label>
+        <div class="choice-container">
+            <div class="choice-item">
+                <input type="radio" name="matching_mode" value="individual" {'checked' if current_mode == 'individual' else ''} id="mode_individual">
+                <label class="choice-label" for="mode_individual">
+                    <strong> Individual Mode</strong>
+                    <span style="display: block; font-size: 12px; color: #666; margin-top: 4px;">Find individual friends based on compatibility</span>
+                </label>
+            </div>
+            <div class="choice-item">
+                <input type="radio" name="matching_mode" value="network" {'checked' if current_mode == 'network' else ''} id="mode_network">
+                <label class="choice-label" for="mode_network">
+                    <strong> Network Mode</strong>
+                    <span style="display: block; font-size: 12px; color: #666; margin-top: 4px;">Build and manage social networks for groups</span>
+                </label>
+            </div>
+        </div>
+    </div>
+    --> 
     <div class="form-group">
         <label class="form-label">Age</label>
-        <input type="number" name="age" required min="18" max="100" 
+        <input type="number" name="age" required min="18" max="100"
                value="{profile.get('age', '')}" placeholder="Enter your age"
                class="form-input">
     </div>
@@ -557,7 +574,7 @@ def render_step_1_content(profile: Dict) -> str:
         </select>
         <p style="font-size: 0.9em; color: #666; margin-top: 5px;">
             We're starting with London, feel free to drop us a message to 
-            <a href="mailto:alessa@pont-diagnostics.com">alessa@pont-diagnostics.com</a> 
+            <a href="mailto:admin@pont.world">admin@pont.world</a> 
             if you want us to expand to your city!
         </p>
     </div>
@@ -1057,7 +1074,7 @@ def add_onboarding_routes(app, login_required, user_auth, render_template_with_h
         
         # Define step configuration
         steps_config = {
-            1: {'title': 'Basic Information', 'description': 'Tell us about yourself'},
+            1: {'title': 'Mode & Basic Info', 'description': 'Choose your mode and tell us about yourself'},
             2: {'title': 'Core Personality', 'description': 'How you approach life and relationships'},
             3: {'title': 'Social Exchange', 'description': 'How you give and receive in friendships'},
             4: {'title': 'Values & Worldview', 'description': 'What matters most to you'},
@@ -1094,69 +1111,86 @@ def add_onboarding_routes(app, login_required, user_auth, render_template_with_h
         user_info = user_auth.get_user_info(user_id)
         
         if request.method == 'POST':
+            print("DEBUG: POST request started - entering form submission")
             # Handle form submission
             try:
+                print("DEBUG: Inside try block, about to process form data")
                 # Update basic user info
                 email = request.form.get('email', '').strip()
                 phone = request.form.get('phone', '').strip()
                 first_name = request.form.get('first_name', '').strip()
                 last_name = request.form.get('last_name', '').strip()
-                
+                print(f"DEBUG: Form submitted with first_name='{first_name}', last_name='{last_name}'")
+
                 # Update user table
                 conn = get_db_connection()
                 cursor = conn.cursor()
+
+                matching_mode = request.form.get('matching_mode', 'individual')
+                print(f"DEBUG: Saving matching_mode: {matching_mode} for user {user_id}")
+
+                # Update user table first
+                print(f"DEBUG: About to execute UPDATE with values: email='{email}', phone='{phone}', first_name='{first_name}', last_name='{last_name}', matching_mode='{matching_mode}', user_id={user_id}")
+
                 cursor.execute('''
-                    UPDATE users 
-                    SET email = %s, phone = %s, first_name = %s, last_name = %s
+                    UPDATE users
+                    SET email = %s, phone = %s, first_name = %s, last_name = %s, matching_mode = %s
                     WHERE id = %s
-                ''', (email, phone, first_name, last_name, user_id))
-                
-                # Get existing profile data
+                ''', (email, phone, first_name, last_name, matching_mode, user_id))
+
+                rows_affected = cursor.rowcount
+                print(f"DEBUG: UPDATE query affected {rows_affected} rows")
+
+                # Commit user table changes first
+                conn.commit()
+                print("DEBUG: Database changes committed")
+                conn.close()
+
+                # Get existing profile data AFTER committing user changes
                 existing_profile = user_auth.get_user_profile(user_id) or {}
-                
+
                 # Update profile data
                 existing_profile.update({
                     'bio': request.form.get('bio', '').strip(),
-                    'location': request.form.get('location', '').strip(),
                     'postcode': request.form.get('postcode', '').strip(),
                     'profile_photo_url': request.form.get('profile_photo_url', '').strip(),
-                    
-                    # Privacy settings - what sections can be shared
-                    'privacy_settings': {
-                        'share_personality_scores': 'share_personality_scores' in request.form,
-                        'share_values_scores': 'share_values_scores' in request.form,
-                        'share_lifestyle_info': 'share_lifestyle_info' in request.form,
-                        'share_social_preferences': 'share_social_preferences' in request.form,
-                        'share_contact_info': 'share_contact_info' in request.form,
-                        'share_detailed_analysis': 'share_detailed_analysis' in request.form,
-                        'share_bio': 'share_bio' in request.form,
-                        'share_photo': 'share_photo' in request.form,
-                        'share_exact_location': 'share_exact_location' in request.form,
-                        'share_age': 'share_age' in request.form
-                    }
+                    'matching_mode': matching_mode,
+                    'linkedin_url': request.form.get('linkedin_url', '').strip(),
                 })
-                
+
                 # Save updated profile
                 user_auth.save_user_profile(user_id, existing_profile)
-                
-                conn.commit()
-                conn.close()
-                
+                print(f"DEBUG: Profile saved with matching_mode: {existing_profile.get('matching_mode')}")
+
                 flash('Profile updated successfully!', 'success')
                 return redirect('/edit-profile')
-                
+
             except Exception as e:
                 print(f"Error updating profile: {e}")
+                import traceback
+                traceback.print_exc()
+
+                # Make sure to close connection on error
+                try:
+                    if 'conn' in locals():
+                        conn.close()
+                except:
+                    pass
+
                 flash('Error updating profile. Please try again.', 'error')
+                return redirect('/edit-profile')
         
         # GET request - show edit form
+        # Get fresh user info to ensure we have the latest database values
+        user_info = user_auth.get_user_info(user_id)
+        print(f"DEBUG: GET request - user_info: first_name='{user_info.get('first_name', '')}', last_name='{user_info.get('last_name', '')}'")
+
         existing_profile = user_auth.get_user_profile(user_id) or {}
         privacy_settings = existing_profile.get('privacy_settings', {})
         
         content = f'''
         <style>
-            @import url("https://fonts.googleapis.com/css2?family=Clash+Display:wght@200..700&display=swap");
-            @import url("https://fonts.googleapis.com/css2?family=Satoshi:wght@300..900&display=swap");
+            @import url("https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=sentient@400,500,600,700&display=swap");
             
             .edit-profile-container {{
                 max-width: 900px;
@@ -1187,23 +1221,19 @@ def add_onboarding_routes(app, login_required, user_auth, render_template_with_h
             }}
             
             .profile-title {{
-                font-family: "Clash Display", sans-serif;
+                font-family: "Sentient", "Satoshi", sans-serif;
                 font-size: 2.5rem;
                 font-weight: 500;
                 margin: 0 0 1rem 0;
-                color: var(--color-charcoal);
+                color: black;
                 letter-spacing: -0.02em;
-                background: linear-gradient(135deg, #2d2d2d, #6b9b99);
-                -webkit-background-clip: text;
-                -webkit-text-fill-color: transparent;
-                background-clip: text;
             }}
             
             .profile-subtitle {{
                 font-family: "Satoshi", sans-serif;
                 font-size: 1.125rem;
                 line-height: 1.6;
-                color: #6b9b99;
+                color: black;
                 margin: 0;
             }}
             
@@ -1224,7 +1254,7 @@ def add_onboarding_routes(app, login_required, user_auth, render_template_with_h
             }}
             
             .section-title {{
-                font-family: "Clash Display", sans-serif;
+                font-family: "Sentient", "Satoshi", sans-serif;
                 font-size: 1.5rem;
                 font-weight: 600;
                 margin: 0 0 1.5rem 0;
@@ -1429,31 +1459,31 @@ def add_onboarding_routes(app, login_required, user_auth, render_template_with_h
             }}
             
             .btn-primary {{
-                background: linear-gradient(135deg, #6b9b99, #ff9500);
+                background: black;
                 color: white;
-                box-shadow: 0 4px 16px rgba(107, 155, 153, 0.3);
+                box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
             }}
             
             .btn-primary:hover {{
                 transform: translateY(-2px);
-                box-shadow: 0 8px 24px rgba(107, 155, 153, 0.4);
+                box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
             }}
             
             .btn-secondary {{
-                background: rgba(255, 255, 255, 0.8);
-                color: #6b9b99;
-                border: 1px solid rgba(107, 155, 153, 0.3);
+                background: black;
+                color: white;
+                border: 1px solid black;
             }}
             
             .btn-secondary:hover {{
-                background: rgba(255, 255, 255, 0.9);
+                background: #333;
                 transform: translateY(-2px);
-                border-color: #6b9b99;
-                box-shadow: 0 4px 12px rgba(107, 155, 153, 0.2);
+                border-color: black;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
             }}
             
             .rematching-section {{
-                background: linear-gradient(135deg, var(--color-emerald), var(--color-sage));
+                background: black;
                 color: white;
                 padding: 2.5rem;
                 border-radius: 24px;
@@ -1481,7 +1511,7 @@ def add_onboarding_routes(app, login_required, user_auth, render_template_with_h
             }}
             
             .rematching-title {{
-                font-family: "Clash Display", sans-serif;
+                font-family: "Sentient", "Satoshi", sans-serif;
                 font-size: 1.5rem;
                 font-weight: 600;
                 margin-bottom: 1rem;
@@ -1495,17 +1525,19 @@ def add_onboarding_routes(app, login_required, user_auth, render_template_with_h
             }}
             
             .btn-rematch {{
-                background: rgba(255, 255, 255, 0.9);
-                color: var(--color-emerald);
+                background: white;
+                color: black;
                 padding: 1.25rem 2rem;
                 font-size: 1rem;
                 font-weight: 600;
+                border: 2px solid white;
             }}
             
             .btn-rematch:hover {{
-                background: white;
+                background: #f0f0f0;
+                color: black;
                 transform: translateY(-2px);
-                box-shadow: 0 8px 24px rgba(255, 255, 255, 0.3);
+                box-shadow: 0 8px 24px rgba(255, 255, 255, 0.4);
             }}
             
             /* Flash Messages */
@@ -1609,7 +1641,6 @@ def add_onboarding_routes(app, login_required, user_auth, render_template_with_h
                 <!-- Basic Information Section -->
                 <div class="form-section">
                     <h2 class="section-title">
-                        <span class="section-icon">👤</span>
                         Basic Information
                     </h2>
                     
@@ -1643,11 +1674,37 @@ def add_onboarding_routes(app, login_required, user_auth, render_template_with_h
                         <div class="form-help">Used for contact requests when matches want to connect</div>
                     </div>
                 </div>
-                
+                <!-- Mode Selection Section -->
+<!--              
+                <div class="form-section">
+                    <h2 class="section-title">
+                        Connection Mode
+                    </h2>
+
+                    <div class="form-group">
+                        <label class="form-label">How would you like to use Flock?</label>
+                        <div class="choice-container">
+                            <div class="choice-item">
+                                <input type="radio" name="matching_mode" value="individual" {'checked' if existing_profile.get('matching_mode', 'individual') == 'individual' else ''} id="mode_individual">
+                                <label class="choice-label" for="mode_individual">
+                                    <strong>Individual Mode</strong>
+                                    <span style="display: block; font-size: 12px; color: #666; margin-top: 4px;">Find individual friends based on compatibility</span>
+                                </label>
+                            </div>
+                            <div class="choice-item">
+                                <input type="radio" name="matching_mode" value="network" {'checked' if existing_profile.get('matching_mode', 'individual') == 'network' else ''} id="mode_network">
+                                <label class="choice-label" for="mode_network">
+                                    <strong>Network Mode</strong>
+                                    <span style="display: block; font-size: 12px; color: #666; margin-top: 4px;">Build and manage social networks for groups</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+-->
                 <!-- Location Section -->
                 <div class="form-section">
                     <h2 class="section-title">
-                        <span class="section-icon">📍</span>
                         Location
                     </h2>
                     
@@ -1665,7 +1722,6 @@ def add_onboarding_routes(app, login_required, user_auth, render_template_with_h
                 <!-- Personal Details Section -->
                 <div class="form-section">
                     <h2 class="section-title">
-                        <span class="section-icon">✨</span>
                         About You
                     </h2>
                     
@@ -1713,17 +1769,7 @@ def add_onboarding_routes(app, login_required, user_auth, render_template_with_h
                 </div>
             </form>
             
-            <!-- Re-matching Section -->
-            <div class="rematching-section">
-                <h3 class="rematching-title">Want Fresh Matches?</h3>
-                <p class="rematching-description">
-                    If you've made significant changes to your profile, you can re-run the AI matching system 
-                    to discover new compatible connections based on your updated preferences.
-                </p>
-                <a href="/choose-agent" class="btn btn-rematch">
-                    Find New Matches
-                </a>
-            </div>
+            
         </div>
         
         <script>
@@ -1767,7 +1813,7 @@ def add_onboarding_routes(app, login_required, user_auth, render_template_with_h
             
             // Enhanced form validation
             document.querySelector('form').addEventListener('submit', function(e) {{
-                const requiredFields = ['first_name', 'last_name', 'email', 'phone', 'location', 'postcode'];
+                const requiredFields = ['first_name', 'last_name', 'email', 'phone'];
                 let isValid = true;
                 
                 requiredFields.forEach(field => {{
@@ -1952,7 +1998,7 @@ def add_onboarding_routes(app, login_required, user_auth, render_template_with_h
             }
             
             .completion-title {
-                font-family: "Clash Display", sans-serif;
+                font-family: "Sentient", "Satoshi", sans-serif;
                 font-size: 2.5rem;
                 font-weight: 500;
                 margin: 0 0 1rem 0;
@@ -1968,7 +2014,7 @@ def add_onboarding_routes(app, login_required, user_auth, render_template_with_h
                 font-family: "Satoshi", sans-serif;
                 font-size: 1.125rem;
                 line-height: 1.6;
-                color: #6b9b99;
+                color: black;
                 margin: 0 0 1rem 0;
             }
             
@@ -1989,7 +2035,7 @@ def add_onboarding_routes(app, login_required, user_auth, render_template_with_h
             }
             
             .block-list-title {
-                font-family: "Clash Display", sans-serif;
+                font-family: "Sentient", "Satoshi", sans-serif;
                 font-size: 1.25rem;
                 font-weight: 600;
                 color: #2d2d2d;
@@ -1999,7 +2045,7 @@ def add_onboarding_routes(app, login_required, user_auth, render_template_with_h
             .block-list-description {
                 font-family: "Satoshi", sans-serif;
                 font-size: 0.875rem;
-                color: #6b9b99;
+                color: black;
                 margin-bottom: 1.5rem;
                 line-height: 1.6;
             }

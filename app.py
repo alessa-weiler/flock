@@ -1491,9 +1491,9 @@ class UserAuthSystem:
                 <style>
                     body {{ font-family: 'Inter', sans-serif; line-height: 1.6; color: #333; }}
                     .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                    .header {{ background: linear-gradient(135deg, #167a60, #c6e19b); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }}
+                    .header {{ background: white; color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }}
                     .content {{ background: white; padding: 30px; border: 1px solid #ddd; }}
-                    .button {{ display: inline-block; padding: 15px 30px; margin: 10px; text-decoration: none; border-radius: 6px; font-weight: bold; text-align: center; background: #167a60; color: white; }}
+                    .button {{ display: inline-block; padding: 15px 30px; margin: 10px; text-decoration: none; border-radius: 6px; font-weight: bold; text-align: center; background: white; color: white; }}
                     .footer {{ background: #f8f9fa; padding: 20px; text-align: center; font-size: 12px; color: #666; border-radius: 0 0 8px 8px; }}
                     .warning {{ background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 6px; margin: 20px 0; color: #856404; }}
                 </style>
@@ -1820,12 +1820,12 @@ All three items must be clearly visible in the photo(s).'''
                 <style>
                     body {{ font-family: 'Inter', sans-serif; line-height: 1.6; color: #333; }}
                     .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                    .header {{ background: linear-gradient(135deg, #167a60, #c6e19b); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }}
+                    .header {{ background: white; color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }}
                     .content {{ background: white; padding: 30px; border: 1px solid #ddd; }}
-                    .verification-code {{ background: #f0f8f0; border: 2px dashed #167a60; padding: 20px; text-align: center; margin: 20px 0; border-radius: 8px; }}
-                    .code {{ font-family: monospace; font-size: 24px; font-weight: bold; color: #167a60; letter-spacing: 3px; }}
+                    .verification-code {{ background: #f5f5f5; border: 2px dashed black; padding: 20px; text-align: center; margin: 20px 0; border-radius: 8px; }}
+                    .code {{ font-family: monospace; font-size: 24px; font-weight: bold; color: black; letter-spacing: 3px; }}
                     .instructions {{ background: #fff3cd; border: 1px solid #ffeaa7; padding: 20px; border-radius: 6px; margin: 20px 0; }}
-                    .step {{ margin: 15px 0; padding: 10px; border-left: 4px solid #167a60; }}
+                    .step {{ margin: 15px 0; padding: 10px; border-left: 4px solid black; }}
                     .footer {{ background: #f8f9fa; padding: 20px; text-align: center; font-size: 12px; color: #666; border-radius: 0 0 8px 8px; }}
                     .warning {{ background: #ffe6e6; border: 1px solid #ffb3b3; padding: 15px; border-radius: 6px; margin: 20px 0; color: #d63384; }}
                 </style>
@@ -1869,7 +1869,7 @@ All three items must be clearly visible in the photo(s).'''
                         </div>
                         
                         <div class="warning">
-                            <strong>⚠️ Important Security Notes:</strong><br>
+                            <strong>Important Security Notes:</strong><br>
                             • You can blur sensitive details like ID numbers (but keep your photo and name visible)<br>
                             • We only verify your identity - we don't store your ID details<br>
                             • This process typically takes 1-2 business days<br>
@@ -2036,7 +2036,7 @@ All three items must be clearly visible in the photo(s).'''
     def send_verification_approved_email(self, to_email: str, first_name: str) -> bool:
         """Send verification approved confirmation email"""
         try:
-            subject = "🎉 Your Connect Account is Now Verified!"
+            subject = "Your Connect Account is Now Verified!"
             
             html_content = f"""
             <!DOCTYPE html>
@@ -2045,10 +2045,10 @@ All three items must be clearly visible in the photo(s).'''
                 <style>
                     body {{ font-family: 'Inter', sans-serif; line-height: 1.6; color: #333; }}
                     .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                    .header {{ background: linear-gradient(135deg, #167a60, #c6e19b); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }}
+                    .header {{ background: white; color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }}
                     .content {{ background: white; padding: 30px; border: 1px solid #ddd; }}
-                    .badge-preview {{ background: #f0f8f0; padding: 20px; text-align: center; border-radius: 8px; margin: 20px 0; }}
-                    .verified-badge {{ display: inline-flex; align-items: center; gap: 8px; background: #007bff; color: white; padding: 8px 16px; border-radius: 20px; font-weight: bold; }}
+                    .badge-preview {{ background: #f5f5f5; padding: 20px; text-align: center; border-radius: 8px; margin: 20px 0; }}
+                    .verified-badge {{ display: inline-flex; align-items: center; gap: 8px; background: white; color: white; padding: 8px 16px; border-radius: 20px; font-weight: bold; }}
                     .benefits {{ background: #e8f4fd; padding: 20px; border-radius: 6px; margin: 20px 0; }}
                     .footer {{ background: #f8f9fa; padding: 20px; text-align: center; font-size: 12px; color: #666; border-radius: 0 0 8px 8px; }}
                 </style>
@@ -2056,7 +2056,7 @@ All three items must be clearly visible in the photo(s).'''
             <body>
                 <div class="container">
                     <div class="header">
-                        <h1 style="margin: 0; font-size: 28px;">🎉 You're Verified!</h1>
+                        <h1 style="margin: 0; font-size: 28px;">You're Verified!</h1>
                         <p style="margin: 10px 0 0 0; opacity: 0.9;">Your identity has been confirmed</p>
                     </div>
                     
@@ -2068,7 +2068,7 @@ All three items must be clearly visible in the photo(s).'''
                         <div class="badge-preview">
                             <strong>Your new verified badge:</strong><br><br>
                             <div class="verified-badge">
-                                ✓ Verified
+                                Verified
                             </div>
                         </div>
                         
@@ -2084,7 +2084,7 @@ All three items must be clearly visible in the photo(s).'''
                         <p>Thank you for helping make Connect a safer, more trusted community. Your verification helps other users feel confident about connecting with real people.</p>
                         
                         <div style="text-align: center; margin: 30px 0;">
-                            <a href="/dashboard" style="background: #167a60; color: white; padding: 15px 30px; text-decoration: none; border-radius: 6px; font-weight: bold;">
+                            <a href="/dashboard" style="background: white; color: white; padding: 15px 30px; text-decoration: none; border-radius: 6px; font-weight: bold;">
                                 View Your Verified Profile
                             </a>
                         </div>
@@ -2168,7 +2168,7 @@ All three items must be clearly visible in the photo(s).'''
                         <p>Don't worry - you can try again anytime! Most verification issues are resolved with clearer photos or including all required elements.</p>
                         
                         <div style="text-align: center; margin: 30px 0;">
-                            <a href="/profile-settings" style="background: #167a60; color: white; padding: 15px 30px; text-decoration: none; border-radius: 6px; font-weight: bold;">
+                            <a href="/profile-settings" style="background: white; color: white; padding: 15px 30px; text-decoration: none; border-radius: 6px; font-weight: bold;">
                                 Try Verification Again
                             </a>
                         </div>
@@ -2324,7 +2324,7 @@ def process_matching_background(user_id: int):
 def get_base_styles() -> str:
     """Common CSS styles with designer typography and color palette"""
     return '''
-    <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=clash-display@400,500,600,700&display=swap" rel="stylesheet">
+    <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=sentient@400,500,600,700&display=swap" rel="stylesheet">
     <style>
     * {
         margin: 0;
@@ -2333,11 +2333,11 @@ def get_base_styles() -> str:
     }
     
     :root {
-        --color-cream: #f4e8ee;
-        --color-emerald: #167a60;
-        --color-sage: #c6e19b;
+        --color-cream: #ffffff;
+        --color-emerald: #000000;
+        --color-sage: #ffffff;
         --color-lavender: #c2b7ef;
-        --color-charcoal: #2d2d2d;
+        --color-charcoal: #000000;
         --color-white: #ffffff;
         --color-gray-50: #fafafa;
         --color-gray-100: #f5f5f5;
@@ -2348,8 +2348,8 @@ def get_base_styles() -> str:
     
     body {
         font-family: 'Satoshi', -apple-system, BlinkMacSystemFont, sans-serif;
-        background: linear-gradient(135deg, var(--color-cream) 0%, var(--color-gray-50) 100%);
-        color: var(--color-charcoal);
+        background: white;
+        color: black;
         line-height: 1.6;
         min-height: 100vh;
         overflow-x: hidden;
@@ -2357,7 +2357,7 @@ def get_base_styles() -> str:
     
     /* Typography Scale */
     .text-display {
-        font-family: 'Clash Display', 'Satoshi', sans-serif;
+        font-family: 'Sentient', 'Satoshi', sans-serif;
         font-size: clamp(2.5rem, 5vw, 4rem);
         font-weight: 600;
         line-height: 1.1;
@@ -2365,7 +2365,7 @@ def get_base_styles() -> str:
     }
     
     .text-title {
-        font-family: 'Clash Display', 'Satoshi', sans-serif;
+        font-family: 'Sentient', 'Satoshi', sans-serif;
         font-size: clamp(1.5rem, 3vw, 2.25rem);
         font-weight: 500;
         line-height: 1.2;
@@ -2419,7 +2419,7 @@ def get_base_styles() -> str:
     
     
     .logo {
-        font-family: 'Clash Display', 'Satoshi', sans-serif;
+        font-family: 'Sentient', 'Satoshi', sans-serif;
         font-size: 1.75rem;
         font-weight: 600;
         color: var(--color-charcoal);
@@ -2461,15 +2461,15 @@ def get_base_styles() -> str:
     }
     
     .btn-primary {
-        background: var(--color-emerald);
+        background: black;
         color: white;
-        box-shadow: 0 4px 16px rgba(22, 122, 96, 0.2);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
     }
     
     .btn-primary:hover {
-        background: #0f5942;
+        background: #333;
         transform: translateY(-2px);
-        box-shadow: 0 8px 24px rgba(22, 122, 96, 0.3);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
     }
     
     .btn-secondary {
@@ -2555,7 +2555,7 @@ def get_base_styles() -> str:
     
     /* Flash Messages */
     .flash-success {
-        background: linear-gradient(135deg, var(--color-sage), var(--color-lavender));
+        background: white;
         color: var(--color-charcoal);
         padding: 1rem 1.5rem;
         border-radius: 12px;
@@ -2591,7 +2591,7 @@ def get_base_styles() -> str:
     
     /* Notification Badge */
     .notification-badge {
-        background: var(--color-emerald);
+        background: white;
         color: white;
         border-radius: 50%;
         padding: 0.25rem 0.5rem;
@@ -2706,8 +2706,6 @@ def render_template_with_header(title: str, content: str, user_info: Dict = None
             
             user_nav = f'''
                 <div class="user-info">
-                    <span>{user_info.get('first_name', user_info.get('email', 'User'))}</span>
-                    <a href="/edit-profile" class="btn btn-secondary" style="padding: 8px 16px; font-size: 14px;"> Edit Profile</a>
                     <a href="/contact-requests" class="btn btn-secondary">Requests{notification_badge}</a>
                     <a href="/profile-settings" class="btn btn-secondary">Settings</a>
                     <a href="/logout" class="btn btn-secondary no-transition">Logout</a>
@@ -2812,7 +2810,9 @@ def render_template_with_header(title: str, content: str, user_info: Dict = None
         <!-- Page content -->
         <div class="page-content">
             <div class="header">
-                <div class="logo">Connect</div>
+                <div class="logo">
+                    <a href="{'/' if not user_info else '/dashboard'}" style="color: inherit; text-decoration: none;">Connect</a>
+                </div>
                 {user_nav}
             </div>
             
@@ -2938,7 +2938,7 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
     if user_verification.get('is_verified'):
         user_verified_badge = '''
         <div style="text-align: center; margin: 1rem 0;">
-            <div style="display: inline-flex; align-items: center; gap: 0.5rem; background: #007bff; color: white; padding: 0.5rem 1rem; border-radius: 20px; font-weight: 600; font-size: 0.875rem;">
+            <div style="display: inline-flex; align-items: center; gap: 0.5rem; background: black; color: white; padding: 0.5rem 1rem; border-radius: 20px; font-weight: 600; font-size: 0.875rem;">
                 ✓ Your Profile is Verified
             </div>
         </div>
@@ -2949,17 +2949,17 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
     subscription_banner = ""
     if subscription_status['is_subscribed']:
         subscription_banner = '''
-        <div style="background: linear-gradient(135deg, #6b9b99, #5a8b89); color: white; padding: 1rem; border-radius: 12px; text-align: center; margin-bottom: 2rem;">
+        <div style="background: black; color: white; padding: 1rem; border-radius: 12px; text-align: center; margin-bottom: 2rem;">
             ✓ Premium Member - Unlimited matching available
         </div>
         '''
     else:
         remaining = subscription_status['free_matches_remaining']
         subscription_banner = f'''
-        <div style="background: linear-gradient(135deg, #f4e8ee, #e8dce2); color: #2d2d2d; padding: 1rem; border-radius: 12px; text-align: center; margin-bottom: 2rem;">
+        <div style="background: linear-gradient(135deg, white, #e8dce2); color: black; padding: 1rem; border-radius: 12px; text-align: center; margin-bottom: 2rem;">
             Free Plan - {remaining} free match{"" if remaining == 1 else "es"} remaining this month
             <div style="margin-top: 0.5rem;">
-                <a href="/subscription/plans" style="color: #6b9b99; font-weight: 600; text-decoration: none;">
+                <a href="/subscription/plans" style="color: black; font-weight: 600; text-decoration: none;">
                     Upgrade to Premium for unlimited matching →
                 </a>
             </div>
@@ -2987,8 +2987,8 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
         verification_badge = ""
         if matched_user_verified:
             verification_badge = '''
-            <div style="display: inline-flex; align-items: center; gap: 0.25rem; background: #007bff; color: white; padding: 0.25rem 0.75rem; border-radius: 15px; font-size: 0.75rem; font-weight: 600; margin-left: 0.5rem;">
-                ✓ Verified
+            <div style="display: inline-flex; align-items: center; gap: 0.25rem; background: black; color: white; padding: 0.25rem 0.75rem; border-radius: 15px; font-size: 0.75rem; font-weight: 600; margin-left: 0.5rem;">
+                Verified
             </div>
             '''
         
@@ -3149,13 +3149,12 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
     
     return f'''
     <style>
-        @import url("https://fonts.googleapis.com/css2?family=Clash+Display:wght@200..700&display=swap");
-        @import url("https://fonts.googleapis.com/css2?family=Satoshi:wght@300..900&display=swap");
+        @import url("https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=sentient@400,500,600,700&display=swap");
 
         body {{
-            background-color: #f4e8ee;
-            color: #2d2d2d;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: white;
+            color: black;
+            font-family: 'Sentient', -apple-system, BlinkMacSystemFont, sans-serif;
             margin: 0;
             padding: 0;
             min-height: 100vh;
@@ -3195,13 +3194,13 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
         }}
         
         .matches-title {{
-            font-family: "Clash Display", sans-serif;
+            font-family: "Sentient", sans-serif;
             font-size: 2.5rem;
             font-weight: 500;
             margin: 0 0 1rem 0;
-            color: #2d2d2d;
+            color: black;
             letter-spacing: -0.02em;
-            background: linear-gradient(135deg, #2d2d2d, #6b9b99);
+            background: white;
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
@@ -3211,7 +3210,7 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
             font-family: "Satoshi", sans-serif;
             font-size: 1.125rem;
             line-height: 1.6;
-            color: #6b9b99;
+            color: black;
             margin: 0 0 1rem 0;
             max-width: 600px;
             margin-left: auto;
@@ -3238,14 +3237,14 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
         
         .match-card:hover {{
             transform: translateY(-4px);
-            border-color: rgba(107, 155, 153, 0.3);
+            border-color: rgba(0, 0, 0, 0.3);
         }}
         
         .match-number {{
             position: absolute;
             top: -1rem;
             left: 2rem;
-            background: linear-gradient(135deg, #6b9b99, #ff9500);
+            background: black;
             color: white;
             border-radius: 50%;
             width: 48px;
@@ -3270,12 +3269,12 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
             width: 80px;
             height: 80px;
             border-radius: 50%;
-            background: linear-gradient(135deg, #6b9b99, #ff9500);
+            background: white;
             display: flex;
             align-items: center;
             justify-content: center;
-            color: white;
-            font-family: "Clash Display", sans-serif;
+            color: black;
+            font-family: "Sentient", sans-serif;
             font-size: 2rem;
             font-weight: 700;
         }}
@@ -3285,11 +3284,11 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
         }}
         
         .match-name {{
-            font-family: "Clash Display", sans-serif;
+            font-family: "Sentient", sans-serif;
             font-size: 1.75rem;
             font-weight: 600;
             margin-bottom: 0.25rem;
-            color: #2d2d2d;
+            color: black;
             display: flex;
             align-items: center;
             flex-wrap: wrap;
@@ -3304,15 +3303,15 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
         .score-circle {{
             display: inline-block;
             padding: 2rem;
-            background: linear-gradient(135deg, #6b9b99, #ff9500);
+            background: white;
             border-radius: 20px;
-            color: white;
+            color: black;
             min-width: 200px;
-            box-shadow: 0 8px 24px rgba(107, 155, 153, 0.3);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
         }}
         
         .score-number {{
-            font-family: "Clash Display", sans-serif;
+            font-family: "Sentient", sans-serif;
             font-size: 3rem;
             font-weight: 700;
             line-height: 1;
@@ -3352,7 +3351,7 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
         }}
         
         .score-value {{
-            font-family: "Clash Display", sans-serif;
+            font-family: "Sentient", sans-serif;
             font-size: 1.5rem;
             font-weight: 700;
             margin-bottom: 0.75rem;
@@ -3368,7 +3367,7 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
         
         .score-fill {{
             height: 100%;
-            background: linear-gradient(90deg, #6b9b99, #ff9500);
+            background: black;
             border-radius: 2px;
             transition: width 1s ease;
         }}
@@ -3410,7 +3409,7 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
         }}
         
         .badge-neural {{
-            background: linear-gradient(135deg, #6b9b99, #ff9500);
+            background: white;
             color: white;
         }}
         
@@ -3421,12 +3420,12 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
         
         .badge-personality {{
             background: rgba(255, 255, 255, 0.8);
-            color: #2d2d2d;
+            color: black;
         }}
         
         .badge-values {{
             background: rgba(255, 255, 255, 0.8);
-            color: #2d2d2d;
+            color: black;
         }}
         
         .detailed-scores {{
@@ -3450,15 +3449,15 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
             font-family: "Satoshi", sans-serif;
             font-size: 0.875rem;
             font-weight: 600;
-            color: #2d2d2d;
+            color: black;
             min-width: 80px;
         }}
         
         .score-value-small {{
-            font-family: "Clash Display", sans-serif;
+            font-family: "Sentient", sans-serif;
             font-size: 1.25rem;
             font-weight: 600;
-            color: #2d2d2d;
+            color: black;
             min-width: 40px;
         }}
         
@@ -3472,7 +3471,7 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
         
         .score-fill-small {{
             height: 100%;
-            background: linear-gradient(90deg, #6b9b99, #ff9500);
+            background: white;
             border-radius: 3px;
             transition: width 1s ease;
         }}
@@ -3483,11 +3482,11 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
             padding: 2rem;
             border-radius: 16px;
             margin: 2rem 0;
-            border-left: 4px solid #6b9b99;
+            border-left: 4px solid black;
             font-family: "Satoshi", sans-serif;
             font-size: 1rem;
             line-height: 1.6;
-            color: #2d2d2d;
+            color: black;
         }}
         
         .match-actions {{
@@ -3514,14 +3513,15 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
         }}
         
         .btn-primary {{
-            background: linear-gradient(135deg, #6b9b99, #ff9500);
+            background: black;
             color: white;
-            box-shadow: 0 4px 16px rgba(107, 155, 153, 0.3);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
         }}
         
         .btn-primary:hover {{
+            background: #333;
             transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(107, 155, 153, 0.4);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
         }}
         
         .btn-pending {{
@@ -3539,7 +3539,7 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
         
         .btn-success:hover {{
             transform: translateY(-2px);
-            background: linear-gradient(135deg, #6b9b99, #ff9500);
+            background: white;
         }}
         
         .btn-declined {{
@@ -3616,7 +3616,17 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
         {subscription_banner}
         {matches_count_section}
         {matches_html}
-        
+        <!-- Re-matching Section -->
+            <div class="rematching-section">
+                <h3 class="rematching-title">Want Fresh Matches?</h3>
+                <p class="rematching-description">
+                    If you've made significant changes to your profile, you can re-run the AI matching system 
+                    to discover new compatible connections based on your updated preferences.
+                </p>
+                <a href="/choose-agent" class="btn btn-rematch">
+                    Find New Matches
+                </a>
+            </div>
         <script>
         let viewStartTimes = {{}};
         
@@ -4037,34 +4047,88 @@ class NetworkManager:
             import csv
             import io
 
+            print(f"Starting CSV import for network {network_id}")
+            print(f"CSV data length: {len(csv_data)}")
+            print(f"CSV data preview: {csv_data[:200]}...")
+
             conn = get_db_connection()
             cursor = conn.cursor()
 
-            # Parse CSV
+            # Parse CSV - handle both with and without headers
             csv_file = io.StringIO(csv_data)
-            reader = csv.DictReader(csv_file)
+
+            # First, check if the data has proper headers
+            lines = csv_data.strip().split('\n')
+            if len(lines) == 0:
+                return {"success": False, "error": "Empty CSV data"}
+
+            first_line = lines[0].lower()
+            has_headers = 'name' in first_line and ('linkedin' in first_line or 'url' in first_line)
+
+            print(f"First line: {lines[0]}")
+            print(f"Has headers: {has_headers}")
 
             imported_count = 0
             errors = []
 
-            for row in reader:
-                try:
-                    name = row.get('name', '').strip()
-                    linkedin_url = row.get('linkedin_url', '').strip()
+            if has_headers:
+                # Use DictReader for CSV with headers
+                csv_file = io.StringIO(csv_data)
+                reader = csv.DictReader(csv_file)
 
-                    if name:
-                        cursor.execute('''
-                            INSERT INTO network_people (network_id, name, linkedin_url)
-                            VALUES (%s, %s, %s)
-                        ''', (network_id, name, linkedin_url))
-                        imported_count += 1
+                for row_num, row in enumerate(reader, 1):
+                    try:
+                        print(f"Processing row {row_num}: {row}")
+                        name = row.get('name', '').strip()
+                        linkedin_url = row.get('linkedin_url', '').strip()
 
-                except Exception as row_error:
-                    errors.append(f"Row error: {str(row_error)}")
+                        if name:
+                            cursor.execute('''
+                                INSERT INTO network_people (network_id, name, linkedin_url)
+                                VALUES (%s, %s, %s)
+                            ''', (network_id, name, linkedin_url))
+                            imported_count += 1
+                            print(f"Imported: {name}")
+                        else:
+                            print(f"Skipping row {row_num}: no name provided")
+
+                    except Exception as row_error:
+                        error_msg = f"Row {row_num} error: {str(row_error)}"
+                        print(error_msg)
+                        errors.append(error_msg)
+            else:
+                # Handle CSV without headers - assume first column is name, second is linkedin_url
+                csv_file = io.StringIO(csv_data)
+                reader = csv.reader(csv_file)
+
+                for row_num, row in enumerate(reader, 1):
+                    try:
+                        print(f"Processing row {row_num}: {row}")
+                        if len(row) >= 1:
+                            name = row[0].strip()
+                            linkedin_url = row[1].strip() if len(row) >= 2 else ''
+
+                            if name:
+                                cursor.execute('''
+                                    INSERT INTO network_people (network_id, name, linkedin_url)
+                                    VALUES (%s, %s, %s)
+                                ''', (network_id, name, linkedin_url))
+                                imported_count += 1
+                                print(f"Imported: {name}")
+                            else:
+                                print(f"Skipping row {row_num}: no name provided")
+                        else:
+                            print(f"Skipping row {row_num}: empty row")
+
+                    except Exception as row_error:
+                        error_msg = f"Row {row_num} error: {str(row_error)}"
+                        print(error_msg)
+                        errors.append(error_msg)
 
             conn.commit()
             conn.close()
 
+            print(f"CSV import completed: {imported_count} imported, {len(errors)} errors")
             return {
                 "success": True,
                 "imported_count": imported_count,
@@ -4072,7 +4136,11 @@ class NetworkManager:
             }
 
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            error_msg = f"CSV import failed: {str(e)}"
+            print(error_msg)
+            import traceback
+            traceback.print_exc()
+            return {"success": False, "error": error_msg}
 
     def get_network_people(self, network_id: int) -> List[Dict[str, Any]]:
         """Get all people in a network"""
@@ -4121,6 +4189,58 @@ class NetworkManager:
         except Exception as e:
             print(f"Error fetching network relationships: {e}")
             return []
+
+    def generate_network_compatibility(self, people: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Generate random compatibility scores and relationships for network visualization"""
+        import random
+
+        try:
+            compatibility_matrix = {}
+            relationships = []
+
+            # Generate pairwise compatibility scores
+            for i, person1 in enumerate(people):
+                compatibility_matrix[person1['id']] = {}
+
+                for j, person2 in enumerate(people):
+                    if i != j:
+                        # Generate random compatibility score (0.0 to 1.0)
+                        # Bias towards moderate compatibility (0.3 to 0.8)
+                        score = random.uniform(0.2, 0.9)
+                        compatibility_matrix[person1['id']][person2['id']] = score
+
+                        # If compatibility is above threshold (0.6), create a relationship
+                        if score > 0.6:
+                            relationships.append({
+                                'person1_id': person1['id'],
+                                'person2_id': person2['id'],
+                                'person1_name': person1['name'],
+                                'person2_name': person2['name'],
+                                'compatibility_score': score
+                            })
+
+            # Calculate each person's total connections for clustering
+            connection_counts = {}
+            for person in people:
+                person_id = person['id']
+                connections = [r for r in relationships if r['person1_id'] == person_id or r['person2_id'] == person_id]
+                connection_counts[person_id] = len(connections)
+
+            return {
+                'compatibility_matrix': compatibility_matrix,
+                'relationships': relationships,
+                'connection_counts': connection_counts,
+                'people_count': len(people)
+            }
+
+        except Exception as e:
+            print(f"Error generating network compatibility: {e}")
+            return {
+                'compatibility_matrix': {},
+                'relationships': [],
+                'connection_counts': {},
+                'people_count': 0
+            }
 
     def update_relationship_score(self, network_id: int, person1_id: int, person2_id: int,
                                  manual_score: float, note: str = "") -> Dict[str, Any]:
@@ -4233,7 +4353,7 @@ def home():
         }
 
         .hero-title {
-            font-family: 'Clash Display', 'Satoshi', sans-serif;
+            font-family: 'Sentient', 'Satoshi', sans-serif;
             font-size: clamp(2.5rem, 6vw, 4rem);
             font-weight: 600;
             margin-bottom: 1.5rem;
@@ -4288,7 +4408,7 @@ def home():
         }
 
         .feature-title {
-            font-family: 'Clash Display', 'Satoshi', sans-serif;
+            font-family: 'Sentient', 'Satoshi', sans-serif;
             font-size: 1.125rem;
             font-weight: 600;
             color: var(--color-charcoal);
@@ -4328,15 +4448,16 @@ def home():
         }
 
         .btn-primary {
-            background: linear-gradient(135deg, var(--color-emerald), var(--color-sage));
+            background: black;
             color: white;
-            box-shadow: 0 4px 16px rgba(22, 122, 96, 0.3);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
         }
 
         .btn-primary:hover {
+            background: #333;
             transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(22, 122, 96, 0.4);
-        }
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+        }}
 
         .btn-secondary {
             background: var(--color-white);
@@ -4354,11 +4475,11 @@ def home():
         }
 
         .testimonial {
-            background: linear-gradient(135deg, var(--color-lavender), var(--color-sage));
+            background: white;
             padding: 2rem;
             border-radius: 16px;
             margin: 3rem 0;
-            color: var(--color-charcoal);
+            color: black;
             font-style: italic;
             font-size: 1.125rem;
             line-height: 1.6;
@@ -4368,7 +4489,7 @@ def home():
         .testimonial::before {
             content: '"';
             font-size: 4rem;
-            font-family: 'Clash Display', serif;
+            font-family: 'Sentient', serif;
             position: absolute;
             top: -0.5rem;
             left: 1rem;
@@ -4461,7 +4582,7 @@ def home():
                 </div>
                 
                 <div class="feature-card">
-                    <
+                    
                     <h3 class="feature-title">Deep Matching</h3>
                     <p class="feature-description">Beyond interests - we match personalities, values, and communication styles</p>
                 </div>
@@ -4508,8 +4629,7 @@ def choose_agent():
     
     content = '''
     <style>
-        @import url("https://fonts.googleapis.com/css2?family=Clash+Display:wght@200..700&display=swap");
-        @import url("https://fonts.googleapis.com/css2?family=Satoshi:wght@300..900&display=swap");
+        @import url("https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=sentient@400,500,600,700&display=swap");
 
         /* Override any existing styles for full page layout */
         html, body {
@@ -4586,7 +4706,7 @@ def choose_agent():
 
         .circle {
             position: absolute;
-            background-color: var(--color-emerald);
+            background-color: black;
             width: 10px;
             height: 10px;
             left: 0px;
@@ -4626,14 +4746,14 @@ def choose_agent():
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            font-family: "Clash Display", sans-serif;
+            font-family: "Sentient", sans-serif;
             font-size: clamp(60px, 15vw, 160px);
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: -2px;
             z-index: -1;
             transition: opacity 0.5s ease-in-out;
-            background: linear-gradient(135deg, var(--color-emerald), var(--color-sage), var(--color-lavender));
+            background: white;
             background-size: 200% 200%;
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
@@ -5504,9 +5624,9 @@ def register():
     content = f'''
     <style>
         body {{
-            background-color: #f4e8ee;
-            color: #2d2d2d;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: white;
+            color: black;
+            font-family: 'Sentient', -apple-system, BlinkMacSystemFont, sans-serif;
             margin: 0;
             padding: 0;
             min-height: 100vh;
@@ -5516,7 +5636,7 @@ def register():
         }}
         
         .aesthetic-container {{
-            background-color: #f4e8ee;
+            background-color: white;
             max-width: 500px;
             width: 100%;
             padding: 60px 40px;
@@ -5527,13 +5647,13 @@ def register():
             font-size: 32px;
             font-weight: 300;
             margin-bottom: 8px;
-            color: #2d2d2d;
+            color: black;
             letter-spacing: -0.5px;
         }}
         
         .aesthetic-subtitle {{
             font-size: 16px;
-            color: #6b9b99;
+            color: black;
             margin-bottom: 48px;
             line-height: 1.5;
         }}
@@ -5559,7 +5679,7 @@ def register():
             font-size: 14px;
             font-weight: 500;
             margin-bottom: 8px;
-            color: #2d2d2d;
+            color: black;
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }}
@@ -5567,10 +5687,10 @@ def register():
         .form-input {{
             width: 100%;
             padding: 16px 20px;
-            background-color: #f4e8ee;
-            border: 1px solid #6b9b99;
+            background-color: white;
+            border: 1px solid black;
             border-radius: 8px;
-            color: #2d2d2d;
+            color: black;
             font-size: 16px;
             transition: all 0.3s ease;
             box-sizing: border-box;
@@ -5578,9 +5698,9 @@ def register():
         
         .form-input:focus {{
             outline: none;
-            border-color: #6b9b99;
-            box-shadow: 0 0 0 1px #6b9b99;
-            background-color: #f4e8ee;
+            border-color: black;
+            box-shadow: 0 0 0 1px black;
+            background-color: white;
         }}
         
         .form-input::placeholder {{
@@ -5590,7 +5710,7 @@ def register():
         .register-button {{
             width: 100%;
             padding: 16px;
-            background-color: #6b9b99;
+            background-color: black;
             color: #ffffff;
             border: none;
             border-radius: 8px;
@@ -5604,7 +5724,7 @@ def register():
         }}
         
         .register-button:hover {{
-            background-color: #5a8785;
+            background-color: #333;
             transform: translateY(-1px);
         }}
         
@@ -5618,7 +5738,7 @@ def register():
         }}
         
         .form-links a {{
-            color: #6b9b99;
+            color: black;
             text-decoration: none;
             transition: color 0.3s ease;
         }}
@@ -5644,8 +5764,8 @@ def register():
         
         .flash-success {{
             background-color: rgba(107, 155, 153, 0.1);
-            border: 1px solid rgba(107, 155, 153, 0.3);
-            color: #6b9b99;
+            border: 1px solid rgba(0, 0, 0, 0.3);
+            color: black;
             padding: 12px 16px;
             border-radius: 8px;
             margin-bottom: 16px;
@@ -5695,7 +5815,7 @@ def register():
             <button type="submit" class="register-button">
                 Create Account
             </button>
-            <div class="form-links" style="margin-top: 12px; font-size: 12px; color: #6b9b99;">
+            <div class="form-links" style="margin-top: 12px; font-size: 12px; color: black;">
                 By creating an account, you agree to our <a href="/terms-of-service">Terms of Service</a> and <a href="/privacy-policy">Privacy Policy</a>.
             </div>
         </form>
@@ -5742,9 +5862,9 @@ def user_login():
     content = f'''
     <style>
         body {{
-            background-color: #f4e8ee;
-            color: #2d2d2d;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: white;
+            color: black;
+            font-family: 'Sentient', -apple-system, BlinkMacSystemFont, sans-serif;
             margin: 0;
             padding: 0;
             min-height: 100vh;
@@ -5754,7 +5874,7 @@ def user_login():
         }}
         
         .aesthetic-container {{
-            background-color: #f4e8ee;
+            background-color: white;
             max-width: 400px;
             width: 100%;
             padding: 60px 40px;
@@ -5765,13 +5885,13 @@ def user_login():
             font-size: 32px;
             font-weight: 300;
             margin-bottom: 8px;
-            color: #2d2d2d;
+            color: black;
             letter-spacing: -0.5px;
         }}
         
         .aesthetic-subtitle {{
             font-size: 16px;
-            color: #6b9b99;
+            color: black;
             margin-bottom: 48px;
             line-height: 1.5;
         }}
@@ -5786,7 +5906,7 @@ def user_login():
             font-size: 14px;
             font-weight: 500;
             margin-bottom: 8px;
-            color: #2d2d2d;
+            color: black;
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }}
@@ -5795,9 +5915,9 @@ def user_login():
             width: 100%;
             padding: 16px 20px;
             background-color: rgba(255, 255, 255, 0.3);
-            border: 1px solid rgba(107, 155, 153, 0.3);
+            border: 1px solid rgba(0, 0, 0, 0.3);
             border-radius: 8px;
-            color: #2d2d2d;
+            color: black;
             font-size: 16px;
             transition: all 0.3s ease;
             box-sizing: border-box;
@@ -5805,9 +5925,9 @@ def user_login():
         
         .form-input:focus {{
             outline: none;
-            border-color: #6b9b99;
-            box-shadow: 0 0 0 1px rgba(107, 155, 153, 0.3);
-            background-color: #f4e8ee;
+            border-color: black;
+            box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3);
+            background-color: white;
         }}
         
         .form-input::placeholder {{
@@ -5817,7 +5937,7 @@ def user_login():
         .login-button {{
             width: 100%;
             padding: 16px;
-            background-color: #6b9b99;
+            background-color: black;
             color: #ffffff;
             border: none;
             border-radius: 8px;
@@ -5831,7 +5951,7 @@ def user_login():
         }}
         
         .login-button:hover {{
-            background-color: #5a8785;
+            background-color: #333;
             transform: translateY(-1px);
         }}
         
@@ -5845,7 +5965,7 @@ def user_login():
         }}
         
         .form-links a {{
-            color: #6b9b99;
+            color: black;
             text-decoration: none;
             transition: color 0.3s ease;
         }}
@@ -5876,8 +5996,8 @@ def user_login():
         
         .flash-success {{
             background-color: rgba(107, 155, 153, 0.1);
-            border: 1px solid rgba(107, 155, 153, 0.3);
-            color: #6b9b99;
+            border: 1px solid rgba(0, 0, 0, 0.3);
+            color: black;
             padding: 12px 16px;
             border-radius: 8px;
             margin-bottom: 16px;
@@ -5951,9 +6071,9 @@ def forgot_password():
     content = f'''
     <style>
         body {{
-            background-color: #f4e8ee;
-            color: #2d2d2d;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: white;
+            color: black;
+            font-family: 'Sentient', -apple-system, BlinkMacSystemFont, sans-serif;
             margin: 0;
             padding: 0;
             min-height: 100vh;
@@ -5963,7 +6083,7 @@ def forgot_password():
         }}
         
         .aesthetic-container {{
-            background-color: #f4e8ee;
+            background-color: white;
             max-width: 400px;
             width: 100%;
             padding: 60px 40px;
@@ -5974,13 +6094,13 @@ def forgot_password():
             font-size: 32px;
             font-weight: 300;
             margin-bottom: 8px;
-            color: #2d2d2d;
+            color: black;
             letter-spacing: -0.5px;
         }}
         
         .aesthetic-subtitle {{
             font-size: 16px;
-            color: #6b9b99;
+            color: black;
             margin-bottom: 32px;
             line-height: 1.5;
         }}
@@ -6000,7 +6120,7 @@ def forgot_password():
             gap: 12px;
             margin-bottom: 8px;
             font-weight: 600;
-            color: #2d2d2d;
+            color: black;
         }}
         
         .info-icon {{
@@ -6009,7 +6129,7 @@ def forgot_password():
         
         .info-text {{
             font-size: 14px;
-            color: #6b9b99;
+            color: black;
             line-height: 1.5;
         }}
         
@@ -6023,7 +6143,7 @@ def forgot_password():
             font-size: 14px;
             font-weight: 500;
             margin-bottom: 8px;
-            color: #2d2d2d;
+            color: black;
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }}
@@ -6031,10 +6151,10 @@ def forgot_password():
         .form-input {{
             width: 100%;
             padding: 16px 20px;
-            background-color: #f4e8ee;
-            border: 1px solid #f4e8ee;
+            background-color: white;
+            border: 1px solid white;
             border-radius: 8px;
-            color: #2d2d2d;
+            color: black;
             font-size: 16px;
             transition: all 0.3s ease;
             box-sizing: border-box;
@@ -6042,9 +6162,9 @@ def forgot_password():
         
         .form-input:focus {{
             outline: none;
-            border-color: #6b9b99;
-            box-shadow: 0 0 0 1px rgba(107, 155, 153, 0.3);
-            background-color: #f4e8ee;
+            border-color: black;
+            box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3);
+            background-color: white;
         }}
         
         .form-input::placeholder {{
@@ -6054,7 +6174,7 @@ def forgot_password():
         .reset-button {{
             width: 100%;
             padding: 16px;
-            background-color: #6b9b99;
+            background-color: black;
             color: #ffffff;
             border: none;
             border-radius: 8px;
@@ -6068,7 +6188,7 @@ def forgot_password():
         }}
         
         .reset-button:hover {{
-            background-color: #5a8785;
+            background-color: #333;
             transform: translateY(-1px);
         }}
         
@@ -6082,7 +6202,7 @@ def forgot_password():
         }}
         
         .form-links a {{
-            color: #6b9b99;
+            color: black;
             text-decoration: none;
             transition: color 0.3s ease;
         }}
@@ -6109,8 +6229,8 @@ def forgot_password():
         
         .flash-success {{
             background-color: rgba(107, 155, 153, 0.1);
-            border: 1px solid rgba(107, 155, 153, 0.3);
-            color: #6b9b99;
+            border: 1px solid rgba(0, 0, 0, 0.3);
+            color: black;
             padding: 12px 16px;
             border-radius: 8px;
             margin-bottom: 16px;
@@ -6199,7 +6319,7 @@ def reset_password(token):
                 content = '''
                 <div class="container" style="max-width: 400px; text-align: center;">
                     <div style="font-size: 64px; margin-bottom: 20px;">✅</div>
-                    <h1 style="color: #28a745; font-size: 24px; margin-bottom: 16px;">Password Reset Successful!</h1>
+                    <h1 style="color: black; font-size: 24px; margin-bottom: 16px;">Password Reset Successful!</h1>
                     <div style="font-size: 16px; color: #666; margin-bottom: 30px;">Your password has been successfully updated.</div>
                     
                     <div style="background: #d4edda; border: 1px solid #c3e6cb; padding: 15px; border-radius: 6px; margin: 20px 0; color: #155724;">
@@ -6252,7 +6372,7 @@ def reset_password(token):
         </form>
         
         <div style="text-align: center; margin-top: 20px; font-size: 14px;">
-            <a href="/login" style="color: #167a60; text-decoration: none;">Back to Login</a>
+            <a href="/login" style="color: black; text-decoration: none;">Back to Login</a>
         </div>
     </div>
     '''
@@ -6313,13 +6433,12 @@ def profile_settings():
     
     content = f'''
     <style>
-        @import url("https://fonts.googleapis.com/css2?family=Clash+Display:wght@200..700&display=swap");
-        @import url("https://fonts.googleapis.com/css2?family=Satoshi:wght@300..900&display=swap");
+        @import url("https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=sentient@400,500,600,700&display=swap");
 
         body {{
-            background-color: #f4e8ee;
-            color: #2d2d2d;
-            font-family: "Satoshi", -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: white;
+            color: black;
+            font-family: "Satoshi", 'Sentient', -apple-system, BlinkMacSystemFont, sans-serif;
             margin: 0;
             padding: 0;
             min-height: 100vh;
@@ -6343,23 +6462,19 @@ def profile_settings():
         }}
         
         .settings-title {{
-            font-family: "Clash Display", sans-serif;
+            font-family: "Sentient", sans-serif;
             font-size: 2.5rem;
             font-weight: 500;
             margin: 0 0 1rem 0;
-            color: #2d2d2d;
+            color: black;
             letter-spacing: -0.02em;
-            background: linear-gradient(135deg, #2d2d2d, #6b9b99);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
         }}
         
         .settings-header p {{
             font-family: "Satoshi", sans-serif;
             font-size: 1.125rem;
             line-height: 1.6;
-            color: #6b9b99;
+            color: black;
             margin: 0;
             max-width: 600px;
             margin-left: auto;
@@ -6380,16 +6495,16 @@ def profile_settings():
         
         .subscription-section:hover {{
             transform: translateY(-4px);
-            border-color: rgba(107, 155, 153, 0.3);
+            border-color: rgba(0, 0, 0, 0.3);
         }}
         
         .subscription-active {{
-            border-left: 4px solid #6b9b99;
-            background: linear-gradient(135deg, rgba(107, 155, 153, 0.05), rgba(198, 225, 155, 0.05));
+            border-left: 4px solid black;
+            background: #f5f5f5;
         }}
         
         .subscription-free {{
-            border-left: 4px solid rgba(107, 155, 153, 0.5);
+            border-left: 4px solid black;
         }}
         
         .verification-section {{
@@ -6406,30 +6521,30 @@ def profile_settings():
         
         .verification-section:hover {{
             transform: translateY(-4px);
-            border-color: rgba(107, 155, 153, 0.3);
+            border-color: rgba(0, 0, 0, 0.3);
         }}
         
         .verification-section h3 {{
-            font-family: "Clash Display", sans-serif;
+            font-family: "Sentient", sans-serif;
             font-size: 1.75rem;
             font-weight: 600;
             margin: 0 0 1.5rem 0;
-            color: #6b9b99;
+            color: black;
         }}
         
         .subscription-section h3 {{
-            font-family: "Clash Display", sans-serif;
+            font-family: "Sentient", sans-serif;
             font-size: 1.75rem;
             font-weight: 600;
             margin: 0 0 1.5rem 0;
-            color: #6b9b99;
+            color: black;
         }}
         
         .plan-badge {{
             display: inline-flex;
             align-items: center;
             gap: 0.5rem;
-            background: linear-gradient(135deg, #6b9b99, #ff9500);
+            background: white;
             color: white;
             padding: 0.75rem 1.5rem;
             border-radius: 50px;
@@ -6437,7 +6552,7 @@ def profile_settings():
             font-weight: 600;
             font-size: 0.875rem;
             margin-bottom: 1.5rem;
-            box-shadow: 0 4px 12px rgba(107, 155, 153, 0.3);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
         }}
         
         .plan-badge.free {{
@@ -6448,15 +6563,15 @@ def profile_settings():
             display: inline-flex;
             align-items: center;
             gap: 0.5rem;
-            background: linear-gradient(135deg, #6b9b99, #ff9500);
-            color: white;
+            background: white;
+            color: black;
             padding: 0.75rem 1.5rem;
             border-radius: 50px;
             font-family: "Satoshi", sans-serif;
             font-weight: 600;
             font-size: 0.875rem;
             margin-bottom: 1.5rem;
-            box-shadow: 0 4px 12px rgba(107, 155, 153, 0.3);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
         }}
         
         .subscription-details {{
@@ -6495,9 +6610,10 @@ def profile_settings():
         }}
         
         .btn-manage {{
-            font-family: "Satoshi", sans-serif;
-            background: linear-gradient(135deg, #6b9b99, #ff9500);
-            color: white;
+            font-family: "Sentient", sans-serif;
+            background: white;
+            color: black;
+            border: 1px solid black;
             padding: 1rem 2rem;
             border: none;
             border-radius: 50px;
@@ -6508,7 +6624,7 @@ def profile_settings():
             text-decoration: none;
             display: inline-block;
             margin: 0.5rem;
-            box-shadow: 0 4px 12px rgba(107, 155, 153, 0.3);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
         }}
         
         .btn-manage:hover {{
@@ -6517,8 +6633,8 @@ def profile_settings():
         }}
         
         .btn-upgrade {{
-            background: linear-gradient(135deg, rgba(107, 155, 153, 0.8), rgba(198, 225, 155, 0.8));
-            color: #2d2d2d;
+            background: black;
+            color: white;
         }}
         
         .btn-cancel {{
@@ -6527,8 +6643,8 @@ def profile_settings():
         }}
         
         .btn-verify {{
-            font-family: "Satoshi", sans-serif;
-            background: linear-gradient(135deg, #6b9b99, #ff9500);
+            font-family: "Sentient", sans-serif;
+            background: black;
             color: white;
             padding: 1rem 2rem;
             border: none;
@@ -6537,7 +6653,7 @@ def profile_settings():
             cursor: pointer;
             transition: all 0.3s ease;
             font-size: 0.875rem;
-            box-shadow: 0 4px 12px rgba(107, 155, 153, 0.3);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
         }}
         
         .btn-verify:hover {{
@@ -6562,10 +6678,10 @@ def profile_settings():
         }}
         
         .stat-number {{
-            font-family: 'Clash Display', sans-serif;
+            font-family: 'Sentient', sans-serif;
             font-size: 2rem;
             font-weight: 700;
-            color: #6b9b99;
+            color: black;
             margin-bottom: 0.5rem;
         }}
         
@@ -6583,7 +6699,7 @@ def profile_settings():
             display: inline-flex;
             align-items: center;
             gap: 0.5rem;
-            color: #6b9b99;
+            color: black;
             text-decoration: none;
             font-weight: 500;
             margin: 1rem;
@@ -6598,7 +6714,7 @@ def profile_settings():
         .back-link:hover {{
             transform: translateY(-2px);
             background: rgba(255, 255, 255, 0.9);
-            color: #2d2d2d;
+            color: black;
         }}
         
         /* Flash message styling */
@@ -6659,11 +6775,21 @@ def profile_settings():
             <p>Manage your account, subscription, and privacy settings</p>
         </div>
         
+        <!-- Profile Information Section -->
+        <div class="subscription-section">
+            <h2 style="font-family: 'Sentient', sans-serif; color: black; margin-bottom: 1.5rem; font-size: 1.5rem;">Basic Information</h2>
+            <p style="color: black; margin-bottom: 2rem; line-height: 1.6;">Update your personal details, bio, location, and profile settings.</p>
+            <div style="text-align: center;">
+                <a href="/edit-profile" class="btn-manage btn-upgrade" style="font-size: 1rem; padding: 1.25rem 2rem;">
+                    Click here to edit your basic information
+                </a>
+            </div>
+        </div>
+
         {subscription_html}
         {verification_html}
-        
+
         <div style="text-align: center; margin-top: 3rem;">
-            <a href="/edit-profile" class="back-link">Edit Full Profile</a>
             <a href="/dashboard" class="back-link">Back to Dashboard</a>
         </div>
     </div>
@@ -6687,7 +6813,7 @@ def render_verification_section(verification_status: Dict) -> str:
         return f'''
         <div class="verification-section">
             <div class="verified-badge">
-                ✓ Verified Account
+                Verified Account
             </div>
             <h3 style="color: var(--color-emerald); margin-bottom: 1rem;">Identity Verified</h3>
             <p>Your account has been verified on {verified_date}. Your profile displays a blue verified badge to other users, showing that you're a real person.</p>
@@ -6817,11 +6943,11 @@ def render_subscription_management_section(subscription_status: Dict) -> str:
         if status == 'cancelled':
             # Subscription is cancelled but still active until expiry
             return f'''
-            <div class="subscription-section subscription-active" style="border-left: 4px solid #ff9500;">
-                <h3 style="color: #ff9500; margin-bottom: 1rem;">Subscription Management</h3>
+            <div class="subscription-section subscription-active" style="border-left: 4px solid black;">
+                <h3 style="color: black; margin-bottom: 1rem;">Subscription Management</h3>
                 
-                <div class="plan-badge" style="background: linear-gradient(135deg, #ff9500, #dc3545);">
-                    ⚠ Premium Plan - Cancelled
+                <div class="plan-badge" style="background: white; color: black;">
+                    Premium Plan - Cancelled
                 </div>
                 
                 <div class="subscription-details">
@@ -6838,7 +6964,7 @@ def render_subscription_management_section(subscription_status: Dict) -> str:
                     
                     <p><strong>Expires:</strong> {expires_at_formatted}</p>
                     <p><strong>Plan:</strong> Premium Matching (£9.99/month)</p>
-                    <p style="color: #ff9500; font-weight: 600;">Your subscription has been cancelled and will expire on {expires_at_formatted}. You'll continue to have premium access until then.</p>
+                    <p style="color: black; font-weight: 600;">Your subscription has been cancelled and will expire on {expires_at_formatted}. You'll continue to have premium access until then.</p>
                 </div>
                 
                 <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
@@ -6859,7 +6985,7 @@ def render_subscription_management_section(subscription_status: Dict) -> str:
                 <h3 style="color: var(--color-emerald); margin-bottom: 1rem;">Subscription Management</h3>
                 
                 <div class="plan-badge">
-                    ✓ Premium Plan Active
+                    Premium Plan Active
                 </div>
                 
                 <div class="subscription-details">
@@ -6993,7 +7119,7 @@ def admin_verification_queue():
                     <form method="POST" action="/admin/approve-verification" style="display: inline-block; margin-right: 10px;">
                         <input type="hidden" name="token" value="{req['verification_token']}">
                         <input type="hidden" name="admin_email" value="admin@pont.world">
-                        <button type="submit" style="background: #28a745; color: white; padding: 8px 16px; border: none; border-radius: 4px;">
+                        <button type="submit" style="background: white; color: white; padding: 8px 16px; border: none; border-radius: 4px;">
                             ✓ Approve
                         </button>
                     </form>
@@ -7002,14 +7128,14 @@ def admin_verification_queue():
                         <input type="hidden" name="token" value="{req['verification_token']}">
                         <input type="hidden" name="admin_email" value="admin@pont.world">
                         <input type="text" name="reason" placeholder="Rejection reason" required style="margin-right: 5px;">
-                        <button type="submit" style="background: #dc3545; color: white; padding: 8px 16px; border: none; border-radius: 4px;">
+                        <button type="submit" style="background: white; color: white; padding: 8px 16px; border: none; border-radius: 4px;">
                             ✗ Reject
                         </button>
                     </form>
                     
                     <form method="POST" action="/admin/mark-photo-received" style="display: inline-block; margin-left: 10px;">
                         <input type="hidden" name="token" value="{req['verification_token']}">
-                        <button type="submit" style="background: #007bff; color: white; padding: 8px 16px; border: none; border-radius: 4px;">
+                        <button type="submit" style="background: white; color: white; padding: 8px 16px; border: none; border-radius: 4px;">
                             📸 Mark Photos Received
                         </button>
                     </form>
@@ -7100,17 +7226,32 @@ def admin_mark_photo_received():
 # ROUTES - DASHBOARD & MATCHING
 # ============================================================================
 
+@app.route('/settings')
+@login_required
+def settings():
+    """User settings - redirects to profile settings"""
+    return redirect('/profile-settings')
+
 @app.route('/dashboard')
 @login_required
 def dashboard():
     """User dashboard - shows existing matches or profile setup option"""
     user_id = session['user_id']
     user_info = user_auth.get_user_info(user_id)
-    
+
     if not user_info:
         flash('Account information not found', 'error')
         return redirect('/login')
-    
+
+    # Check user's matching mode and redirect to appropriate dashboard
+    user_profile = user_auth.get_user_profile(user_id)
+    matching_mode = user_profile.get('matching_mode', 'individual') if user_profile else 'individual'
+    print(f"DEBUG: Dashboard - user {user_id} has matching_mode: {matching_mode}")
+
+    if matching_mode == 'network':
+        print(f"DEBUG: Redirecting user {user_id} to network-mode")
+        return redirect('/network-mode')
+
     if user_info['profile_completed']:
         matches = user_auth.get_user_matches(user_id)
         
@@ -7135,8 +7276,7 @@ def render_no_matches_dashboard() -> str:
     """Render no matches dashboard with small orange sphere in draggable teal cube"""
     return '''
     <style>
-        @import url("https://fonts.googleapis.com/css2?family=Clash+Display:wght@200..700&display=swap");
-        @import url("https://fonts.googleapis.com/css2?family=Satoshi:wght@300..900&display=swap");
+        @import url("https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=sentient@400,500,600,700&display=swap");
 
         .no-matches-container {
             position: relative;
@@ -7176,12 +7316,12 @@ def render_no_matches_dashboard() -> str:
         }
         
         .no-matches-title {
-            font-family: "Clash Display", sans-serif;
+            font-family: "Sentient", sans-serif;
             font-size: clamp(2rem, 6vw, 3rem);
             font-weight: 500;
-            color: #2d2d2d;
+            color: black;
             margin-bottom: 1rem;
-            background: linear-gradient(135deg, #2d2d2d, #6b9b99);
+            background: white;
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
@@ -7190,7 +7330,7 @@ def render_no_matches_dashboard() -> str:
         .no-matches-subtitle {
             font-family: "Satoshi", sans-serif;
             font-size: 1.125rem;
-            color: #6b9b99;
+            color: black;
             margin-bottom: 2rem;
             line-height: 1.6;
         }
@@ -7213,13 +7353,13 @@ def render_no_matches_dashboard() -> str:
             margin: 0.75rem 0;
             font-family: "Satoshi", sans-serif;
             font-size: 0.9rem;
-            color: #2d2d2d;
+            color: black;
         }
         
         .reason-bullet {
             width: 6px;
             height: 6px;
-            background: linear-gradient(135deg, #6b9b99, #ff9500);
+            background: white;
             border-radius: 50%;
             flex-shrink: 0;
             margin-top: 0.5rem;
@@ -7227,7 +7367,7 @@ def render_no_matches_dashboard() -> str:
         
         .btn-update {
             font-family: "Satoshi", sans-serif;
-            background: linear-gradient(135deg, #6b9b99, #ff9500);
+            background: white;
             color: #ffffff;
             padding: 1rem 2rem;
             border-radius: 50px;
@@ -7238,7 +7378,7 @@ def render_no_matches_dashboard() -> str:
             text-transform: uppercase;
             letter-spacing: 0.5px;
             margin-top: 2rem;
-            box-shadow: 0 4px 16px rgba(107, 155, 153, 0.3);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
             display: inline-block;
         }
         
@@ -7500,7 +7640,7 @@ def render_new_profile_dashboard() -> str:
     """Render dashboard for new users without profile"""
     return '''
     <div class="container">
-        <div style="text-align: center; margin-bottom: 40px; padding: 30px; background: #f4f2eb; border-radius: 15px; border: 2px solid #167a60;">
+        <div style="text-align: center; margin-bottom: 40px; padding: 30px; background: #f4f2eb; border-radius: 15px; border: 2px solid black;">
             <div style="font-size: 28px; font-weight: bold; margin-bottom: 15px;">Ready to Find Your Perfect Matches?</div>
             <p style="font-size: 18px; margin: 0;">Let's create your profile to start matching.</p>
         </div>
@@ -7600,7 +7740,7 @@ def render_networks_list(networks):
         </div>
         '''
     else:
-        networks_html = '<div class="networks-list"><p style="text-align: center; color: #718096;">No networks created yet</p></div>'
+        networks_html = '<div class="networks-list"><p style="text-align: center; color: black;">No networks created yet</p></div>'
 
     return networks_html
 
@@ -7627,11 +7767,10 @@ def network_mode():
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Network Mode - Flock</title>
+        <title>Network Mode </title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
-            @import url("https://fonts.googleapis.com/css2?family=Clash+Display:wght@200..700&display=swap");
-            @import url("https://fonts.googleapis.com/css2?family=Satoshi:wght@300..900&display=swap");
+            @import url("https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=sentient@400,500,600,700&display=swap");
 
             * {{
                 margin: 0;
@@ -7640,8 +7779,8 @@ def network_mode():
             }}
 
             body {{
-                font-family: "Satoshi", -apple-system, BlinkMacSystemFont, sans-serif;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                font-family: 'Sentient', -apple-system, BlinkMacSystemFont, sans-serif;
+                background: white;
                 min-height: 100vh;
                 padding: 2rem;
             }}
@@ -7656,8 +7795,8 @@ def network_mode():
             }}
 
             h1 {{
-                font-family: "Clash Display", sans-serif;
-                color: #2d3748;
+                font-family: "Sentient", sans-serif;
+                color: black;
                 font-size: 2.5rem;
                 font-weight: 600;
                 margin-bottom: 1rem;
@@ -7666,7 +7805,7 @@ def network_mode():
 
             .subtitle {{
                 text-align: center;
-                color: #718096;
+                color: black;
                 font-size: 1.1rem;
                 margin-bottom: 3rem;
             }}
@@ -7679,7 +7818,7 @@ def network_mode():
             }}
 
             .action-card {{
-                background: #f8fafc;
+                background: #f5f5f5;
                 border: 2px solid #e2e8f0;
                 border-radius: 16px;
                 padding: 2rem;
@@ -7689,26 +7828,26 @@ def network_mode():
             }}
 
             .action-card:hover {{
-                border-color: #667eea;
+                border-color: black;
                 transform: translateY(-2px);
                 box-shadow: 0 8px 20px rgba(102, 126, 234, 0.15);
             }}
 
             .action-card h3 {{
-                color: #2d3748;
+                color: black;
                 font-size: 1.5rem;
                 margin-bottom: 1rem;
                 font-weight: 600;
             }}
 
             .action-card p {{
-                color: #718096;
+                color: black;
                 margin-bottom: 1.5rem;
                 line-height: 1.6;
             }}
 
             .btn {{
-                background: #667eea;
+                background: black;
                 color: white;
                 padding: 12px 24px;
                 border: none;
@@ -7720,17 +7859,20 @@ def network_mode():
             }}
 
             .btn:hover {{
-                background: #5a67d8;
+                background: #333;
                 text-decoration: none;
                 color: white;
             }}
 
             .btn-secondary {{
-                background: #718096;
+                background: white;
+                color: black;
+                border: 1px solid black;
             }}
 
             .btn-secondary:hover {{
-                background: #4a5568;
+                background: black;
+                color: white;
             }}
 
             .networks-list {{
@@ -7749,12 +7891,12 @@ def network_mode():
             }}
 
             .network-info h4 {{
-                color: #2d3748;
+                color: black;
                 margin-bottom: 0.5rem;
             }}
 
             .network-info p {{
-                color: #718096;
+                color: black;
                 font-size: 0.9rem;
             }}
 
@@ -7766,18 +7908,18 @@ def network_mode():
     </head>
     <body>
         <div class="container">
-            <h1>🌐 Network Mode</h1>
+            <h1>Network Mode</h1>
             <p class="subtitle">Analyze and visualize connections within your network</p>
 
             <div class="action-cards">
                 <div class="action-card" onclick="location.href='/create-network'">
-                    <h3>🚀 Create New Network</h3>
+                    <h3> Create New Network</h3>
                     <p>Import a list of people and their LinkedIn profiles to see predicted compatibility</p>
                     <a href="/create-network" class="btn">Get Started</a>
                 </div>
 
                 <div class="action-card" onclick="location.href='/settings'">
-                    <h3>⚙️ Switch to Individual Mode</h3>
+                    <h3> Switch to Individual Mode</h3>
                     <p>Go back to the traditional one-on-one matching experience</p>
                     <a href="/settings" class="btn btn-secondary">Switch Mode</a>
                 </div>
@@ -7817,7 +7959,7 @@ def create_network():
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Create Network - Flock</title>
+        <title>Create Network </title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
             @import url("https://fonts.googleapis.com/css2?family=Clash+Display:wght@200..700&display=swap");
@@ -7830,8 +7972,8 @@ def create_network():
             }
 
             body {
-                font-family: "Satoshi", -apple-system, BlinkMacSystemFont, sans-serif;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                font-family: 'Sentient', -apple-system, BlinkMacSystemFont, sans-serif;
+                background: white;
                 min-height: 100vh;
                 padding: 2rem;
             }
@@ -7846,8 +7988,8 @@ def create_network():
             }
 
             h1 {
-                font-family: "Clash Display", sans-serif;
-                color: #2d3748;
+                font-family: "Sentient", sans-serif;
+                color: black;
                 font-size: 2.5rem;
                 font-weight: 600;
                 margin-bottom: 1rem;
@@ -7860,7 +8002,7 @@ def create_network():
 
             label {
                 display: block;
-                color: #2d3748;
+                color: black;
                 font-weight: 600;
                 margin-bottom: 0.5rem;
             }
@@ -7876,7 +8018,7 @@ def create_network():
 
             input:focus, textarea:focus {
                 outline: none;
-                border-color: #667eea;
+                border-color: black;
             }
 
             textarea {
@@ -7885,7 +8027,7 @@ def create_network():
             }
 
             .btn {
-                background: #667eea;
+                background: white;
                 color: white;
                 padding: 12px 24px;
                 border: none;
@@ -7908,18 +8050,18 @@ def create_network():
                 display: block;
                 text-align: center;
                 margin-top: 1rem;
-                color: #718096;
+                color: black;
                 text-decoration: none;
             }
 
             .back-link:hover {
-                color: #667eea;
+                color: black;
             }
         </style>
     </head>
     <body>
         <div class="container">
-            <h1>🚀 Create Network</h1>
+            <h1> Create Network</h1>
 
             <form method="POST">
                 <div class="form-group">
@@ -7962,7 +8104,7 @@ def render_people_list(people):
 
         return chr(10).join(people_items)
     else:
-        return '<p style="text-align: center; color: #718096; padding: 2rem;">No people added yet</p>'
+        return '<p style="text-align: center; color: black; padding: 2rem;">No people added yet</p>'
 
 def render_proceed_section(network_id, people_count):
     """Helper function to render proceed section"""
@@ -7977,9 +8119,439 @@ def render_proceed_section(network_id, people_count):
     else:
         return '''
         <div class="proceed-section">
-            <p style="color: #718096;">Add at least 2 people to generate network visualization</p>
+            <p style="color: black;">Add at least 2 people to generate network visualization</p>
         </div>
         '''
+
+def render_network_visualization(network_id: int, people: List[Dict[str, Any]], compatibility_data: Dict[str, Any]) -> str:
+    """Render interactive network visualization similar to V1 matching"""
+
+    # Prepare data for JavaScript
+    people_json = [
+        {
+            'id': person['id'],
+            'name': person['name'],
+            'linkedin_url': person.get('linkedin_url', ''),
+            'x': 0,  # Will be calculated by JavaScript
+            'y': 0   # Will be calculated by JavaScript
+        }
+        for person in people
+    ]
+
+    relationships = compatibility_data['relationships']
+    connection_counts = compatibility_data['connection_counts']
+    show_names = len(people) <= 10
+
+    import json
+
+    return f'''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Network Visualization</title>
+        <style>
+            @import url("https://fonts.googleapis.com/css2?family=Clash+Display:wght@200..700&display=swap");
+            @import url("https://fonts.googleapis.com/css2?family=Satoshi:wght@300..900&display=swap");
+
+            body {{
+                font-family: 'Satoshi', 'Sentient', -apple-system, BlinkMacSystemFont, sans-serif;
+                margin: 0;
+                padding: 20px;
+                background: white;
+                min-height: 100vh;
+                color: white;
+            }}
+
+            .visualization-container {{
+                max-width: 1200px;
+                margin: 0 auto;
+                background: rgba(255, 255, 255, 0.95);
+                border-radius: 20px;
+                padding: 30px;
+                color: black;
+                box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            }}
+
+            .header {{
+                text-align: center;
+                margin-bottom: 30px;
+            }}
+
+            .header h1 {{
+                font-family: 'Sentient', sans-serif;
+                font-size: 2.5rem;
+                font-weight: 600;
+                margin: 0;
+                background: white;
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+            }}
+
+            .controls {{
+                text-align: center;
+                margin-bottom: 20px;
+            }}
+
+            .btn {{
+                background: white;
+                color: white;
+                border: none;
+                padding: 12px 24px;
+                border-radius: 25px;
+                cursor: pointer;
+                text-decoration: none;
+                display: inline-block;
+                margin: 5px;
+                font-weight: 600;
+                transition: all 0.3s ease;
+            }}
+
+            .btn:hover {{
+                transform: translateY(-2px);
+                box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+            }}
+
+            .network-canvas {{
+                width: 100%;
+                height: 600px;
+                border: 2px solid #e2e8f0;
+                border-radius: 12px;
+                background: #f7fafc;
+                display: block;
+                margin: 0 auto;
+                cursor: move;
+            }}
+
+            .stats {{
+                display: flex;
+                justify-content: space-around;
+                margin-top: 20px;
+                padding: 20px;
+                background: rgba(102, 126, 234, 0.1);
+                border-radius: 12px;
+            }}
+
+            .stat {{
+                text-align: center;
+            }}
+
+            .stat-value {{
+                font-size: 2rem;
+                font-weight: bold;
+                color: black;
+            }}
+
+            .stat-label {{
+                font-size: 0.9rem;
+                color: black;
+                margin-top: 5px;
+            }}
+
+            .legend {{
+                margin-top: 20px;
+                padding: 15px;
+                background: rgba(255, 255, 255, 0.7);
+                border-radius: 8px;
+                font-size: 0.9rem;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="visualization-container">
+            <div class="header">
+                <h1>Network Visualization</h1>
+                <p>{len(people)} people • {len(relationships)} connections</p>
+            </div>
+
+            <div class="controls">
+                <a href="/network/{network_id}/setup" class="btn">← Back to Setup</a>
+                <button onclick="resetView()" class="btn">Reset View</button>
+                <button onclick="toggleAnimation()" class="btn" id="animBtn">Pause Animation</button>
+            </div>
+
+            <canvas id="networkCanvas" class="network-canvas"></canvas>
+
+            <div class="stats">
+                <div class="stat">
+                    <div class="stat-value">{len(people)}</div>
+                    <div class="stat-label">People</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value">{len(relationships)}</div>
+                    <div class="stat-label">Connections</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value">{max(connection_counts.values()) if connection_counts else 0}</div>
+                    <div class="stat-label">Max Connections</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value">{len([p for p in people if connection_counts.get(p['id'], 0) == 0])}</div>
+                    <div class="stat-label">Isolated</div>
+                </div>
+            </div>
+
+            <div class="legend">
+                <strong>Interaction:</strong> Click on a person to highlight their connections •
+                {"Names are always visible" if show_names else "Hover over dots to see names"} •
+                Connected people cluster together • Drag to pan the view
+            </div>
+        </div>
+
+        <script>
+            const canvas = document.getElementById('networkCanvas');
+            const ctx = canvas.getContext('2d');
+
+            // Set canvas size
+            canvas.width = canvas.offsetWidth;
+            canvas.height = canvas.offsetHeight;
+
+            // Data
+            const people = {json.dumps(people_json)};
+            const relationships = {json.dumps(relationships)};
+            const showNames = {json.dumps(show_names)};
+            const connectionCounts = {json.dumps(connection_counts)};
+
+            // State
+            let selectedPerson = null;
+            let hoveredPerson = null;
+            let animationRunning = true;
+            let panOffset = {{x: 0, y: 0}};
+            let isDragging = false;
+            let dragStart = {{x: 0, y: 0}};
+
+            // Initialize positions using clustering algorithm
+            initializePositions();
+
+            function initializePositions() {{
+                const centerX = canvas.width / 2;
+                const centerY = canvas.height / 2;
+                const radius = Math.min(canvas.width, canvas.height) * 0.3;
+
+                people.forEach((person, index) => {{
+                    const connections = connectionCounts[person.id] || 0;
+
+                    // Cluster highly connected people towards center
+                    const clusterRadius = radius * (1 - connections * 0.1);
+                    const angle = (index / people.length) * 2 * Math.PI;
+
+                    person.x = centerX + Math.cos(angle) * clusterRadius;
+                    person.y = centerY + Math.sin(angle) * clusterRadius;
+
+                    // Add some randomness
+                    person.x += (Math.random() - 0.5) * 100;
+                    person.y += (Math.random() - 0.5) * 100;
+
+                    // Keep within bounds
+                    person.x = Math.max(50, Math.min(canvas.width - 50, person.x));
+                    person.y = Math.max(50, Math.min(canvas.height - 50, person.y));
+
+                    // Initialize velocity for animation
+                    person.vx = (Math.random() - 0.5) * 2;
+                    person.vy = (Math.random() - 0.5) * 2;
+                }});
+            }}
+
+            function animate() {{
+                if (!animationRunning) return;
+
+                // Apply forces for clustering and separation
+                people.forEach(person => {{
+                    let fx = 0, fy = 0;
+
+                    people.forEach(other => {{
+                        if (person.id === other.id) return;
+
+                        const dx = other.x - person.x;
+                        const dy = other.y - person.y;
+                        const distance = Math.sqrt(dx*dx + dy*dy);
+
+                        if (distance < 1) return;
+
+                        // Check if connected
+                        const connected = relationships.some(r =>
+                            (r.person1_id === person.id && r.person2_id === other.id) ||
+                            (r.person2_id === person.id && r.person1_id === other.id)
+                        );
+
+                        if (connected) {{
+                            // Attract connected people
+                            const force = 0.001;
+                            fx += dx * force;
+                            fy += dy * force;
+                        }} else {{
+                            // Repel unconnected people
+                            const force = 500 / (distance * distance);
+                            fx -= (dx / distance) * force;
+                            fy -= (dy / distance) * force;
+                        }}
+                    }});
+
+                    // Apply forces with damping
+                    person.vx = (person.vx + fx) * 0.9;
+                    person.vy = (person.vy + fy) * 0.9;
+
+                    // Update position
+                    person.x += person.vx;
+                    person.y += person.vy;
+
+                    // Keep within bounds
+                    person.x = Math.max(30, Math.min(canvas.width - 30, person.x));
+                    person.y = Math.max(30, Math.min(canvas.height - 30, person.y));
+                }});
+
+                requestAnimationFrame(animate);
+            }}
+
+            function draw() {{
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                // Draw relationships first (behind dots)
+                relationships.forEach(rel => {{
+                    const person1 = people.find(p => p.id === rel.person1_id);
+                    const person2 = people.find(p => p.id === rel.person2_id);
+
+                    if (!person1 || !person2) return;
+
+                    const isSelected = selectedPerson &&
+                        (selectedPerson.id === person1.id || selectedPerson.id === person2.id);
+
+                    ctx.strokeStyle = isSelected ? 'black' :
+                        selectedPerson ? '#cbd5e0' : '#a0aec0';
+                    ctx.lineWidth = isSelected ? 3 : 1;
+                    ctx.globalAlpha = isSelected ? 1 : selectedPerson ? 0.3 : 0.6;
+
+                    ctx.beginPath();
+                    ctx.moveTo(person1.x + panOffset.x, person1.y + panOffset.y);
+                    ctx.lineTo(person2.x + panOffset.x, person2.y + panOffset.y);
+                    ctx.stroke();
+                }});
+
+                ctx.globalAlpha = 1;
+
+                // Draw people as dots
+                people.forEach(person => {{
+                    const connections = connectionCounts[person.id] || 0;
+                    const isSelected = selectedPerson && selectedPerson.id === person.id;
+                    const isConnected = selectedPerson && relationships.some(r =>
+                        (r.person1_id === selectedPerson.id && r.person2_id === person.id) ||
+                        (r.person2_id === selectedPerson.id && r.person1_id === person.id)
+                    );
+
+                    // Determine color and size
+                    let color = '#4a5568';  // Default gray
+                    let size = 8 + connections * 2;  // Size based on connections
+
+                    if (isSelected) {{
+                        color = '#38a169';  // Green for selected (like V1)
+                        size += 4;
+                    }} else if (selectedPerson && isConnected) {{
+                        color = 'black';  // Blue for connected
+                    }} else if (selectedPerson) {{
+                        color = '#a0aec0';  // Light gray for others when something is selected
+                    }}
+
+                    // Draw dot
+                    ctx.fillStyle = color;
+                    ctx.beginPath();
+                    ctx.arc(person.x + panOffset.x, person.y + panOffset.y, size, 0, 2 * Math.PI);
+                    ctx.fill();
+
+                    // Draw border
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+
+                    // Draw name if applicable
+                    const showName = showNames || hoveredPerson === person;
+                    if (showName) {{
+                        ctx.fillStyle = 'black';
+                        ctx.font = '12px Satoshi, sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.fillText(person.name, person.x + panOffset.x, person.y + panOffset.y - size - 8);
+                    }}
+                }});
+
+                requestAnimationFrame(draw);
+            }}
+
+            // Event handlers
+            canvas.addEventListener('click', (e) => {{
+                const rect = canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left - panOffset.x;
+                const y = e.clientY - rect.top - panOffset.y;
+
+                let clickedPerson = null;
+                people.forEach(person => {{
+                    const distance = Math.sqrt((x - person.x)**2 + (y - person.y)**2);
+                    if (distance <= 15) {{
+                        clickedPerson = person;
+                    }}
+                }});
+
+                selectedPerson = selectedPerson === clickedPerson ? null : clickedPerson;
+            }});
+
+            canvas.addEventListener('mousemove', (e) => {{
+                const rect = canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left - panOffset.x;
+                const y = e.clientY - rect.top - panOffset.y;
+
+                if (isDragging) {{
+                    panOffset.x = e.clientX - dragStart.x;
+                    panOffset.y = e.clientY - dragStart.y;
+                    return;
+                }}
+
+                hoveredPerson = null;
+                people.forEach(person => {{
+                    const distance = Math.sqrt((x - person.x)**2 + (y - person.y)**2);
+                    if (distance <= 15) {{
+                        hoveredPerson = person;
+                    }}
+                }});
+
+                canvas.style.cursor = hoveredPerson ? 'pointer' : 'move';
+            }});
+
+            canvas.addEventListener('mousedown', (e) => {{
+                isDragging = true;
+                dragStart.x = e.clientX - panOffset.x;
+                dragStart.y = e.clientY - panOffset.y;
+                canvas.style.cursor = 'grabbing';
+            }});
+
+            canvas.addEventListener('mouseup', () => {{
+                isDragging = false;
+                canvas.style.cursor = 'move';
+            }});
+
+            canvas.addEventListener('mouseleave', () => {{
+                hoveredPerson = null;
+                isDragging = false;
+                canvas.style.cursor = 'move';
+            }});
+
+            // Control functions
+            function resetView() {{
+                selectedPerson = null;
+                panOffset = {{x: 0, y: 0}};
+                initializePositions();
+            }}
+
+            function toggleAnimation() {{
+                animationRunning = !animationRunning;
+                document.getElementById('animBtn').textContent =
+                    animationRunning ? 'Pause Animation' : 'Resume Animation';
+                if (animationRunning) animate();
+            }}
+
+            // Start animation and rendering
+            animate();
+            draw();
+        </script>
+    </body>
+    </html>
+    '''
 
 @app.route('/network/<int:network_id>/setup', methods=['GET', 'POST'])
 @login_required
@@ -8003,15 +8575,23 @@ def network_setup(network_id):
 
         elif action == 'import_csv':
             csv_data = request.form.get('csv_data', '').strip()
+            print(f"CSV import action triggered. Data length: {len(csv_data)}")
+            print(f"Form data keys: {list(request.form.keys())}")
+            print(f"CSV data preview: {csv_data[:100]}...")
 
             if csv_data:
                 result = network_manager.import_people_from_csv(network_id, csv_data)
+                print(f"Import result: {result}")
+
                 if result['success']:
                     flash(f'Imported {result["imported_count"]} people successfully!', 'success')
                     if result['errors']:
                         flash(f'Some errors occurred: {"; ".join(result["errors"])}', 'warning')
                 else:
                     flash(f'Error importing CSV: {result["error"]}', 'error')
+            else:
+                print("No CSV data received")
+                flash('No CSV data provided', 'error')
 
         return redirect(f'/network/{network_id}/setup')
 
@@ -8022,7 +8602,7 @@ def network_setup(network_id):
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Setup Network - Flock</title>
+        <title>Setup Network </title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
             @import url("https://fonts.googleapis.com/css2?family=Clash+Display:wght@200..700&display=swap");
@@ -8035,8 +8615,8 @@ def network_setup(network_id):
             }}
 
             body {{
-                font-family: "Satoshi", -apple-system, BlinkMacSystemFont, sans-serif;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                font-family: 'Sentient', -apple-system, BlinkMacSystemFont, sans-serif;
+                background: white;
                 min-height: 100vh;
                 padding: 2rem;
             }}
@@ -8051,8 +8631,8 @@ def network_setup(network_id):
             }}
 
             h1 {{
-                font-family: "Clash Display", sans-serif;
-                color: #2d3748;
+                font-family: "Sentient", sans-serif;
+                color: black;
                 font-size: 2.5rem;
                 font-weight: 600;
                 margin-bottom: 1rem;
@@ -8069,7 +8649,7 @@ def network_setup(network_id):
                 padding: 1rem 2rem;
                 background: none;
                 border: none;
-                color: #718096;
+                color: black;
                 font-weight: 600;
                 cursor: pointer;
                 border-bottom: 2px solid transparent;
@@ -8077,8 +8657,8 @@ def network_setup(network_id):
             }}
 
             .tab.active {{
-                color: #667eea;
-                border-bottom-color: #667eea;
+                color: black;
+                border-bottom-color: black;
             }}
 
             .tab-content {{
@@ -8095,7 +8675,7 @@ def network_setup(network_id):
 
             label {{
                 display: block;
-                color: #2d3748;
+                color: black;
                 font-weight: 600;
                 margin-bottom: 0.5rem;
             }}
@@ -8111,7 +8691,7 @@ def network_setup(network_id):
 
             input:focus, textarea:focus {{
                 outline: none;
-                border-color: #667eea;
+                border-color: black;
             }}
 
             textarea {{
@@ -8121,7 +8701,7 @@ def network_setup(network_id):
             }}
 
             .btn {{
-                background: #667eea;
+                background: white;
                 color: white;
                 padding: 12px 24px;
                 border: none;
@@ -8152,7 +8732,7 @@ def network_setup(network_id):
             }}
 
             .person-item {{
-                background: #f8fafc;
+                background: #f5f5f5;
                 border: 1px solid #e2e8f0;
                 border-radius: 8px;
                 padding: 1rem;
@@ -8163,17 +8743,17 @@ def network_setup(network_id):
             }}
 
             .person-info h4 {{
-                color: #2d3748;
+                color: black;
                 margin-bottom: 0.25rem;
             }}
 
             .person-info p {{
-                color: #718096;
+                color: black;
                 font-size: 0.9rem;
             }}
 
             .csv-example {{
-                background: #f8fafc;
+                background: #f5f5f5;
                 padding: 1rem;
                 border-radius: 8px;
                 margin-bottom: 1rem;
@@ -8271,6 +8851,26 @@ def network_setup(network_id):
 
     return content
 
+@app.route('/network/<int:network_id>')
+@login_required
+def network_visualization(network_id):
+    """Network visualization dashboard"""
+    user_id = session['user_id']
+    user_info = user_auth.get_user_info(user_id)
+
+    # Get network people
+    people = network_manager.get_network_people(network_id)
+
+    if not people:
+        flash('No people found in network', 'error')
+        return redirect(f'/network/{network_id}/setup')
+
+    # Generate compatibility matrix
+    compatibility_data = network_manager.generate_network_compatibility(people)
+
+    content = render_network_visualization(network_id, people, compatibility_data)
+    return render_template_with_header(f"Network Visualization", content, user_info)
+
 # ============================================================================
 # ROUTES - PROCESSING & RESULTS
 # ============================================================================
@@ -8295,12 +8895,19 @@ def processing():
     if not user_id:
         return redirect('/login')
     
-    # Start background matching with real-time updates
-    thread = threading.Thread(target=process_matching_background, args=(user_id,))
-    thread.daemon = True
-    thread.start()
-    
-    return redirect(f'/live-matching/{user_id}')
+    # Check user's matching mode to determine redirect
+    user_info = user_auth.get_user_info(user_id)
+    matching_mode = user_info.get('matching_mode', 'individual') if user_info else 'individual'
+
+    if matching_mode == 'network':
+        return redirect('/network-mode')
+    else:
+        # Start background matching with real-time updates for individual mode
+        thread = threading.Thread(target=process_matching_background, args=(user_id,))
+        thread.daemon = True
+        thread.start()
+
+        return redirect(f'/live-matching/{user_id}')
 
 @app.route('/live-matching/<int:user_id>')
 @login_required
@@ -8320,7 +8927,7 @@ def live_matching(user_id):
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Dinner Party Simulation</title>
-        <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=clash-display@400,500,600,700&display=swap" rel="stylesheet">
+        <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=sentient@400,500,600,700&display=swap" rel="stylesheet">
         <style>
             * {{
                 margin: 0;
@@ -8330,16 +8937,16 @@ def live_matching(user_id):
             
             :root {{
                 --color-cream: #f8f9fa;
-                --color-emerald: #167a60;
-                --color-sage: #c6e19b;
+                --color-emerald: #000000;
+                --color-sage: #ffffff;
                 --color-lavender: #c2b7ef;
-                --color-charcoal: #2d2d2d;
+                --color-charcoal: #000000;
                 --color-white: #ffffff;
             }}
             
             body {{
                 font-family: 'Satoshi', -apple-system, BlinkMacSystemFont, sans-serif;
-                background: var(--color-cream);
+                background: white;
                 color: var(--color-charcoal);
                 min-height: 100vh;
                 overflow: hidden;
@@ -8418,7 +9025,7 @@ def live_matching(user_id):
             
             .dashboard-link {{
                 display: inline-block;
-                background: var(--color-emerald);
+                background: white;
                 color: white;
                 padding: 0.75rem 1.5rem;
                 border-radius: 8px;
@@ -8428,7 +9035,7 @@ def live_matching(user_id):
             }}
             
             .dashboard-link:hover {{
-                background: #0f5942;
+                background: white;
                 transform: translateY(-1px);
             }}
             
@@ -8523,7 +9130,7 @@ def live_matching(user_id):
                 
                 // Scene
                 scene = new THREE.Scene();
-                scene.background = new THREE.Color(0xf8f9fa); // cream background
+                scene.background = new THREE.Color(0xffffff); // white background
                 
                 // Camera
                 camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
@@ -9006,28 +9613,29 @@ def update_profile():
     # Render update form with matching mode toggle
     content = f'''
     <div class="container">
-        <h1 style="font-size: 28px; text-align: center; margin-bottom: 32px; color: #28a745;">Update Your Profile</h1>
+        <h1 style="font-family: 'Sentient', 'Satoshi', sans-serif; font-size: 28px; text-align: center; margin-bottom: 32px; color: black;">Update Your Profile</h1>
 
         <form method="POST">
+
             <!-- Matching Mode Toggle -->
             <div style="background: #f8f9fa; border-radius: 12px; padding: 20px; margin-bottom: 20px; border: 2px solid #e9ecef;">
-                <h3 style="color: #2d3748; margin-bottom: 15px; font-size: 18px;">Matching Mode</h3>
-                <p style="color: #6c757d; margin-bottom: 15px; font-size: 14px;">Choose how you want to use Flock:</p>
+                <h3 style="font-family: 'Sentient', 'Satoshi', sans-serif; color: black; margin-bottom: 15px; font-size: 18px;">Matching Mode</h3>
+                <p style="font-family: 'Satoshi', sans-serif; color: black; margin-bottom: 15px; font-size: 14px;">Choose how you want to use Connect:</p>
 
                 <div style="display: grid; gap: 10px;">
-                    <label style="display: flex; align-items: center; padding: 12px; background: {'#e6f3ff' if current_mode == 'individual' else 'white'}; border: 2px solid {'#007bff' if current_mode == 'individual' else '#dee2e6'}; border-radius: 8px; cursor: pointer;">
+                    <label style="display: flex; align-items: center; padding: 12px; background: {'#f0f0f0' if current_mode == 'individual' else 'white'}; border: 2px solid {'black' if current_mode == 'individual' else '#dee2e6'}; border-radius: 8px; cursor: pointer;">
                         <input type="radio" name="matching_mode" value="individual" {'checked' if current_mode == 'individual' else ''} style="margin-right: 10px;">
                         <div>
-                            <strong style="color: #2d3748;">👤 Individual Mode</strong>
-                            <div style="font-size: 12px; color: #6c757d;">Traditional one-on-one matching</div>
+                            <strong style="font-family: 'Sentient', 'Satoshi', sans-serif; color: black;">Individual Mode</strong>
+                            <div style="font-family: 'Satoshi', sans-serif; font-size: 12px; color: black;">Traditional one-on-one matching</div>
                         </div>
                     </label>
 
-                    <label style="display: flex; align-items: center; padding: 12px; background: {'#e6f3ff' if current_mode == 'network' else 'white'}; border: 2px solid {'#007bff' if current_mode == 'network' else '#dee2e6'}; border-radius: 8px; cursor: pointer;">
+                    <label style="display: flex; align-items: center; padding: 12px; background: {'#f0f0f0' if current_mode == 'network' else 'white'}; border: 2px solid {'black' if current_mode == 'network' else '#dee2e6'}; border-radius: 8px; cursor: pointer;">
                         <input type="radio" name="matching_mode" value="network" {'checked' if current_mode == 'network' else ''} style="margin-right: 10px;">
                         <div>
-                            <strong style="color: #2d3748;">🌐 Network Mode</strong>
-                            <div style="font-size: 12px; color: #6c757d;">Import and analyze connections within your network</div>
+                            <strong style="font-family: 'Sentient', 'Satoshi', sans-serif; color: black;">Network Mode</strong>
+                            <div style="font-family: 'Satoshi', sans-serif; font-size: 12px; color: black;">Import and analyze connections within your network</div>
                         </div>
                     </label>
                 </div>
@@ -9035,7 +9643,7 @@ def update_profile():
 
             <!-- Update Button -->
             <div style="text-align: center; margin-top: 30px;">
-                <button type="submit" class="btn" style="background: #28a745; color: white; padding: 16px 32px; font-size: 16px; border: none; border-radius: 8px; cursor: pointer;">
+                <button type="submit" class="btn" style="font-family: 'Sentient', 'Satoshi', sans-serif; background: black; color: white; padding: 16px 32px; font-size: 16px; border: none; border-radius: 8px; cursor: pointer;">
                     Update Settings & Profile
                 </button>
             </div>
@@ -9188,9 +9796,9 @@ def contact_requests_route():
             
             # Status styling with your color palette
             status_config = {
-                'pending': {'color': 'var(--color-charcoal)', 'bg': 'var(--color-sage)', 'icon': '⏳', 'text': 'Pending'},
-                'accepted': {'color': 'var(--color-white)', 'bg': 'var(--color-emerald)', 'icon': '✅', 'text': 'Accepted'},
-                'denied': {'color': 'var(--color-white)', 'bg': 'var(--color-gray-600)', 'icon': '❌', 'text': 'Declined'}
+                'pending': {'color': 'var(--color-charcoal)', 'bg': 'var(--color-sage)', 'icon': '', 'text': 'Pending'},
+                'accepted': {'color': 'var(--color-white)', 'bg': 'var(--color-emerald)', 'icon': '', 'text': 'Accepted'},
+                'denied': {'color': 'var(--color-white)', 'bg': 'var(--color-gray-600)', 'icon': '', 'text': 'Declined'}
             }
             
             config = status_config.get(req['status'], status_config['pending'])
@@ -9201,7 +9809,7 @@ def contact_requests_route():
                 contact_section = f'''
                 <div class="contact-info">
                     <div class="contact-header">
-                        <div class="contact-icon">📞</div>
+                        <div class="contact-icon"></div>
                         <div class="contact-label">Contact Information Available</div>
                     </div>
                     <div class="contact-actions">
@@ -9250,7 +9858,7 @@ def contact_requests_route():
         }}
         
         .requests-title {{
-            font-family: 'Clash Display', 'Satoshi', sans-serif;
+            font-family: 'Sentient', 'Satoshi', sans-serif;
             font-size: clamp(2rem, 4vw, 2.5rem);
             font-weight: 600;
             text-align: center;
@@ -9272,7 +9880,7 @@ def contact_requests_route():
         }}
         
         .section-title {{
-            font-family: 'Clash Display', 'Satoshi', sans-serif;
+            font-family: 'Sentient', 'Satoshi', sans-serif;
             font-size: 1.5rem;
             font-weight: 600;
             color: var(--color-emerald);
@@ -9283,7 +9891,7 @@ def contact_requests_route():
         }}
         
         .notification-badge {{
-            background: var(--color-emerald);
+            background: black;
             color: white;
             border-radius: 50%;
             padding: 0.25rem 0.5rem;
@@ -9342,14 +9950,14 @@ def contact_requests_route():
             width: 64px;
             height: 64px;
             border-radius: 50%;
-            background: linear-gradient(135deg, var(--color-lavender), var(--color-sage));
+            background: white;
             display: flex;
             align-items: center;
             justify-content: center;
-            color: var(--color-charcoal);
+            color: black;
             font-size: 1.5rem;
             font-weight: 700;
-            font-family: 'Clash Display', 'Satoshi', sans-serif;
+            font-family: 'Sentient', 'Satoshi', sans-serif;
             box-shadow: 0 4px 16px rgba(0,0,0,0.1);
         }}
         
@@ -9358,7 +9966,7 @@ def contact_requests_route():
         }}
         
         .request-name {{
-            font-family: 'Clash Display', 'Satoshi', sans-serif;
+            font-family: 'Sentient', 'Satoshi', sans-serif;
             font-size: 1.25rem;
             font-weight: 600;
             color: var(--color-charcoal);
@@ -9393,13 +10001,13 @@ def contact_requests_route():
         }}
         
         .btn-accept {{
-            background: var(--color-emerald);
+            background: white;
             color: white;
             box-shadow: 0 4px 16px rgba(22, 122, 96, 0.2);
         }}
         
         .btn-accept:hover {{
-            background: #0f5942;
+            background: white;
             transform: translateY(-2px);
             box-shadow: 0 8px 24px rgba(22, 122, 96, 0.3);
         }}
@@ -9417,7 +10025,7 @@ def contact_requests_route():
         }}
         
         .btn-call {{
-            background: var(--color-sage);
+            background: white;
             color: var(--color-charcoal);
             box-shadow: 0 4px 16px rgba(198, 225, 155, 0.2);
         }}
@@ -9463,7 +10071,7 @@ def contact_requests_route():
             align-items: flex-start;
             gap: 1rem;
             padding: 1.5rem;
-            background: linear-gradient(135deg, var(--color-lavender), var(--color-sage));
+            background: white;
             border-radius: 12px;
             margin-top: 1.5rem;
         }}
@@ -9484,8 +10092,8 @@ def contact_requests_route():
         }}
         
         .contact-info {{
-            background: linear-gradient(135deg, var(--color-emerald), var(--color-sage));
-            color: white;
+            background: #f5f5f5;
+            color: black;
             padding: 1.5rem;
             border-radius: 12px;
             margin-top: 1.5rem;
@@ -9534,7 +10142,7 @@ def contact_requests_route():
         }}
         
         .empty-title {{
-            font-family: 'Clash Display', 'Satoshi', sans-serif;
+            font-family: 'Sentient', 'Satoshi', sans-serif;
             font-size: 1.25rem;
             font-weight: 600;
             margin-bottom: 0.5rem;
@@ -9552,7 +10160,7 @@ def contact_requests_route():
         }}
         
         .btn-back {{
-            background: var(--color-emerald);
+            background: white;
             color: white;
             padding: 1rem 2rem;
             border-radius: 12px;
@@ -9567,7 +10175,7 @@ def contact_requests_route():
         }}
         
         .btn-back:hover {{
-            background: #0f5942;
+            background: white;
             transform: translateY(-2px);
             box-shadow: 0 8px 24px rgba(22, 122, 96, 0.3);
         }}
@@ -9720,7 +10328,7 @@ def followup_response_with_tracking(token, response):
         content = f'''
         <div class="container" style="text-align: center; max-width: 500px;">
             <div style="font-size: 64px; margin-bottom: 20px;">{"✅" if response == 'yes' else "❌"}</div>
-            <h1 style="color: {"#28a745" if response == "yes" else "#dc3545"};">Response Recorded</h1>
+            <h1 style="color: black;">Response Recorded</h1>
             <div style="font-size: 18px; margin: 20px 0; padding: 20px; background: #f8f9fa; border-radius: 8px;">
                 Your response: <strong>{response_text}</strong>
             </div>
@@ -10093,7 +10701,7 @@ def terms_of_service():
         }}
         
         .terms-title {{
-            font-family: 'Clash Display', 'Satoshi', sans-serif;
+            font-family: 'Sentient', 'Satoshi', sans-serif;
             font-size: 2.5rem;
             font-weight: 600;
             margin-bottom: 0.5rem;
@@ -10114,7 +10722,7 @@ def terms_of_service():
         }}
         
         .section-title {{
-            font-family: 'Clash Display', 'Satoshi', sans-serif;
+            font-family: 'Sentient', 'Satoshi', sans-serif;
             font-size: 1.5rem;
             font-weight: 600;
             margin: 2rem 0 1rem 0;
@@ -10143,7 +10751,7 @@ def terms_of_service():
         }}
         
         .important-notice {{
-            background: linear-gradient(135deg, var(--color-sage), var(--color-lavender));
+            background: white;
             padding: 1.5rem;
             border-radius: 12px;
             margin: 2rem 0;
@@ -10160,7 +10768,7 @@ def terms_of_service():
         
         .back-link {{
             display: inline-block;
-            background: var(--color-emerald);
+            background: white;
             color: white;
             padding: 0.75rem 1.5rem;
             border-radius: 8px;
@@ -10171,7 +10779,7 @@ def terms_of_service():
         }}
         
         .back-link:hover {{
-            background: #0f5942;
+            background: white;
             transform: translateY(-1px);
         }}
         
@@ -10677,6 +11285,250 @@ def webhook_logs():
     except Exception as e:
         return f"Error retrieving logs: {e}"
 
+# ============================================================================
+# ADMIN USER MANAGEMENT ROUTES
+# ============================================================================
+
+@app.route('/admin/users')
+def admin_users():
+    """Admin interface for managing users"""
+    admin_password = request.args.get('password')
+    if admin_password != os.environ.get('ADMIN_PASSWORD', 'admin123'):
+        return '''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Admin Access Required</title>
+            <style>
+                body { font-family: 'Sentient', sans-serif; padding: 40px; background: white; color: black; }
+                .form-container { max-width: 400px; margin: 0 auto; padding: 30px; border: 1px solid #ddd; border-radius: 8px; }
+                input { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 4px; }
+                button { background: white; color: white; padding: 12px 20px; border: none; border-radius: 4px; cursor: pointer; width: 100%; }
+                button:hover { background: #333; }
+            </style>
+        </head>
+        <body>
+            <div class="form-container">
+                <h2>Admin Access Required</h2>
+                <form method="GET">
+                    <input type="password" name="password" placeholder="Admin Password" required>
+                    <button type="submit">Access User Management</button>
+                </form>
+            </div>
+        </body>
+        </html>
+        '''
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Get all users with their basic info and subscription status
+        cursor.execute('''
+            SELECT
+                u.id, u.email, u.created_at, u.last_login, u.is_verified,
+                us.status as subscription_status,
+                p.first_name, p.last_name, p.age
+            FROM users u
+            LEFT JOIN user_subscriptions us ON u.id = us.user_id
+            LEFT JOIN profiles p ON u.id = p.user_id
+            ORDER BY u.created_at DESC
+        ''')
+
+        users = cursor.fetchall()
+        conn.close()
+
+        # Build the HTML response
+        html = '''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>User Management</title>
+            <style>
+                body { font-family: 'Sentient', sans-serif; padding: 20px; background: white; color: black; }
+                .header { margin-bottom: 30px; }
+                table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+                th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+                th { background: #f5f5f5; font-weight: bold; }
+                tr:nth-child(even) { background: #f9f9f9; }
+                .delete-btn { background: #dc3545; color: white; padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; }
+                .delete-btn:hover { background: #c82333; }
+                .verified { color: black; font-weight: bold; }
+                .unverified { color: #dc3545; }
+                .actions { text-align: center; }
+                .stats { display: flex; gap: 20px; margin-bottom: 20px; }
+                .stat-box { background: #f8f9fa; padding: 15px; border-radius: 8px; text-align: center; }
+            </style>
+            <script>
+                function deleteUser(userId, email) {
+                    if (confirm('Are you sure you want to delete user: ' + email + '?\\n\\nThis will permanently delete all their data including:\\n- Profile information\\n- Messages\\n- Matches\\n- Subscription data\\n\\nThis action cannot be undone!')) {
+                        fetch('/admin/delete-user', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({
+                                user_id: userId,
+                                password: '$(admin_password)'
+                            })
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success) {
+                                alert('User deleted successfully');
+                                location.reload();
+                            } else {
+                                alert('Error: ' + data.message);
+                            }
+                        })
+                        .catch(error => {
+                            alert('Error deleting user: ' + error);
+                        });
+                    }
+                }
+            </script>
+        </head>
+        <body>
+            <div class="header">
+                <h1>User Management</h1>
+                <div class="stats">
+                    <div class="stat-box">
+                        <h3>''' + str(len(users)) + '''</h3>
+                        <p>Total Users</p>
+                    </div>
+                    <div class="stat-box">
+                        <h3>''' + str(len([u for u in users if u.get('is_verified')])) + '''</h3>
+                        <p>Verified Users</p>
+                    </div>
+                    <div class="stat-box">
+                        <h3>''' + str(len([u for u in users if u.get('subscription_status') == 'active'])) + '''</h3>
+                        <p>Active Subscribers</p>
+                    </div>
+                </div>
+            </div>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Email</th>
+                        <th>Name</th>
+                        <th>Age</th>
+                        <th>Created</th>
+                        <th>Last Login</th>
+                        <th>Verified</th>
+                        <th>Subscription</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+        '''
+
+        for user in users:
+            name = f"{user.get('first_name', '') or ''} {user.get('last_name', '') or ''}".strip() or 'N/A'
+            verified_status = '<span class="verified">Verified</span>' if user.get('is_verified') else '<span class="unverified">Unverified</span>'
+            subscription = user.get('subscription_status') or 'None'
+
+            html += f'''
+                    <tr>
+                        <td>{user['id']}</td>
+                        <td>{user['email']}</td>
+                        <td>{name}</td>
+                        <td>{user.get('age') or 'N/A'}</td>
+                        <td>{user['created_at']}</td>
+                        <td>{user.get('last_login') or 'Never'}</td>
+                        <td>{verified_status}</td>
+                        <td>{subscription}</td>
+                        <td class="actions">
+                            <button class="delete-btn" onclick="deleteUser({user['id']}, '{user['email']}')">Delete</button>
+                        </td>
+                    </tr>
+            '''
+
+        html += '''
+                </tbody>
+            </table>
+
+            <div style="margin-top: 30px;">
+                <a href="/admin/verification-queue?password=''' + admin_password + '''">Verification Queue</a> |
+                <a href="/admin/webhook-logs?password=''' + admin_password + '''">Webhook Logs</a>
+            </div>
+        </body>
+        </html>
+        '''
+
+        return html.replace('$(admin_password)', admin_password)
+
+    except Exception as e:
+        return f"Error retrieving users: {e}"
+
+@app.route('/admin/delete-user', methods=['POST'])
+def admin_delete_user():
+    """Admin endpoint to delete a user and all their data"""
+    try:
+        data = request.get_json()
+        admin_password = data.get('password')
+        user_id = data.get('user_id')
+
+        # Verify admin password
+        if admin_password != os.environ.get('ADMIN_PASSWORD', 'admin123'):
+            return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+
+        if not user_id:
+            return jsonify({'success': False, 'message': 'User ID required'}), 400
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            # Get user email for logging
+            cursor.execute('SELECT email FROM users WHERE id = %s', (user_id,))
+            user = cursor.fetchone()
+            if not user:
+                return jsonify({'success': False, 'message': 'User not found'}), 404
+
+            user_email = user['email']
+
+            # Delete user data in proper order (foreign key dependencies)
+
+            # 1. Delete messages
+            cursor.execute('DELETE FROM messages WHERE sender_id = %s OR recipient_id = %s', (user_id, user_id))
+
+            # 2. Delete matches
+            cursor.execute('DELETE FROM matches WHERE user1_id = %s OR user2_id = %s', (user_id, user_id))
+            cursor.execute('DELETE FROM user_matches WHERE user1_id = %s OR user2_id = %s', (user_id, user_id))
+
+            # 3. Delete blocked users
+            cursor.execute('DELETE FROM blocked_users WHERE blocker_id = %s OR blocked_id = %s', (user_id, user_id))
+
+            # 4. Delete verification requests
+            cursor.execute('DELETE FROM identity_verification_requests WHERE user_id = %s', (user_id,))
+
+            # 5. Delete subscription data
+            cursor.execute('DELETE FROM user_subscriptions WHERE user_id = %s', (user_id,))
+
+            # 6. Delete profile
+            cursor.execute('DELETE FROM profiles WHERE user_id = %s', (user_id,))
+
+            # 7. Finally delete the user
+            cursor.execute('DELETE FROM users WHERE id = %s', (user_id,))
+
+            conn.commit()
+
+            print(f"Admin deleted user: {user_email} (ID: {user_id})")
+
+            return jsonify({'success': True, 'message': f'User {user_email} deleted successfully'})
+
+        except Exception as e:
+            conn.rollback()
+            print(f"Error deleting user {user_id}: {e}")
+            return jsonify({'success': False, 'message': f'Database error: {str(e)}'})
+
+        finally:
+            conn.close()
+
+    except Exception as e:
+        print(f"Error in delete_user endpoint: {e}")
+        return jsonify({'success': False, 'message': 'Server error'})
+
 
 # Add webhook event logging for production monitoring
 def log_webhook_event(event_type, event_id, user_id=None, status="success", error=None):
@@ -10787,7 +11639,7 @@ def subscription_plans():
             top: -12px;
             left: 50%;
             transform: translateX(-50%);
-            background: var(--color-emerald);
+            background: white;
             color: white;
             padding: 0.5rem 1rem;
             border-radius: 20px;
@@ -10796,7 +11648,7 @@ def subscription_plans():
         }}
         
         .plan-price {{
-            font-family: 'Clash Display', sans-serif;
+            font-family: 'Sentient', sans-serif;
             font-size: 2.5rem;
             font-weight: 600;
             color: var(--color-emerald);
@@ -10824,7 +11676,7 @@ def subscription_plans():
         }}
         
         .btn-subscribe {{
-            background: linear-gradient(135deg, var(--color-emerald), var(--color-sage));
+            background: white;
             color: white;
             padding: 1rem 2rem;
             border-radius: 50px;
@@ -10858,19 +11710,19 @@ def subscription_plans():
         }}
         
         .status-free {{
-            background: linear-gradient(135deg, var(--color-lavender), var(--color-sage));
+            background: white;
             color: var(--color-charcoal);
         }}
         
         .status-subscribed {{
-            background: linear-gradient(135deg, var(--color-emerald), var(--color-sage));
+            background: white;
             color: white;
         }}
     </style>
     
     <div class="subscription-container">
         <div class="subscription-header">
-            <h1 style="font-family: 'Clash Display', sans-serif; font-size: 2.5rem; margin-bottom: 1rem;">
+            <h1 style="font-family: 'Sentient', sans-serif; font-size: 2.5rem; margin-bottom: 1rem;">
                 Upgrade Your Matching
             </h1>
             <p style="font-size: 1.125rem; color: var(--color-gray-600);">
@@ -10881,7 +11733,7 @@ def subscription_plans():
         {render_subscription_status_banner(status)}
         
         <div class="plan-card">
-            <h3 style="font-family: 'Clash Display', sans-serif; font-size: 1.5rem; margin-bottom: 1rem;">
+            <h3 style="font-family: 'Sentient', sans-serif; font-size: 1.5rem; margin-bottom: 1rem;">
                 Free Plan
             </h3>
             <div class="plan-price">£0<span style="font-size: 1rem; color: var(--color-gray-600);">/month</span></div>
@@ -10903,7 +11755,7 @@ def subscription_plans():
         </div>
         
         <div class="plan-card plan-popular">
-            <h3 style="font-family: 'Clash Display', sans-serif; font-size: 1.5rem; margin-bottom: 1rem;">
+            <h3 style="font-family: 'Sentient', sans-serif; font-size: 1.5rem; margin-bottom: 1rem;">
                 Premium Matching
             </h3>
             <div class="plan-price">£9.99<span style="font-size: 1rem; color: var(--color-gray-600);">/month</span></div>
@@ -11048,7 +11900,7 @@ def cancel_subscription():
                 <div style="display: flex; gap: 1rem; justify-content: center;">
                     <a href="/profile-settings" class="btn btn-secondary">Keep Subscription</a>
                     <button type="submit" name="confirm_cancel" value="yes" 
-                            class="btn" style="background: #dc3545; color: white;">
+                            class="btn" style="background: white; color: white;">
                         Yes, Cancel Subscription
                     </button>
                 </div>

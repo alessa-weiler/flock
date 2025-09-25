@@ -1379,19 +1379,90 @@ class EnhancedMatchingSystem:
             'progress': 10
         })
         
-        # Get and filter users
-        all_users = self.user_auth.get_all_users_for_matching(user_id)
+        # Get and filter users (with age filtering intact)
+        all_users = self.user_auth.get_age_filtered_users(user_id)
         valid_users = []
-        
+
         for potential_match in all_users:
             if self.is_user_blocked(user_id, potential_match):
                 continue
             if not self.check_gender_compatibility(current_user_profile, potential_match['profile']):
                 continue
             valid_users.append(potential_match)
-        
+
         print(f"Found {len(valid_users)} valid users after filtering")
-        
+
+        # Check if we have less than 20 users - if so, show all users with simple compatibility scoring
+        if len(valid_users) < 20:
+            print("Less than 20 users available - using simplified matching")
+
+            # Update status for simplified matching
+            processing_status[user_id].update({
+                'phase': 'simple_matching',
+                'progress': 50
+            })
+
+            # Use the existing neural predictor that's already configured
+            neural_predictor = self.neural_predictor
+
+            matches = []
+            for match_user in valid_users:
+                # Calculate neural compatibility score
+                neural_compatibility = neural_predictor.predict_compatibility(
+                    current_user_profile, match_user['profile']
+                )
+
+                # Calculate detailed scores for display
+                detailed_scores = self._calculate_detailed_scores(
+                    current_user_profile, match_user['profile'], neural_compatibility
+                )
+
+                # Use neural score as primary compatibility score
+                overall_score = neural_compatibility * 100
+
+                match_result = {
+                    'matched_user_id': match_user['user_id'],
+                    'matched_user_name': match_user['first_name'],
+                    'matched_user_email': match_user['email'],
+                    'matched_user_phone': match_user.get('phone', ''),
+                    'compatibility_score': round(overall_score),
+                    'neural_score': round(neural_compatibility * 100),
+                    'simulation_satisfaction': round(neural_compatibility * 100),  # Use neural score
+                    'personality_score': round(detailed_scores['personality_score']),
+                    'values_score': round(detailed_scores['values_score']),
+                    'lifestyle_score': round(detailed_scores['lifestyle_score']),
+                    'emotional_score': round(detailed_scores['emotional_score']),
+                    'social_score': round(detailed_scores['social_score']),
+                    'communication_score': round(detailed_scores['communication_score']),
+                    'location_score': 85,
+                    'overall_score': round(overall_score),
+                    'compatibility_analysis': get_user_bio_or_fallback(match_user['profile']),
+                    'distance_miles': 0,
+                    'final_position': (0, 0)  # No simulation position
+                }
+
+                matches.append(match_result)
+
+            # Sort by compatibility score
+            matches.sort(key=lambda x: x['overall_score'], reverse=True)
+
+            # Save matches and update status
+            if self.user_auth:
+                self.user_auth.save_user_matches(user_id, matches)
+
+            processing_status[user_id] = {
+                'status': 'completed',
+                'progress': 100,
+                'matches': matches,
+                'total_matches': len(matches),
+                'simulation_completed': False,
+                'simple_matching_used': True
+            }
+
+            print(f"✓ Simple matching completed - found {len(matches)} matches")
+            return matches
+
+        # Continue with complex simulation for 20+ users
         # Update status
         processing_status[user_id].update({
             'phase': 'initializing_simulation',
