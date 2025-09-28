@@ -1767,6 +1767,18 @@ def add_onboarding_routes(app, login_required, user_auth, render_template_with_h
                         Save Profile Updates
                     </button>
                 </div>
+
+                <!-- Reset Profile Section -->
+                <div class="rematching-section">
+                    <h3 class="rematching-title">Want to Start Fresh?</h3>
+                    <p class="rematching-description">
+                        Reset your entire profile and go through the onboarding process again.
+                        This will clear all your current profile data and allow you to rebuild from scratch.
+                    </p>
+                    <a href="/onboarding/step/1" class="btn btn-rematch">
+                        Reset Profile & Start Over
+                    </a>
+                </div>
             </form>
             
             

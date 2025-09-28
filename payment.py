@@ -67,6 +67,33 @@ class SubscriptionManager:
                 'stripe_customer_id': customer
             }
             
+        except stripe.error.InvalidRequestError as e:
+            # Handle case where subscription doesn't exist in Stripe anymore
+            if "No such subscription" in str(e):
+                print(f"Subscription {stripe_subscription_id} not found in Stripe for user {user_id}. Marking as inactive.")
+
+                # Update local database to mark subscription as inactive
+                conn = self.get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute('''
+                    UPDATE user_subscriptions
+                    SET status = 'inactive',
+                        stripe_subscription_id = NULL,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE user_id = %s
+                ''', (user_id,))
+                conn.commit()
+                conn.close()
+
+                return {
+                    'status': 'inactive',
+                    'current_period_end': None,
+                    'cancel_at_period_end': False,
+                    'stripe_customer_id': None
+                }
+            else:
+                print(f"Stripe API error: {e}")
+                return None
         except Exception as e:
             print(f"Error syncing subscription from Stripe: {e}")
             import traceback
@@ -261,10 +288,25 @@ class SubscriptionManager:
             
             cursor.execute('SELECT stripe_customer_id FROM user_subscriptions WHERE user_id = %s', (user_id,))
             result = cursor.fetchone()
-            
+
             if result and result['stripe_customer_id']:
-                conn.close()
-                return result['stripe_customer_id']
+                # Verify the customer still exists in Stripe
+                try:
+                    stripe.Customer.retrieve(result['stripe_customer_id'])
+                    conn.close()
+                    return result['stripe_customer_id']
+                except stripe.error.InvalidRequestError as e:
+                    if "No such customer" in str(e):
+                        print(f"Customer {result['stripe_customer_id']} not found in Stripe for user {user_id}. Creating new customer.")
+                        # Clear the invalid customer ID
+                        cursor.execute('''
+                            UPDATE user_subscriptions
+                            SET stripe_customer_id = NULL
+                            WHERE user_id = %s
+                        ''', (user_id,))
+                        conn.commit()
+                    else:
+                        raise
             
             # Create new customer
             customer = stripe.Customer.create(
