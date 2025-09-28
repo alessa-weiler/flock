@@ -552,7 +552,57 @@ class UserAuthSystem:
             )
         ''')
 
-        print("✓ Created V2 network tables")
+        # Events table - stores upcoming events for matching
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS events (
+                id SERIAL PRIMARY KEY,
+                title VARCHAR(255) NOT NULL,
+                description TEXT,
+                venue_name VARCHAR(255),
+                venue_address TEXT,
+                date_time TIMESTAMPTZ NOT NULL,
+                capacity INTEGER DEFAULT 50,
+                current_attendees INTEGER DEFAULT 0,
+                creator_id INTEGER REFERENCES users(id),
+                created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                is_active BOOLEAN DEFAULT TRUE
+            )
+        ''')
+
+        # Add creator_id column if it doesn't exist (for existing tables)
+        cursor.execute('''
+            ALTER TABLE events
+            ADD COLUMN IF NOT EXISTS creator_id INTEGER REFERENCES users(id)
+        ''')
+
+        # Event registrations - tracks who is attending which event
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS event_registrations (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                event_id INTEGER REFERENCES events(id) ON DELETE CASCADE,
+                registered_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                attended BOOLEAN DEFAULT FALSE,
+                feedback_submitted BOOLEAN DEFAULT FALSE,
+                UNIQUE(user_id, event_id)
+            )
+        ''')
+
+        # Event feedback - post-event feedback for gating access to next events
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS event_feedback (
+                id SERIAL PRIMARY KEY,
+                event_id INTEGER REFERENCES events(id) ON DELETE CASCADE,
+                user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                matched_users INTEGER[] DEFAULT '{}',
+                no_show BOOLEAN DEFAULT FALSE,
+                feedback_text TEXT,
+                submitted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(event_id, user_id)
+            )
+        ''')
+
+        print("✓ Created V2 network and events tables")
 
     def create_user(self, email: str, password: str, first_name: str = None, 
                last_name: str = None, phone: str = None, min_age: int = 18, 
@@ -2317,6 +2367,41 @@ def process_matching_background(user_id: int):
             'progress': 0
         }
 
+def process_event_matching_background(user_id: int, event_id: int):
+    """Background task to process event-based matching"""
+    # Prevent multiple matching processes for same user
+    if user_id in processing_status and processing_status[user_id].get('status') == 'processing':
+        print(f"Event matching already in progress for user {user_id}")
+        return
+    try:
+        processing_status[user_id] = {'status': 'processing', 'progress': 0}
+
+        processing_status[user_id]['progress'] = 25
+
+        # Run event-based matching only against other attendees
+        matches = enhanced_matching_system.run_event_matching(user_id, event_id)
+        processing_status[user_id]['progress'] = 75
+
+        print(f"✓ Found {len(matches)} event matches")
+        processing_status[user_id]['progress'] = 100
+
+        # Store results
+        processing_status[user_id] = {
+            'status': 'completed',
+            'matches': matches,
+            'progress': 100
+        }
+
+    except Exception as e:
+        print(f"❌ Error in event matching: {e}")
+        import traceback
+        traceback.print_exc()
+        processing_status[user_id] = {
+            'status': 'error',
+            'error': str(e),
+            'progress': 0
+        }
+
 # ============================================================================
 # TEMPLATE FUNCTIONS
 # ============================================================================
@@ -2703,9 +2788,16 @@ def render_template_with_header(title: str, content: str, user_info: Dict = None
             pending_count = len([r for r in pending_requests if r['status'] == 'pending'])
             if pending_count > 0:
                 notification_badge = f'<span style="background: #dc3545; color: white; border-radius: 50%; padding: 4px 8px; font-size: 12px; margin-left: 8px;">{pending_count}</span>'
-            
+
+            # Check if user is verified to show My Events tab
+            verification_status = verification_system.get_verification_status(user_id)
+            my_events_tab = ""
+            if verification_status and verification_status.get('is_verified', False):
+                my_events_tab = '<a href="/my-events" class="btn btn-secondary">My Events</a>'
+
             user_nav = f'''
                 <div class="user-info">
+                    {my_events_tab}
                     <a href="/contact-requests" class="btn btn-secondary">Requests{notification_badge}</a>
                     <a href="/profile-settings" class="btn btn-secondary">Settings</a>
                     <a href="/logout" class="btn btn-secondary no-transition">Logout</a>
@@ -3623,7 +3715,7 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
                     If you've made significant changes to your profile, you can re-run the AI matching system 
                     to discover new compatible connections based on your updated preferences.
                 </p>
-                <a href="/choose-agent" class="btn btn-rematch">
+                <a href="/processing" class="btn btn-rematch">
                     Find New Matches
                 </a>
             </div>
@@ -4612,966 +4704,10 @@ def home():
     
     return render_template_with_header("home", content)
 
-@app.route('/choose-agent')
-@login_required
-def choose_agent():
-    """Landing page with 3D animated spheres - Mobile Responsive (FIXED)"""
-    user_id = session['user_id']
-    status = subscription_manager.get_user_subscription_status(user_id)
-    
-    if not status['can_run_matching']:
-        flash('You have used your free match for this month. Upgrade to Premium for unlimited matching!', 'error')
-        return redirect('/subscription/plans')
-    
-    # Record the usage if it's a free run
-    if not status['is_subscribed']:
-        subscription_manager.record_matching_usage(user_id, is_free=True)
-    
-    content = '''
-    <style>
-        @import url("https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=sentient@400,500,600,700&display=swap");
+# ============================================================================
+# ROUTES - PROCESSING & RESULTS
+# ============================================================================
 
-        /* Override any existing styles for full page layout */
-        html, body {
-            overflow-x: hidden;
-            margin: 0;
-            padding: 0;
-            touch-action: manipulation;
-            user-select: none;
-            -webkit-user-select: none;
-            -webkit-touch-callout: none;
-        }
-
-        .page-content {
-            position: relative;
-            min-height: 100vh;
-            background: transparent;
-        }
-        
-        /* Override any existing container backgrounds */
-        body, .container, .main-content, .content {
-            background: transparent !important;
-        }
-
-        canvas {
-            position: fixed;
-            top: 0;
-            left: 0;
-            z-index: -1;
-            touch-action: none;
-            pointer-events: auto;
-        }
-
-        .mouse-effect {
-            opacity: 0;
-            position: fixed;
-            top: 0px;
-            left: 0px;
-            z-index: 1000;
-            pointer-events: none;
-            display: none; /* Hide on all devices initially */
-        }
-
-        /* Show mouse effects only on non-touch devices */
-        @media (hover: hover) and (pointer: fine) {
-            .mouse-effect {
-                display: block;
-            }
-        }
-
-        .typewriter {
-            overflow: hidden;
-            white-space: nowrap;
-            border-right: 2px solid var(--color-emerald, #10b981);
-            animation: blink-caret 1s step-end infinite;
-        }
-
-        .typewriter-line {
-            opacity: 0;
-            transition: opacity 0.3s ease;
-        }
-
-        .typewriter-line.active {
-            opacity: 1;
-        }
-
-        @keyframes blink-caret {
-            from, to { 
-                border-color: transparent; 
-            }
-            50% { 
-                border-color: var(--color-emerald, #10b981); 
-            }
-        }
-
-        .circle {
-            position: absolute;
-            background-color: black;
-            width: 10px;
-            height: 10px;
-            left: 0px;
-            top: 0px;
-            border-radius: 100%;
-            z-index: 111111;
-            user-select: none;
-            pointer-events: none;
-            transition: all 0.05s;
-            display: none;
-        }
-
-        .circle-follow {
-            position: absolute;
-            border: 1px solid var(--color-emerald);
-            width: 40px;
-            height: 40px;
-            left: 0px;
-            top: 0px;
-            border-radius: 100%;
-            z-index: 111111;
-            user-select: none;
-            pointer-events: none;
-            transition: all 0.1s;
-            display: none;
-        }
-
-        /* Show only on hover-capable devices */
-        @media (hover: hover) and (pointer: fine) {
-            .circle, .circle-follow {
-                display: block;
-            }
-        }
-
-        .main-txt {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            font-family: "Sentient", sans-serif;
-            font-size: clamp(60px, 15vw, 160px);
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: -2px;
-            z-index: -1;
-            transition: opacity 0.5s ease-in-out;
-            background: white;
-            background-size: 200% 200%;
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            animation: gradientShift 4s ease-in-out infinite;
-        }
-
-        @keyframes gradientShift {
-            0%, 100% { background-position: 0% 50%; }
-            50% { background-position: 100% 50%; }
-        }
-
-        .hide-text {
-            opacity: 0;
-            transition: opacity 0.5s ease-in-out;
-        }
-
-        .welcome-text {
-            position: fixed;
-            top: 15%;
-            left: 50%;
-            transform: translateX(-50%);
-            text-align: center;
-            z-index: 10;
-            color: var(--color-charcoal);
-            font-family: "Satoshi", sans-serif;
-            font-size: clamp(1rem, 3vw, 1.2rem);
-            font-weight: 500;
-            padding: 0 1rem;
-        }
-
-        .welcome-text .login-link {
-            margin-top: 1rem;
-            font-size: clamp(0.9rem, 2.5vw, 1rem);
-        }
-
-        .welcome-text .login-link a {
-            color: var(--color-emerald);
-            text-decoration: none;
-            font-weight: 600;
-            transition: color 0.3s ease;
-            padding: 0.5rem 1rem;
-            border-radius: 8px;
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(10px);
-        }
-
-        .welcome-text .login-link a:hover,
-        .welcome-text .login-link a:active {
-            color: var(--color-sage);
-            background: rgba(255, 255, 255, 0.2);
-        }
-
-        .instruction-text {
-            position: fixed;
-            bottom: 1rem;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            padding: 1.5rem 2rem;
-            border-radius: 20px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
-            font-size: clamp(0.875rem, 2.5vw, 1rem);
-            color: var(--color-gray-600);
-            max-width: calc(100vw - 2rem);
-            text-align: center;
-            animation: pulse 3s ease-in-out infinite;
-            z-index: 5;
-            font-weight: 500;
-        }
-
-        @keyframes pulse {
-            0%, 100% { transform: translateX(-50%) scale(1); }
-            50% { transform: translateX(-50%) scale(1.02); }
-        }
-
-        .instruction-text::before {
-            content: '✨';
-            display: block;
-            font-size: 2rem;
-            margin-bottom: 0.75rem;
-        }
-
-        /* Mobile-specific styles */
-        @media (max-width: 768px) {
-            .main-txt {
-                font-size: clamp(48px, 12vw, 80px);
-                letter-spacing: -1px;
-            }
-
-            .welcome-text {
-                top: 12%;
-                font-size: clamp(1.1rem, 4vw, 1.3rem);
-                padding: 0 1.5rem;
-            }
-
-            .welcome-text .login-link {
-                margin-top: 1.25rem;
-            }
-
-            .welcome-text .login-link a {
-                padding: 0.75rem 1.5rem;
-                font-size: clamp(1rem, 3vw, 1.1rem);
-                border-radius: 12px;
-            }
-
-            .instruction-text {
-                position: fixed;
-                bottom: 1rem;
-                left: 1rem;
-                right: 1rem;
-                transform: none;
-                max-width: none;
-                padding: 1.25rem 1.5rem;
-                font-size: 1rem;
-            }
-
-            .instruction-text::before {
-                font-size: 1.75rem;
-                margin-bottom: 0.5rem;
-            }
-        }
-
-        @media (max-width: 480px) {
-            .welcome-text {
-                top: 10%;
-                font-size: clamp(1.2rem, 5vw, 1.4rem);
-            }
-            
-            .main-txt {
-                font-size: clamp(40px, 14vw, 70px);
-            }
-
-            .instruction-text {
-                bottom: 0.5rem;
-                left: 0.5rem;
-                right: 0.5rem;
-                padding: 1rem 1.25rem;
-                border-radius: 16px;
-            }
-        }
-
-        /* High DPI displays */
-        @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
-            .main-txt {
-                -webkit-font-smoothing: antialiased;
-                -moz-osx-font-smoothing: grayscale;
-            }
-        }
-
-        /* Landscape mobile orientation */
-        @media (max-width: 768px) and (orientation: landscape) {
-            .welcome-text {
-                top: 8%;
-                font-size: clamp(0.9rem, 3vw, 1.1rem);
-            }
-            
-            .instruction-text {
-                bottom: 0.5rem;
-                padding: 1rem 1.25rem;
-                font-size: 0.875rem;
-            }
-            
-            .main-txt {
-                font-size: clamp(36px, 10vw, 60px);
-            }
-        }
-
-        /* Visual feedback for touch */
-        .sphere-touch-feedback {
-            position: absolute;
-            border-radius: 50%;
-            background: radial-gradient(circle, rgba(255, 255, 255, 0.8), transparent);
-            pointer-events: none;
-            z-index: 1000;
-            opacity: 0;
-            transform: scale(0);
-            transition: all 0.3s ease-out;
-        }
-
-        .sphere-touch-feedback.active {
-            opacity: 1;
-            transform: scale(1);
-        }
-    </style>
-    
-    <!-- Include required libraries -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
-
-    <div class="page-content">
-        <div class="mouse-effect">
-            <div class="circle"></div>
-            <div class="circle-follow"></div>
-        </div>
-        
-        <h1 class="main-txt">Connect</h1>
-        
-        <div class="welcome-text hide-text">
-            <div class="typewriter-line">choose your agent to begin</div>
-        </div>
-        
-        <div class="instruction-text hide-text">
-            <strong>Tap any floating sphere</strong><br>
-            to begin shaping your agent
-        </div>
-        
-        <canvas class="webgl" id="webgl"></canvas>
-    </div>
-
-    <script>
-        // Detect device capabilities
-        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-        const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-        const supportsHover = window.matchMedia('(hover: hover)').matches;
-        
-        console.log('Device detection:', { isMobile, isTouch, supportsHover });
-        
-        // Scene setup
-        const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(
-            25,
-            window.innerWidth / window.innerHeight,
-            0.1,
-            1000
-        );
-        camera.position.z = isMobile ? 28 : 24;
-
-        const renderer = new THREE.WebGLRenderer({
-            canvas: document.querySelector("#webgl"),
-            antialias: true,
-            alpha: true,
-            powerPreference: isMobile ? "low-power" : "high-performance"
-        });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-        renderer.shadowMap.enabled = !isMobile;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-
-        // Materials
-        const defaultMaterial = new THREE.MeshPhongMaterial({ 
-            color: "#ffb3ba",
-            shininess: isMobile ? 10 : 30,
-            transparent: false
-        });
-
-        const hoverMaterial = new THREE.MeshPhongMaterial({ 
-            color: "#ff9aa2",
-            shininess: isMobile ? 20 : 50,
-            transparent: false
-        });
-
-        const clickMaterial = new THREE.MeshPhongMaterial({ 
-            color: "#ff6b7d",
-            shininess: isMobile ? 30 : 100,
-            transparent: false
-        });
-
-        // Sphere data (same as original)
-        const radii = [
-            1, 0.6, 0.8, 0.4, 0.9, 0.7, 0.9, 0.3, 0.2, 0.5, 0.6, 0.4, 0.5, 0.6, 0.7, 0.3, 0.4, 0.8, 0.7, 0.5,
-            0.4, 0.6, 0.35, 0.38, 0.9, 0.3, 0.6, 0.4, 0.2, 0.35, 0.5, 0.15, 0.2, 0.25, 0.4, 0.8, 0.76, 0.8, 1, 0.8,
-            0.7, 0.8, 0.3, 0.5, 0.6, 0.55, 0.42, 0.75, 0.66, 0.6, 0.7, 0.5, 0.6, 0.35, 0.35, 0.35, 0.8, 0.6, 0.7, 0.8,
-            0.4, 0.89, 0.3, 0.3, 0.6, 0.4, 0.2, 0.52, 0.5, 0.15, 0.2, 0.25, 0.4, 0.8, 0.76, 0.8, 1, 0.8, 0.7, 0.8,
-            0.3, 0.5, 0.6, 0.8, 0.7, 0.75, 0.66, 0.6, 0.7, 0.5, 0.6, 0.35, 0.35, 0.35, 0.8, 0.6, 0.7, 0.8, 0.4, 0.89, 0.3
-        ];
-
-        const positions = [
-            { x: 0, y: 0, z: 0 }, { x: 1.2, y: 0.9, z: -0.5 }, { x: 1.8, y: -0.3, z: 0 }, { x: -1, y: -1, z: 0 },
-            { x: -1, y: 1.62, z: 0 }, { x: -1.65, y: 0, z: -0.4 }, { x: -2.13, y: -1.54, z: -0.4 }, { x: 0.8, y: 0.94, z: 0.3 },
-            { x: 0.5, y: -1, z: 1.2 }, { x: -0.16, y: -1.2, z: 0.9 }, { x: 1.5, y: 1.2, z: 0.8 }, { x: 0.5, y: -1.58, z: 1.4 },
-            { x: -1.5, y: 1, z: 1.15 }, { x: -1.5, y: -1.5, z: 0.99 }, { x: -1.5, y: -1.5, z: -1.9 }, { x: 1.85, y: 0.8, z: 0.05 },
-            { x: 1.5, y: -1.2, z: -0.75 }, { x: 0.9, y: -1.62, z: 0.22 }, { x: 0.45, y: 2, z: 0.65 }, { x: 2.5, y: 1.22, z: -0.2 },
-            { x: 2.35, y: 0.7, z: 0.55 }, { x: -1.8, y: -0.35, z: 0.85 }, { x: -1.02, y: 0.2, z: 0.9 }, { x: 0.2, y: 1, z: 1 },
-            { x: -2.88, y: 0.7, z: 1 }, { x: -2, y: -0.95, z: 1.5 }, { x: -2.3, y: 2.4, z: -0.1 }, { x: -2.5, y: 1.9, z: 1.2 },
-            { x: -1.8, y: 0.37, z: 1.2 }, { x: -2.4, y: 1.42, z: 0.05 }, { x: -2.72, y: -0.9, z: 1.1 }, { x: -1.8, y: -1.34, z: 1.67 },
-            { x: -1.6, y: 1.66, z: 0.91 }, { x: -2.8, y: 1.58, z: 1.69 }, { x: -2.97, y: 2.3, z: 0.65 }, { x: 1.1, y: -0.2, z: -1.45 },
-            { x: -4, y: 1.78, z: 0.38 }, { x: 0.12, y: 1.4, z: -1.29 }, { x: -1.64, y: 1.4, z: -1.79 }, { x: -3.5, y: -0.58, z: 0.1 },
-            { x: -0.1, y: -1, z: -2 }, { x: -4.5, y: 0.55, z: -0.5 }, { x: -3.87, y: 0, z: 1 }, { x: -4.6, y: -0.1, z: 0.65 },
-            { x: -3, y: 1.5, z: -0.7 }, { x: -0.5, y: 0.2, z: -1.5 }, { x: -1.3, y: -0.45, z: -1.5 }, { x: -3.35, y: 0.25, z: -1.5 },
-            { x: -4.76, y: -1.26, z: 0.4 }, { x: -4.32, y: 0.85, z: 1.4 }, { x: -3.5, y: -1.82, z: 0.9 }, { x: -3.6, y: -0.6, z: 1.46 },
-            { x: -4.55, y: -1.5, z: 1.63 }, { x: -3.8, y: -1.15, z: 2.1 }, { x: -2.9, y: -0.25, z: 1.86 }, { x: -2.2, y: -0.4, z: 1.86 },
-            { x: -5.1, y: -0.24, z: 1.86 }, { x: -5.27, y: 1.24, z: 0.76 }, { x: -5.27, y: 2, z: -0.4 }, { x: -6.4, y: 0.4, z: 1 },
-            { x: -5.15, y: 0.95, z: 2 }, { x: -6.2, y: 0.5, z: -0.8 }, { x: -4, y: 0.08, z: 1.8 }, { x: 2, y: -0.95, z: 1.5 },
-            { x: 2.3, y: 2.4, z: -0.1 }, { x: 2.5, y: 1.9, z: 1.2 }, { x: 1.8, y: 0.37, z: 1.2 }, { x: 3.24, y: 0.6, z: 1.05 },
-            { x: 2.72, y: -0.9, z: 1.1 }, { x: 1.8, y: -1.34, z: 1.67 }, { x: 1.6, y: 1.99, z: 0.91 }, { x: 2.8, y: 1.58, z: 1.69 },
-            { x: 2.97, y: 2.3, z: 0.65 }, { x: -1.3, y: -0.2, z: -2.5 }, { x: 4, y: 1.78, z: 0.38 }, { x: 1.72, y: 1.4, z: -1.29 },
-            { x: 2.5, y: -1.2, z: -2 }, { x: 3.5, y: -0.58, z: 0.1 }, { x: 0.1, y: 0.4, z: -2.42 }, { x: 4.5, y: 0.55, z: -0.5 },
-            { x: 3.87, y: 0, z: 1 }, { x: 4.6, y: -0.1, z: 0.65 }, { x: 3, y: 1.5, z: -0.7 }, { x: 2.3, y: 0.6, z: -2.6 },
-            { x: 4, y: 1.5, z: -1.6 }, { x: 3.35, y: 0.25, z: -1.5 }, { x: 4.76, y: -1.26, z: 0.4 }, { x: 4.32, y: 0.85, z: 1.4 },
-            { x: 3.5, y: -1.82, z: 0.9 }, { x: 3.6, y: -0.6, z: 1.46 }, { x: 4.55, y: -1.5, z: 1.63 }, { x: 3.8, y: -1.15, z: 2.1 },
-            { x: 2.9, y: -0.25, z: 1.86 }, { x: 2.2, y: -0.4, z: 1.86 }, { x: 5.1, y: -0.24, z: 1.86 }, { x: 5.27, y: 1.24, z: 0.76 },
-            { x: 5.27, y: 2, z: -0.4 }, { x: 6.4, y: 0.4, z: 1 }, { x: 5.15, y: 0.95, z: 2 }, { x: 6.2, y: 0.5, z: -0.8 }, { x: 4, y: 0.08, z: 1.8 }
-        ];
-
-        const group = new THREE.Group();
-        const spheres = [];
-        let hoveredSphere = null;
-
-        positions.forEach((pos, index) => {
-            const radius = radii[index] * (isMobile ? 1.3 : 1);
-            const geometry = new THREE.SphereGeometry(radius, isMobile ? 16 : 32, isMobile ? 16 : 32);
-            const sphere = new THREE.Mesh(geometry, defaultMaterial.clone());
-            sphere.position.set(pos.x, pos.y, pos.z);
-            sphere.userData = { 
-                originalPosition: { ...pos }, 
-                radius,
-                isHovered: false,
-                isClicked: false 
-            };
-            if (!isMobile) {
-                sphere.castShadow = true;
-                sphere.receiveShadow = true;
-            }
-            spheres.push(sphere);
-            group.add(sphere);
-        });
-
-        scene.add(group);
-
-        // Lighting
-        const ambientLight = new THREE.AmbientLight(0xffffff, isMobile ? 1.2 : 1);
-        scene.add(ambientLight);
-
-        if (!isMobile) {
-            const spotLight = new THREE.SpotLight(0xffffff, 0.52);
-            spotLight.position.set(14, 24, 30);
-            spotLight.castShadow = true;
-            scene.add(spotLight);
-
-            const directionalLight1 = new THREE.DirectionalLight(0xffffff, 0.2);
-            directionalLight1.position.set(0, -4, 0);
-            scene.add(directionalLight1);
-        } else {
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
-            directionalLight.position.set(10, 10, 5);
-            scene.add(directionalLight);
-        }
-
-        // Fixed interaction system
-        const raycaster = new THREE.Raycaster();
-        const mouse = new THREE.Vector2();
-        const tempVector = new THREE.Vector3();
-        const forces = new Map();
-
-        const initY = -25;
-        const revolutionRadius = 4;
-        const revolutionDuration = 2;
-        const breathingAmplitude = isMobile ? 0.05 : 0.1;
-        const breathingSpeed = 0.002;
-
-        // Initialize spheres below screen
-        spheres.forEach((sphere, i) => {
-            sphere.position.y = initY;
-        });
-
-        // Typewriter function
-        function typeWriter(element, text, speed = 100) {
-            return new Promise((resolve) => {
-                element.innerHTML = '';
-                element.classList.add('active', 'typewriter');
-                
-                let i = 0;
-                function type() {
-                    if (i < text.length) {
-                        element.innerHTML += text.charAt(i);
-                        i++;
-                        setTimeout(type, speed);
-                    } else {
-                        element.classList.remove('typewriter');
-                        resolve();
-                    }
-                }
-                type();
-            });
-        }
-
-        function initLoadingAnimation() {
-            spheres.forEach((sphere, i) => {
-                const delay = i * (isMobile ? 0.015 : 0.02);
-                
-                if (typeof gsap !== 'undefined') {
-                    gsap.timeline()
-                        .to(sphere.position, {
-                            duration: revolutionDuration / 2,
-                            y: revolutionRadius,
-                            ease: "power1.out",
-                            onUpdate: function () {
-                                const progress = this.progress();
-                                sphere.position.z = sphere.userData.originalPosition.z + Math.sin(progress * Math.PI) * revolutionRadius;
-                            },
-                            delay: delay
-                        })
-                        .to(sphere.position, {
-                            duration: revolutionDuration / 2,
-                            y: initY / 5,
-                            ease: "power1.out",
-                            onUpdate: function () {
-                                const progress = this.progress();
-                                sphere.position.z = sphere.userData.originalPosition.z - Math.sin(progress * Math.PI) * revolutionRadius;
-                            }
-                        })
-                        .to(sphere.position, {
-                            duration: 0.6,
-                            x: sphere.userData.originalPosition.x,
-                            y: sphere.userData.originalPosition.y,
-                            z: sphere.userData.originalPosition.z,
-                            ease: "power1.out"
-                        });
-                }
-            });
-        }
-
-        const hiddenElements = document.querySelectorAll(".hide-text");
-        const main_txt = document.querySelector(".main-txt");
-        const mouse_effect = document.querySelector(".mouse-effect");
-
-        // Initially ensure elements are hidden
-        hiddenElements.forEach((el) => {
-            el.style.opacity = "0";
-        });
-
-        let loadingComplete = false;
-        
-        // Start typewriter after animation completes
-        async function startTypewriter() {
-            await new Promise(resolve => setTimeout(resolve, (revolutionDuration + 1) * 1000));
-            
-            loadingComplete = true;
-            
-            hiddenElements.forEach((el) => {
-                el.style.opacity = "1";
-            });
-            main_txt.style.opacity = "0";
-            
-            const welcomeText = document.querySelector('.welcome-text');
-            const typewriterLine = welcomeText.querySelector('.typewriter-line');
-            
-            welcomeText.classList.remove('hide-text');
-            await typeWriter(typewriterLine, typewriterLine.textContent, 80);
-        }
-
-        // Mouse following (desktop only)
-        if (typeof gsap !== 'undefined' && supportsHover && !isMobile) {
-            gsap.set(".circle", { xPercent: -50, yPercent: -50 });
-            gsap.set(".circle-follow", { xPercent: -50, yPercent: -50 });
-
-            let xTo = gsap.quickTo(".circle", "x", { duration: 0.6, ease: "power3" }),
-                yTo = gsap.quickTo(".circle", "y", { duration: 0.6, ease: "power3" });
-
-            let xFollow = gsap.quickTo(".circle-follow", "x", { duration: 0.6, ease: "power3" }),
-                yFollow = gsap.quickTo(".circle-follow", "y", { duration: 0.6, ease: "power3" });
-
-            function onMouseMove(event) {
-                if (!loadingComplete) return;
-
-                xTo(event.clientX);
-                yTo(event.clientY);
-                xFollow(event.clientX);
-                yFollow(event.clientY);
-
-                mouse_effect.style.opacity = "1";
-
-                handleInteraction(event.clientX, event.clientY, false);
-            }
-
-            window.addEventListener("mousemove", onMouseMove);
-        }
-
-        // FIXED: Universal interaction handler for both mouse and touch
-        function handleInteraction(clientX, clientY, isClick) {
-            if (!loadingComplete) return;
-
-            // Calculate mouse position for raycaster
-            mouse.x = (clientX / window.innerWidth) * 2 - 1;
-            mouse.y = -(clientY / window.innerHeight) * 2 + 1;
-
-            // Update raycaster
-            raycaster.setFromCamera(mouse, camera);
-            const intersects = raycaster.intersectObjects(spheres);
-
-            if (!isClick) {
-                // Hover logic for desktop only
-                if (hoveredSphere && !intersects.find(intersect => intersect.object === hoveredSphere)) {
-                    hoveredSphere.material = defaultMaterial.clone();
-                    hoveredSphere.userData.isHovered = false;
-                    hoveredSphere = null;
-                }
-
-                if (intersects.length > 0 && supportsHover && !isMobile) {
-                    const newHoveredSphere = intersects[0].object;
-                    
-                    if (!newHoveredSphere.userData.isClicked && newHoveredSphere !== hoveredSphere) {
-                        if (hoveredSphere) {
-                            hoveredSphere.material = defaultMaterial.clone();
-                            hoveredSphere.userData.isHovered = false;
-                        }
-                        
-                        newHoveredSphere.material = hoverMaterial.clone();
-                        newHoveredSphere.userData.isHovered = true;
-                        hoveredSphere = newHoveredSphere;
-                    }
-
-                    // Apply force for movement (reduced on mobile)
-                    const force = new THREE.Vector3();
-                    force.subVectors(intersects[0].point, newHoveredSphere.position)
-                         .normalize()
-                         .multiplyScalar(isMobile ? 0.1 : 0.2);
-                    forces.set(newHoveredSphere.uuid, force);
-                }
-            } else {
-                // FIXED: Click/tap logic with proper intersection testing
-                console.log('Interaction at:', clientX, clientY, 'Intersects:', intersects.length);
-                
-                if (intersects.length > 0) {
-                    const clickedSphere = intersects[0].object;
-                    console.log('Clicked sphere:', clickedSphere);
-                    
-                    clickedSphere.material = clickMaterial.clone();
-                    clickedSphere.userData.isClicked = true;
-                    
-                    // Show visual feedback on touch
-                    if (isTouch) {
-                        showTouchFeedback(clientX, clientY);
-                        
-                        // Haptic feedback
-                        if (navigator.vibrate) {
-                            navigator.vibrate(50);
-                        }
-                    }
-                    
-                    // Enhanced click animation
-                    if (typeof gsap !== 'undefined') {
-                        gsap.to(clickedSphere.scale, {
-                            duration: 0.1,
-                            x: 0.8, y: 0.8, z: 0.8,
-                            ease: "power2.out",
-                            onComplete: () => {
-                                gsap.to(clickedSphere.scale, {
-                                    duration: 0.2,
-                                    x: 1.3, y: 1.3, z: 1.3,
-                                    ease: "power2.out",
-                                    onComplete: () => {
-                                        // Add delay for mobile to show animation
-                                        setTimeout(() => {
-                                            console.log('Navigating to /profile-setup');
-                                            window.location.href = '/profile-setup';
-                                        }, isMobile ? 300 : 100);
-                                    }
-                                });
-                            }
-                        });
-                    } else {
-                        setTimeout(() => {
-                            window.location.href = '/profile-setup';
-                        }, 400);
-                    }
-                } else {
-                    console.log('No intersections found at', clientX, clientY);
-                }
-            }
-        }
-
-        // FIXED: Touch feedback visual
-        function showTouchFeedback(x, y) {
-            const feedback = document.createElement('div');
-            feedback.className = 'sphere-touch-feedback';
-            feedback.style.left = (x - 25) + 'px';
-            feedback.style.top = (y - 25) + 'px';
-            feedback.style.width = '50px';
-            feedback.style.height = '50px';
-            
-            document.body.appendChild(feedback);
-            
-            // Trigger animation
-            setTimeout(() => feedback.classList.add('active'), 10);
-            
-            // Remove after animation
-            setTimeout(() => {
-                if (feedback.parentNode) {
-                    feedback.parentNode.removeChild(feedback);
-                }
-            }, 500);
-        }
-
-        // FIXED: Touch event handlers with proper coordinate calculation
-        if (isTouch) {
-            let touchStartTime = 0;
-            let touchStartX = 0;
-            let touchStartY = 0;
-            let hasMoved = false;
-
-            function onTouchStart(event) {
-                if (!loadingComplete) return;
-                
-                console.log('Touch start');
-                event.preventDefault();
-                
-                touchStartTime = Date.now();
-                const touch = event.touches[0];
-                touchStartX = touch.clientX;
-                touchStartY = touch.clientY;
-                hasMoved = false;
-                
-                // Show immediate visual feedback
-                showTouchFeedback(touchStartX, touchStartY);
-            }
-
-            function onTouchMove(event) {
-                if (!loadingComplete) return;
-                event.preventDefault();
-                
-                const touch = event.touches[0];
-                const deltaX = Math.abs(touch.clientX - touchStartX);
-                const deltaY = Math.abs(touch.clientY - touchStartY);
-                
-                // Mark as moved if significant movement
-                if (deltaX > 10 || deltaY > 10) {
-                    hasMoved = true;
-                }
-                
-                // Handle continuous movement interaction
-                handleInteraction(touch.clientX, touch.clientY, false);
-            }
-
-            function onTouchEnd(event) {
-                if (!loadingComplete) return;
-                event.preventDefault();
-                
-                console.log('Touch end, hasMoved:', hasMoved);
-                
-                const touchDuration = Date.now() - touchStartTime;
-                
-                // Only register as tap if it's a short touch without movement
-                if (!hasMoved && touchDuration < 500) {
-                    console.log('Processing tap at:', touchStartX, touchStartY);
-                    handleInteraction(touchStartX, touchStartY, true);
-                }
-            }
-
-            // FIXED: Add touch event listeners with proper options
-            const canvas = renderer.domElement;
-            canvas.addEventListener('touchstart', onTouchStart, { passive: false });
-            canvas.addEventListener('touchmove', onTouchMove, { passive: false });
-            canvas.addEventListener('touchend', onTouchEnd, { passive: false });
-            
-            // Also add to document for better coverage
-            document.addEventListener('touchstart', onTouchStart, { passive: false });
-            document.addEventListener('touchmove', onTouchMove, { passive: false });  
-            document.addEventListener('touchend', onTouchEnd, { passive: false });
-            
-            console.log('Touch events added');
-        }
-
-        // Mouse event handlers for desktop
-        if (!isMobile && supportsHover) {
-            function onMouseClick(event) {
-                if (!loadingComplete) return;
-                console.log('Mouse click at:', event.clientX, event.clientY);
-                handleInteraction(event.clientX, event.clientY, true);
-            }
-
-            window.addEventListener("click", onMouseClick);
-        }
-
-        // Collision detection with performance optimization
-        function handleCollisions() {
-            const collisionPrecision = isMobile ? 0.6 : 1.0;
-            
-            for (let i = 0; i < spheres.length; i++) {
-                const sphereA = spheres[i];
-                const radiusA = sphereA.userData.radius;
-
-                for (let j = i + 1; j < spheres.length; j++) {
-                    const sphereB = spheres[j];
-                    const radiusB = sphereB.userData.radius;
-
-                    const distance = sphereA.position.distanceTo(sphereB.position);
-                    const minDistance = (radiusA + radiusB) * 1.2 * collisionPrecision;
-
-                    if (distance < minDistance) {
-                        tempVector.subVectors(sphereB.position, sphereA.position);
-                        tempVector.normalize();
-
-                        const pushStrength = (minDistance - distance) * (isMobile ? 0.2 : 0.4);
-                        sphereA.position.sub(tempVector.multiplyScalar(pushStrength));
-                        sphereB.position.add(tempVector.multiplyScalar(pushStrength));
-                    }
-                }
-            }
-        }
-
-        // FIXED: Animation loop with better performance
-        let lastFrameTime = 0;
-        const targetFPS = isMobile ? 30 : 60;
-        const frameInterval = 1000 / targetFPS;
-
-        function animate(currentTime) {
-            requestAnimationFrame(animate);
-
-            // Frame rate limiting for mobile
-            if (currentTime - lastFrameTime < frameInterval) {
-                return;
-            }
-            lastFrameTime = currentTime;
-
-            if (loadingComplete) {
-                // Breathing animation
-                const time = Date.now() * breathingSpeed;
-                spheres.forEach((sphere, i) => {
-                    const offset = i * 0.2;
-                    const breathingY = Math.sin(time + offset) * breathingAmplitude;
-                    const breathingZ = Math.cos(time + offset) * breathingAmplitude * 0.5;
-
-                    // Apply forces
-                    const force = forces.get(sphere.uuid);
-                    if (force) {
-                        sphere.position.add(force);
-                        force.multiplyScalar(isMobile ? 0.98 : 0.95);
-
-                        if (force.length() < 0.01) {
-                            forces.delete(sphere.uuid);
-                        }
-                    }
-
-                    // Return to original position with breathing
-                    const originalPos = sphere.userData.originalPosition;
-                    tempVector.set(
-                        originalPos.x,
-                        originalPos.y + breathingY,
-                        originalPos.z + breathingZ
-                    );
-                    sphere.position.lerp(tempVector, isMobile ? 0.015 : 0.018);
-                });
-
-                // Collision detection
-                if (!isMobile || Math.random() < 0.5) {
-                    handleCollisions();
-                }
-            }
-
-            renderer.render(scene, camera);
-        }
-
-        animate();
-
-        // Call loading animation and typewriter when page loads
-        window.addEventListener("load", () => {
-            console.log('Page loaded, starting animation');
-            initLoadingAnimation();
-            startTypewriter();
-        });
-
-        // Enhanced resize handler
-        function onWindowResize() {
-            const newWidth = window.innerWidth;
-            const newHeight = window.innerHeight;
-            
-            camera.aspect = newWidth / newHeight;
-            camera.updateProjectionMatrix();
-            
-            renderer.setSize(newWidth, newHeight);
-            
-            // Adjust camera position based on screen size
-            if (newWidth < 768) {
-                camera.position.z = 30;
-            } else if (newWidth < 1024) {
-                camera.position.z = 26;
-            } else {
-                camera.position.z = 24;
-            }
-        }
-
-        window.addEventListener("resize", onWindowResize);
-
-        // Mobile optimizations
-        if (isMobile) {
-            // Reduce quality on low-end devices
-            if (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2) {
-                renderer.setPixelRatio(1);
-            }
-            
-            // Handle orientation changes
-            window.addEventListener("orientationchange", () => {
-                setTimeout(() => {
-                    onWindowResize();
-                }, 100);
-            });
-            
-            // Pause animation when page is hidden
-            document.addEventListener('visibilitychange', () => {
-                if (document.hidden) {
-                    renderer.setAnimationLoop(null);
-                } else {
-                    renderer.setAnimationLoop(animate);
-                }
-            });
-        }
-
-        // Debug logging for mobile
-        console.log('Initialization complete. Device:', {
-            isMobile,
-            isTouch, 
-            supportsHover,
-            sphereCount: spheres.length,
-            loadingComplete
-        });
-
-        // Preload next page
-        const linkPreloader = document.createElement('link');
-        linkPreloader.rel = 'prefetch';
-        linkPreloader.href = '/profile-setup';
-        document.head.appendChild(linkPreloader);
-    </script>
-    '''
-    
-    return content
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -5608,7 +4744,7 @@ def register():
                 session['user_email'] = email
                 session['user_name'] = first_name
                 flash('Account created successfully! Choose your agent to begin.', 'success')
-                return redirect('/choose-agent')  # Changed from /profile-setup
+                return redirect('/onboarding/step/1')  # Start onboarding process
             else:
                 flash(result['error'], 'error')
     
@@ -7253,17 +6389,79 @@ def dashboard():
         return redirect('/network-mode')
 
     if user_info['profile_completed']:
+        # Check if user has selected an event
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT e.*, er.registered_at
+            FROM events e
+            JOIN event_registrations er ON e.id = er.event_id
+            WHERE er.user_id = %s AND e.date_time > NOW() AND e.is_active = TRUE
+            ORDER BY e.date_time ASC LIMIT 1
+        ''', (user_id,))
+
+        current_event = cursor.fetchone()
+        conn.close()
+
+        if not current_event:
+            # User hasn't selected an event yet, redirect to events page
+            return redirect('/events')
+
+        # User has an event selected, ensure we have event-specific matches
         matches = user_auth.get_user_matches(user_id)
-        
+
+        # Verify that existing matches are actually event attendees
+        # If no matches exist OR if existing matches are not event-specific, trigger event matching
+        event_specific_matches = []
+        if matches:
+            # Check if existing matches are attending the same event
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            for match in matches:
+                cursor.execute('''
+                    SELECT 1 FROM event_registrations
+                    WHERE user_id = %s AND event_id = %s
+                ''', (match['matched_user_id'], current_event['id']))
+                if cursor.fetchone():
+                    event_specific_matches.append(match)
+            conn.close()
+
+        # If we don't have event-specific matches, trigger event-based matching
+        if not event_specific_matches:
+            # Check if matching is already in progress or completed
+            if user_id not in processing_status:
+                # No matching status exists, start matching
+                thread = threading.Thread(target=process_event_matching_background, args=(user_id, current_event['id']))
+                thread.daemon = True
+                thread.start()
+                return redirect('/processing')
+            elif processing_status[user_id].get('status') == 'processing':
+                # Matching in progress, redirect to processing
+                return redirect('/processing')
+            elif processing_status[user_id].get('status') == 'completed':
+                # Matching completed but no matches found (likely no other attendees)
+                # Continue to show dashboard with empty matches
+                pass
+            else:
+                # Unknown status, restart matching
+                thread = threading.Thread(target=process_event_matching_background, args=(user_id, current_event['id']))
+                thread.daemon = True
+                thread.start()
+                return redirect('/processing')
+
+        # Use only event-specific matches
+        matches = event_specific_matches
+
         # Track dashboard view
         if interaction_tracker:
             interaction_tracker.track_profile_view(user_id, None, 0)
-        
+
         if matches:
-            # Show matches
-            content = render_matches_dashboard(user_info, matches)
+            # Show matches with event details
+            content = render_matches_dashboard_with_event(user_info, matches, current_event)
         else:
-            # No matches found
+            # No matches found yet
             content = render_no_matches_dashboard()
     else:
         # No profile completed yet
@@ -7271,6 +6469,56 @@ def dashboard():
     
     return render_template_with_header("Dashboard", content, user_info)
 
+
+def render_matches_dashboard_with_event(user_info: Dict, matches: List[Dict], event: Dict) -> str:
+    """Render matches dashboard with event details displayed at the top"""
+    user_id = session['user_id']
+
+    # Format event date and time
+    event_date = event['date_time'].strftime('%A, %B %d, %Y')
+    event_time = event['date_time'].strftime('%I:%M %p')
+
+    # Event header section
+    event_header = f'''
+    <div class="event-header" style="background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(20px); border-radius: 24px; padding: 2rem; margin-bottom: 2rem; border: 1px solid rgba(255, 255, 255, 0.2); text-align: center;">
+        <h2 style="font-family: 'Sentient', serif; font-size: 1.8rem; color: #2d2d2d; margin-bottom: 1rem;">Your Upcoming Event</h2>
+        <h3 style="font-family: 'Satoshi', sans-serif; font-size: 1.4rem; color: #8B5A5C; margin-bottom: 1rem;">{event['title']}</h3>
+        <div style="display: flex; justify-content: center; gap: 2rem; flex-wrap: wrap; font-family: 'Satoshi', sans-serif; color: #666;">
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <strong>📅 Date:</strong> {event_date}
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <strong>🕐 Time:</strong> {event_time}
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <strong>📍 Venue:</strong> {event['venue_name'] or 'TBA'}
+            </div>
+        </div>
+        {f'<div style="margin-top: 1rem; color: #666; font-family: Satoshi, sans-serif;"><strong>Address:</strong> {event["venue_address"]}</div>' if event.get('venue_address') else ''}
+        <div style="margin-top: 1.5rem; padding: 1rem; background: rgba(139, 90, 92, 0.1); border-radius: 12px; font-family: 'Satoshi', sans-serif; color: #8B5A5C;">
+            💫 Below are your compatible matches who will also be attending this event!
+        </div>
+    </div>
+    '''
+
+    # Get the existing matches dashboard content but modify the title
+    matches_content = render_matches_dashboard(user_info, matches)
+
+    # Insert event header at the beginning of matches content
+    # Find the dashboard container and insert event header after it starts
+    dashboard_start = matches_content.find('<div class="dashboard-container">') + len('<div class="dashboard-container">')
+
+    if dashboard_start > len('<div class="dashboard-container">') - 1:
+        modified_content = (
+            matches_content[:dashboard_start] +
+            event_header +
+            matches_content[dashboard_start:]
+        )
+    else:
+        # Fallback if structure is different
+        modified_content = event_header + matches_content
+
+    return modified_content
 
 def render_no_matches_dashboard() -> str:
     """Render no matches dashboard with small orange sphere in draggable teal cube"""
@@ -7574,7 +6822,7 @@ def render_no_matches_dashboard() -> str:
                 animateScale(cube.scale, targetScale, 100, () => {
                     animateScale(cube.scale, { x: 1.1, y: 1.1, z: 1.1 }, 100, () => {
                         animateScale(cube.scale, originalScale, 100, () => {
-                            window.location.href = '/choose-agent';
+                            window.location.href = '/onboarding/step/1';
                         });
                     });
                 });
@@ -7655,7 +6903,7 @@ def render_new_profile_dashboard() -> str:
         </div>
         
         <div style="text-align: center;">
-            <a href="/choose-agent" class="btn btn-primary" style="padding: 16px 32px; font-size: 16px;">
+            <a href="/onboarding/step/1" class="btn btn-primary" style="padding: 16px 32px; font-size: 16px;">
                 Create Your Profile (5 minutes)
             </a>
         </div>
@@ -8902,8 +8150,28 @@ def processing():
     if matching_mode == 'network':
         return redirect('/network-mode')
     else:
-        # Start background matching with real-time updates for individual mode
-        thread = threading.Thread(target=process_matching_background, args=(user_id,))
+        # Check if user has a current event selected
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT e.id, e.title, e.description, e.date_time, e.venue_name, e.venue_address
+            FROM events e
+            JOIN event_registrations er ON e.id = er.event_id
+            WHERE er.user_id = %s AND e.date_time > NOW() AND e.is_active = TRUE
+            ORDER BY e.date_time ASC LIMIT 1
+        ''', (user_id,))
+        current_event = cursor.fetchone()
+        conn.close()
+
+        if current_event:
+            # Use event-specific matching
+            print(f"User {user_id} has event {current_event['id']} selected - using event matching")
+            thread = threading.Thread(target=process_event_matching_background, args=(user_id, current_event['id']))
+        else:
+            # Use regular individual matching
+            print(f"User {user_id} has no event selected - using regular matching")
+            thread = threading.Thread(target=process_matching_background, args=(user_id,))
+
         thread.daemon = True
         thread.start()
 
@@ -9026,7 +8294,7 @@ def live_matching(user_id):
             .dashboard-link {{
                 display: inline-block;
                 background: white;
-                color: white;
+                color: black;
                 padding: 0.75rem 1.5rem;
                 border-radius: 8px;
                 text-decoration: none;
@@ -9113,6 +8381,7 @@ def live_matching(user_id):
             let agentsMetadata = {{}};
             let simulationCompleted = false;
             let updateInterval;
+            const startTime = Date.now();
             
             const BOX_SIZE = 400;
             const USER_ID = {user_id}; // Your actual user ID
@@ -9459,11 +8728,22 @@ def live_matching(user_id):
                     }});
                 }}
                 
-                // Handle completion
+                // Handle completion - add debugging
+                console.log('Processing status:', data.status, 'Completed flag:', simulationCompleted);
+
                 if (data.status === 'completed' && !simulationCompleted) {{
+                    console.log('Matching completed! Showing results...');
                     simulationCompleted = true;
                     clearInterval(updateInterval); // Stop updates when complete
                     setTimeout(showResults, 2000);
+                }}
+
+                // Fallback: Show results after reasonable time if status doesn't update
+                if (!simulationCompleted && Date.now() - startTime > 30000) {{
+                    console.log('Timeout reached, showing results anyway');
+                    simulationCompleted = true;
+                    clearInterval(updateInterval);
+                    showResults();
                 }}
             }}
             
@@ -9493,12 +8773,9 @@ def live_matching(user_id):
                 if (renderer) renderer.dispose();
             }});
             
-            // Close modal
-            document.getElementById('resultsModal').addEventListener('click', (e) => {{
-                if (e.target.id === 'resultsModal') {{
-                    e.target.classList.remove('visible');
-                }}
-            }});
+            // Prevent modal from closing accidentally
+            // Remove the click-outside-to-close behavior
+            // Users must click "Go to Dashboard" to proceed
         </script>
     </body>
     </html>
@@ -11326,12 +10603,11 @@ def admin_users():
         # Get all users with their basic info and subscription status
         cursor.execute('''
             SELECT
-                u.id, u.email, u.created_at, u.last_login, u.is_verified,
-                us.status as subscription_status,
-                p.first_name, p.last_name, p.age
+                u.id, u.email, u.first_name, u.last_name, u.created_at, u.last_login,
+                u.profile_completed, u.is_active, u.email_encrypted, u.first_name_encrypted, u.last_name_encrypted,
+                us.status as subscription_status
             FROM users u
             LEFT JOIN user_subscriptions us ON u.id = us.user_id
-            LEFT JOIN profiles p ON u.id = p.user_id
             ORDER BY u.created_at DESC
         ''')
 
@@ -11423,14 +10699,25 @@ def admin_users():
         '''
 
         for user in users:
-            name = f"{user.get('first_name', '') or ''} {user.get('last_name', '') or ''}".strip() or 'N/A'
+            # Try to decrypt encrypted data, fallback to plain text
+            try:
+                email = user.get('email') or (data_encryption.decrypt_sensitive_data(user['email_encrypted']) if user.get('email_encrypted') else 'N/A')
+                first_name = user.get('first_name') or (data_encryption.decrypt_sensitive_data(user['first_name_encrypted']) if user.get('first_name_encrypted') else '')
+                last_name = user.get('last_name') or (data_encryption.decrypt_sensitive_data(user['last_name_encrypted']) if user.get('last_name_encrypted') else '')
+            except Exception:
+                # If decryption fails, use plain text or N/A
+                email = user.get('email') or 'N/A'
+                first_name = user.get('first_name') or ''
+                last_name = user.get('last_name') or ''
+
+            name = f"{first_name} {last_name}".strip() or 'N/A'
             verified_status = '<span class="verified">Verified</span>' if user.get('is_verified') else '<span class="unverified">Unverified</span>'
             subscription = user.get('subscription_status') or 'None'
 
             html += f'''
                     <tr>
                         <td>{user['id']}</td>
-                        <td>{user['email']}</td>
+                        <td>{email}</td>
                         <td>{name}</td>
                         <td>{user.get('age') or 'N/A'}</td>
                         <td>{user['created_at']}</td>
@@ -11438,7 +10725,7 @@ def admin_users():
                         <td>{verified_status}</td>
                         <td>{subscription}</td>
                         <td class="actions">
-                            <button class="delete-btn" onclick="deleteUser({user['id']}, '{user['email']}')">Delete</button>
+                            <button class="delete-btn" onclick="deleteUser({user['id']}, '{email}')">Delete</button>
                         </td>
                     </tr>
             '''
@@ -11489,26 +10776,41 @@ def admin_delete_user():
 
             # Delete user data in proper order (foreign key dependencies)
 
-            # 1. Delete messages
-            cursor.execute('DELETE FROM messages WHERE sender_id = %s OR recipient_id = %s', (user_id, user_id))
+            # 1. Delete dependent network data first (to resolve foreign key constraint)
+            cursor.execute('DELETE FROM network_viz_settings WHERE network_id IN (SELECT id FROM networks WHERE owner_id = %s)', (user_id,))
+            cursor.execute('DELETE FROM network_relationships WHERE network_id IN (SELECT id FROM networks WHERE owner_id = %s)', (user_id,))
+            cursor.execute('DELETE FROM network_people WHERE network_id IN (SELECT id FROM networks WHERE owner_id = %s)', (user_id,))
+            cursor.execute('DELETE FROM networks WHERE owner_id = %s', (user_id,))
 
-            # 2. Delete matches
-            cursor.execute('DELETE FROM matches WHERE user1_id = %s OR user2_id = %s', (user_id, user_id))
-            cursor.execute('DELETE FROM user_matches WHERE user1_id = %s OR user2_id = %s', (user_id, user_id))
+            # 2. Delete user matches
+            cursor.execute('DELETE FROM user_matches WHERE user_id = %s OR matched_user_id = %s', (user_id, user_id))
+
+            # 3. Delete contact requests
+            cursor.execute('DELETE FROM contact_requests WHERE requester_id = %s OR requested_id = %s', (user_id, user_id))
 
             # 3. Delete blocked users
-            cursor.execute('DELETE FROM blocked_users WHERE blocker_id = %s OR blocked_id = %s', (user_id, user_id))
+            cursor.execute('DELETE FROM blocked_users WHERE user_id = %s', (user_id,))
 
-            # 4. Delete verification requests
+            # 4. Delete authentication data
+            cursor.execute('DELETE FROM password_reset_tokens WHERE user_id = %s', (user_id,))
             cursor.execute('DELETE FROM identity_verification_requests WHERE user_id = %s', (user_id,))
 
             # 5. Delete subscription data
             cursor.execute('DELETE FROM user_subscriptions WHERE user_id = %s', (user_id,))
 
-            # 6. Delete profile
-            cursor.execute('DELETE FROM profiles WHERE user_id = %s', (user_id,))
+            # 6. Delete event data
+            cursor.execute('DELETE FROM event_registrations WHERE user_id = %s', (user_id,))
+            cursor.execute('DELETE FROM event_feedback WHERE user_id = %s', (user_id,))
 
-            # 7. Finally delete the user
+            # 7. Delete other user data
+            cursor.execute('DELETE FROM user_interactions WHERE user_id = %s', (user_id,))
+            cursor.execute('DELETE FROM followup_tracking WHERE user1_id = %s OR user2_id = %s', (user_id, user_id))
+            cursor.execute('DELETE FROM matching_usage WHERE user_id = %s', (user_id,))
+
+            # 8. Delete user profile
+            cursor.execute('DELETE FROM user_profiles WHERE user_id = %s', (user_id,))
+
+            # 9. Finally delete the user
             cursor.execute('DELETE FROM users WHERE id = %s', (user_id,))
 
             conn.commit()
@@ -11676,7 +10978,7 @@ def subscription_plans():
         }}
         
         .btn-subscribe {{
-            background: white;
+            background: black;
             color: white;
             padding: 1rem 2rem;
             border-radius: 50px;
@@ -12663,6 +11965,2170 @@ def test_matching():
         <pre>{traceback.format_exc()}</pre>
         <p><a href="/system-health">Check System Health</a></p>
         """
+
+@app.route('/events')
+def events():
+    """Events selection page - shown after onboarding completion"""
+    if 'user_id' not in session:
+        return redirect('/login')
+
+    user_id = session['user_id']
+
+    # Check if user has already selected an event and hasn't completed it
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Check for existing registration for active events
+    cursor.execute('''
+        SELECT e.*, er.registered_at
+        FROM events e
+        JOIN event_registrations er ON e.id = er.event_id
+        WHERE er.user_id = %s AND e.date_time > NOW() AND e.is_active = TRUE
+        ORDER BY e.date_time ASC LIMIT 1
+    ''', (user_id,))
+
+    current_event = cursor.fetchone()
+
+    if current_event:
+        # User already has an upcoming event, redirect to dashboard
+        return redirect('/dashboard')
+
+    # Check if user needs to submit feedback for past events
+    cursor.execute('''
+        SELECT e.id, e.title
+        FROM events e
+        JOIN event_registrations er ON e.id = er.event_id
+        WHERE er.user_id = %s AND e.date_time < NOW()
+        AND NOT er.feedback_submitted
+        ORDER BY e.date_time DESC LIMIT 1
+    ''', (user_id,))
+
+    pending_feedback = cursor.fetchone()
+
+    if pending_feedback:
+        # Redirect to feedback form
+        return redirect(f'/event-feedback/{pending_feedback["id"]}')
+
+    # Get upcoming events with creator information
+    cursor.execute('''
+        SELECT e.*, u.first_name as creator_name, u.last_name as creator_lastname
+        FROM events e
+        LEFT JOIN users u ON e.creator_id = u.id
+        WHERE e.date_time > NOW() AND e.is_active = TRUE
+        ORDER BY e.date_time ASC
+    ''')
+
+    upcoming_events = cursor.fetchall()
+    conn.close()
+
+    content = f'''
+    <style>
+        @import url("https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=sentient@400,500,600,700&display=swap");
+
+        .events-container {{
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 2rem;
+            min-height: 100vh;
+        }}
+
+        .events-header {{
+            text-align: center;
+            margin-bottom: 3rem;
+        }}
+
+        .events-title {{
+            font-family: 'Sentient', serif;
+            font-size: 2.5rem;
+            font-weight: 600;
+            color: #2d2d2d;
+            margin-bottom: 1rem;
+        }}
+
+        .events-subtitle {{
+            font-family: 'Satoshi', sans-serif;
+            font-size: 1.1rem;
+            color: #666;
+            line-height: 1.6;
+        }}
+
+        .event-card {{
+            background: white;
+            border-radius: 16px;
+            padding: 2rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+            border: 1px solid #f0f0f0;
+            transition: all 0.3s ease;
+        }}
+
+        .event-card:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+        }}
+
+        .event-title {{
+            font-family: 'Sentient', serif;
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #2d2d2d;
+            margin-bottom: 0.5rem;
+        }}
+
+        .event-details {{
+            font-family: 'Satoshi', sans-serif;
+            color: #666;
+            margin-bottom: 1rem;
+        }}
+
+        .event-detail {{
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+        }}
+
+        .event-detail strong {{
+            width: 100px;
+            flex-shrink: 0;
+        }}
+
+        .select-button {{
+            background: #8B5A5C;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-family: 'Satoshi', sans-serif;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s ease;
+            width: 100%;
+            margin-top: 1rem;
+        }}
+
+        .select-button:hover {{
+            background: #7A4B4D;
+        }}
+
+        .capacity-info {{
+            font-size: 0.9rem;
+            color: #999;
+            margin-top: 0.5rem;
+        }}
+
+        .no-events {{
+            text-align: center;
+            padding: 3rem;
+            color: #666;
+        }}
+    </style>
+
+    <div class="events-container">
+        <div class="events-header">
+            <h1 class="events-title">Choose Your Event</h1>
+            <p class="events-subtitle">
+                Select an upcoming event you'd like to attend. We'll match you with compatible attendees to help you make meaningful connections.
+            </p>
+            <p style="margin-top: 1rem; font-size: 14px; color: #8B5A5C;">
+                Don't see an event you like? <a href="/create-event" style="color: #8B5A5C; font-weight: 600; text-decoration: underline;">Create your own event</a> and invite others to join!
+            </p>
+        </div>
+
+        <div class="events-list">
+    '''
+
+    if upcoming_events:
+        for event in upcoming_events:
+            # Format date and time
+            event_date = event['date_time'].strftime('%A, %B %d, %Y')
+            event_time = event['date_time'].strftime('%I:%M %p')
+
+            content += f'''
+            <div class="event-card">
+                <h3 class="event-title">{event['title']}</h3>
+                <div class="event-details">
+                    <div class="event-detail">
+                        <strong>Date:</strong> {event_date}
+                    </div>
+                    <div class="event-detail">
+                        <strong>Time:</strong> {event_time}
+                    </div>
+                    <div class="event-detail">
+                        <strong>Venue:</strong> {event['venue_name'] or 'TBA'}
+                    </div>
+                    {f'<div class="event-detail"><strong>Address:</strong> {event["venue_address"]}</div>' if event['venue_address'] else ''}
+                    <div class="event-detail">
+                        <strong>Organized by:</strong> {event['creator_name'] or 'Unknown'} {event['creator_lastname'] or ''}
+                    </div>
+                </div>
+                {f'<p style="margin-bottom: 1rem; font-family: Satoshi, sans-serif; color: #666;">{event["description"]}</p>' if event['description'] else ''}
+                <form method="POST" action="/select-event" style="margin: 0;">
+                    <input type="hidden" name="event_id" value="{event['id']}">
+                    <button type="submit" class="select-button">Select This Event</button>
+                </form>
+                <div class="capacity-info">
+                    {event['current_attendees']}/{event['capacity']} attendees
+                </div>
+            </div>
+            '''
+    else:
+        content += '''
+        <div class="no-events">
+            <h3>No upcoming events</h3>
+            <p>Check back soon for new events, or <a href="/create-event" style="color: #8B5A5C; font-weight: 600;">create your own event</a> to bring people together!</p>
+        </div>
+        '''
+
+    content += '''
+        </div>
+    </div>
+    '''
+
+    return render_template_with_header("Select Event", content, session.get('user_id'))
+
+@app.route('/select-event', methods=['POST'])
+def select_event():
+    """Handle event selection"""
+    if 'user_id' not in session:
+        return redirect('/login')
+
+    user_id = session['user_id']
+    event_id = request.form.get('event_id')
+
+    if not event_id:
+        flash('Please select an event')
+        return redirect('/events')
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        # Check if event exists and has capacity
+        cursor.execute('''
+            SELECT * FROM events
+            WHERE id = %s AND date_time > NOW() AND is_active = TRUE
+        ''', (event_id,))
+
+        event = cursor.fetchone()
+        if not event:
+            flash('Event not found or no longer available')
+            return redirect('/events')
+
+        if event['current_attendees'] >= event['capacity']:
+            flash('Event is full')
+            return redirect('/events')
+
+        # Check if user already registered for this event
+        cursor.execute('''
+            SELECT id FROM event_registrations
+            WHERE user_id = %s AND event_id = %s
+        ''', (user_id, event_id))
+
+        if cursor.fetchone():
+            flash('You are already registered for this event')
+            return redirect('/dashboard')
+
+        # Register user for event
+        cursor.execute('''
+            INSERT INTO event_registrations (user_id, event_id)
+            VALUES (%s, %s)
+        ''', (user_id, event_id))
+
+        # Update attendee count
+        cursor.execute('''
+            UPDATE events
+            SET current_attendees = current_attendees + 1
+            WHERE id = %s
+        ''', (event_id,))
+
+        conn.commit()
+        flash('Successfully registered for event!')
+
+        # Now redirect to dashboard where matching will happen
+        return redirect('/dashboard')
+
+    except Exception as e:
+        conn.rollback()
+        flash('Error registering for event')
+        return redirect('/events')
+    finally:
+        conn.close()
+
+@app.route('/event-feedback/<int:event_id>')
+@login_required
+def event_feedback(event_id):
+    """Post-event feedback form"""
+    if 'user_id' not in session:
+        return redirect('/login')
+
+    user_id = session['user_id']
+
+    # Check if user attended this event
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT e.*, er.registered_at, er.feedback_submitted
+        FROM events e
+        JOIN event_registrations er ON e.id = er.event_id
+        WHERE er.user_id = %s AND e.id = %s
+    ''', (user_id, event_id))
+
+    event_registration = cursor.fetchone()
+
+    if not event_registration:
+        flash('Event not found or you were not registered')
+        return redirect('/events')
+
+    if event_registration['feedback_submitted']:
+        flash('You have already submitted feedback for this event')
+        return redirect('/events')
+
+    # Check if event has ended
+    if event_registration['date_time'] > datetime.now():
+        flash('Cannot submit feedback for future events')
+        return redirect('/dashboard')
+
+    # Get other attendees who the user could have matched with
+    cursor.execute('''
+        SELECT u.id, u.first_name, u.last_name
+        FROM users u
+        JOIN event_registrations er ON u.id = er.user_id
+        WHERE er.event_id = %s AND u.id != %s
+        ORDER BY u.first_name, u.last_name
+    ''', (event_id, user_id))
+
+    other_attendees = cursor.fetchall()
+    conn.close()
+
+    content = f'''
+    <style>
+        @import url("https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=sentient@400,500,600,700&display=swap");
+
+        .feedback-container {{
+            max-width: 700px;
+            margin: 0 auto;
+            padding: 2rem;
+            min-height: 100vh;
+        }}
+
+        .feedback-header {{
+            text-align: center;
+            margin-bottom: 3rem;
+            padding: 2.5rem 2rem;
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }}
+
+        .feedback-title {{
+            font-family: 'Sentient', serif;
+            font-size: 2.5rem;
+            font-weight: 600;
+            color: #2d2d2d;
+            margin-bottom: 1rem;
+        }}
+
+        .feedback-subtitle {{
+            font-family: 'Satoshi', sans-serif;
+            font-size: 1.1rem;
+            color: #666;
+            line-height: 1.6;
+        }}
+
+        .feedback-section {{
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(20px);
+            border-radius: 24px;
+            padding: 2.5rem;
+            margin-bottom: 2rem;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }}
+
+        .section-title {{
+            font-family: 'Sentient', serif;
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #2d2d2d;
+            margin-bottom: 1.5rem;
+        }}
+
+        .attendee-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+            margin: 1.5rem 0;
+        }}
+
+        .attendee-card {{
+            background: rgba(255, 255, 255, 0.8);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 16px;
+            padding: 1.5rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+        }}
+
+        .attendee-card:hover {{
+            transform: translateY(-2px);
+            border-color: rgba(139, 90, 92, 0.3);
+            box-shadow: 0 8px 24px rgba(139, 90, 92, 0.15);
+        }}
+
+        .attendee-card.selected {{
+            border-color: #8B5A5C;
+            background: rgba(139, 90, 92, 0.1);
+        }}
+
+        .attendee-name {{
+            font-family: 'Satoshi', sans-serif;
+            font-weight: 600;
+            color: #2d2d2d;
+            margin-bottom: 0.5rem;
+        }}
+
+        .no-show-option {{
+            background: rgba(255, 149, 0, 0.1);
+            border-color: rgba(255, 149, 0, 0.3);
+            margin-top: 1rem;
+        }}
+
+        .no-show-option:hover {{
+            border-color: #ff9500;
+            background: rgba(255, 149, 0, 0.2);
+        }}
+
+        .submit-button {{
+            background: #8B5A5C;
+            color: white;
+            border: none;
+            padding: 1.25rem 2.5rem;
+            border-radius: 50px;
+            font-family: 'Satoshi', sans-serif;
+            font-weight: 600;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            width: 100%;
+            margin-top: 2rem;
+        }}
+
+        .submit-button:hover {{
+            background: #7A4B4D;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(139, 90, 92, 0.4);
+        }}
+
+        .submit-button:disabled {{
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }}
+
+        .feedback-text {{
+            width: 100%;
+            min-height: 100px;
+            padding: 1rem;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            font-family: 'Satoshi', sans-serif;
+            background: rgba(255, 255, 255, 0.8);
+            resize: vertical;
+        }}
+
+        .feedback-text:focus {{
+            outline: none;
+            border-color: rgba(139, 90, 92, 0.5);
+        }}
+    </style>
+
+    <div class="feedback-container">
+        <div class="feedback-header">
+            <h1 class="feedback-title">Event Feedback</h1>
+            <p class="feedback-subtitle">
+                How was "{event_registration['title']}"? Your feedback helps us improve future matches and events.
+            </p>
+        </div>
+
+        <form method="POST" action="/submit-event-feedback">
+            <input type="hidden" name="event_id" value="{event_id}">
+
+            <div class="feedback-section">
+                <h3 class="section-title">Who did you connect with best?</h3>
+                <p style="color: #666; margin-bottom: 1.5rem; font-family: 'Satoshi', sans-serif;">
+                    Select the people you had meaningful conversations with or felt a good connection to.
+                    You can select multiple people or mark that you didn't connect with anyone.
+                </p>
+
+                <div class="attendee-grid">
+    '''
+
+    # Add attendee cards
+    for attendee in other_attendees:
+        content += f'''
+                    <div class="attendee-card" onclick="toggleAttendee(this, {attendee['id']})">
+                        <div class="attendee-name">{attendee['first_name']} {attendee['last_name']}</div>
+                        <input type="checkbox" name="connected_users" value="{attendee['id']}" style="display: none;">
+                    </div>
+        '''
+
+    content += '''
+                    <div class="attendee-card no-show-option" onclick="toggleNoShow(this)">
+                        <div class="attendee-name">❌ I didn't attend / No meaningful connections</div>
+                        <input type="checkbox" name="no_show" value="true" style="display: none;">
+                    </div>
+                </div>
+            </div>
+
+            <div class="feedback-section">
+                <h3 class="section-title">Additional Feedback (Optional)</h3>
+                <p style="color: #666; margin-bottom: 1.5rem; font-family: 'Satoshi', sans-serif;">
+                    Tell us about your experience. What worked well? What could be improved?
+                </p>
+                <textarea name="feedback_text" class="feedback-text"
+                          placeholder="Share your thoughts about the event, the venue, the matching, or anything else..."></textarea>
+            </div>
+
+            <button type="submit" class="submit-button" id="submitBtn">
+                Submit Feedback & Continue
+            </button>
+        </form>
+    </div>
+
+    <script>
+        function toggleAttendee(card, userId) {
+            const checkbox = card.querySelector('input[type="checkbox"]');
+            const noShowCard = document.querySelector('.no-show-option');
+            const noShowCheckbox = noShowCard.querySelector('input[type="checkbox"]');
+
+            // If selecting an attendee, uncheck no-show
+            if (!checkbox.checked) {
+                noShowCheckbox.checked = false;
+                noShowCard.classList.remove('selected');
+            }
+
+            // Toggle this attendee
+            checkbox.checked = !checkbox.checked;
+            card.classList.toggle('selected', checkbox.checked);
+
+            updateSubmitButton();
+        }
+
+        function toggleNoShow(card) {
+            const checkbox = card.querySelector('input[type="checkbox"]');
+            const attendeeCards = document.querySelectorAll('.attendee-card:not(.no-show-option)');
+
+            // If selecting no-show, uncheck all attendees
+            if (!checkbox.checked) {
+                attendeeCards.forEach(attendeeCard => {
+                    const attendeeCheckbox = attendeeCard.querySelector('input[type="checkbox"]');
+                    attendeeCheckbox.checked = false;
+                    attendeeCard.classList.remove('selected');
+                });
+            }
+
+            // Toggle no-show
+            checkbox.checked = !checkbox.checked;
+            card.classList.toggle('selected', checkbox.checked);
+
+            updateSubmitButton();
+        }
+
+        function updateSubmitButton() {
+            const anySelected = document.querySelector('input[type="checkbox"]:checked');
+            const submitBtn = document.getElementById('submitBtn');
+            submitBtn.disabled = !anySelected;
+        }
+
+        // Initialize
+        updateSubmitButton();
+    </script>
+    '''
+
+    return render_template_with_header("Event Feedback", content, session.get('user_id'))
+
+@app.route('/submit-event-feedback', methods=['POST'])
+@login_required
+def submit_event_feedback():
+    """Handle event feedback submission"""
+    if 'user_id' not in session:
+        return redirect('/login')
+
+    user_id = session['user_id']
+    event_id = request.form.get('event_id')
+    connected_users = request.form.getlist('connected_users')
+    no_show = request.form.get('no_show') == 'true'
+    feedback_text = request.form.get('feedback_text', '').strip()
+
+    if not event_id:
+        flash('Invalid event')
+        return redirect('/events')
+
+    # Convert connected_users to integers
+    try:
+        connected_user_ids = [int(uid) for uid in connected_users] if connected_users else []
+    except ValueError:
+        flash('Invalid user selection')
+        return redirect(f'/event-feedback/{event_id}')
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        # Check if feedback already submitted
+        cursor.execute('''
+            SELECT feedback_submitted FROM event_registrations
+            WHERE user_id = %s AND event_id = %s
+        ''', (user_id, event_id))
+
+        registration = cursor.fetchone()
+        if not registration:
+            flash('Event registration not found')
+            return redirect('/events')
+
+        if registration['feedback_submitted']:
+            flash('Feedback already submitted')
+            return redirect('/events')
+
+        # Insert feedback record
+        cursor.execute('''
+            INSERT INTO event_feedback (event_id, user_id, matched_users, no_show, feedback_text)
+            VALUES (%s, %s, %s, %s, %s)
+        ''', (event_id, user_id, connected_user_ids, no_show, feedback_text))
+
+        # Mark feedback as submitted
+        cursor.execute('''
+            UPDATE event_registrations
+            SET feedback_submitted = TRUE
+            WHERE user_id = %s AND event_id = %s
+        ''', (user_id, event_id))
+
+        conn.commit()
+        flash('Thank you for your feedback!', 'success')
+
+        # Redirect to events page to see next events
+        return redirect('/events')
+
+    except Exception as e:
+        conn.rollback()
+        flash('Error submitting feedback')
+        print(f"Feedback submission error: {e}")
+        return redirect(f'/event-feedback/{event_id}')
+    finally:
+        conn.close()
+
+# ============================================================================
+# ADMIN EVENT MANAGEMENT ROUTES
+# ============================================================================
+
+@app.route('/admin/events')
+def admin_events():
+    """Admin interface for managing events"""
+    admin_password = request.args.get('password')
+    if admin_password != os.environ.get('ADMIN_PASSWORD', 'admin123'):
+        return '''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Admin Access Required</title>
+            <style>
+                body { font-family: 'Satoshi', sans-serif; padding: 40px; background: #f5f5f5; color: #2d2d2d; }
+                .form-container { max-width: 400px; margin: 0 auto; padding: 30px; background: white; border-radius: 16px; box-shadow: 0 4px 24px rgba(0,0,0,0.1); }
+                input { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 8px; font-family: 'Satoshi', sans-serif; }
+                button { background: #8B5A5C; color: white; padding: 12px 20px; border: none; border-radius: 8px; cursor: pointer; width: 100%; font-family: 'Satoshi', sans-serif; font-weight: 600; }
+                button:hover { background: #7A4B4D; }
+                h2 { color: #2d2d2d; margin-bottom: 1rem; }
+            </style>
+        </head>
+        <body>
+            <div class="form-container">
+                <h2>Admin Access Required</h2>
+                <p>Enter admin password to access event management:</p>
+                <form method="GET">
+                    <input type="password" name="password" placeholder="Admin Password" required>
+                    <button type="submit">Access Event Management</button>
+                </form>
+            </div>
+        </body>
+        </html>
+        '''
+
+    # Get all events
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT e.*,
+               COUNT(er.user_id) as registered_count,
+               COUNT(CASE WHEN ef.no_show = FALSE THEN 1 END) as feedback_count
+        FROM events e
+        LEFT JOIN event_registrations er ON e.id = er.event_id
+        LEFT JOIN event_feedback ef ON e.id = ef.event_id
+        GROUP BY e.id
+        ORDER BY e.date_time DESC
+    ''')
+
+    events = cursor.fetchall()
+    conn.close()
+
+    events_html = ""
+    for event in events:
+        status_color = "#28a745" if event['is_active'] else "#dc3545"
+        status_text = "Active" if event['is_active'] else "Inactive"
+
+        # Format date
+        event_date = event['date_time'].strftime('%A, %B %d, %Y at %I:%M %p')
+
+        events_html += f'''
+        <tr>
+            <td style="padding: 12px; border-bottom: 1px solid #eee;">
+                <strong>{event['title']}</strong><br>
+                <small style="color: #666;">{event_date}</small>
+            </td>
+            <td style="padding: 12px; border-bottom: 1px solid #eee;">{event['venue_name'] or 'TBA'}</td>
+            <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: center;">{event['registered_count']}/{event['capacity']}</td>
+            <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: center;">{event['feedback_count']}</td>
+            <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: center;">
+                <span style="color: {status_color}; font-weight: 600;">{status_text}</span>
+            </td>
+            <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: center;">
+                <a href="/admin/edit-event/{event['id']}?password={admin_password}"
+                   style="color: #8B5A5C; text-decoration: none; margin-right: 10px;">Edit</a>
+                <a href="/admin/delete-event/{event['id']}?password={admin_password}"
+                   style="color: #dc3545; text-decoration: none;"
+                   onclick="return confirm('Are you sure you want to delete this event?')">Delete</a>
+            </td>
+        </tr>
+        '''
+
+    return f'''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Event Management - Admin</title>
+        <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=sentient@400,500,600,700&display=swap" rel="stylesheet">
+        <style>
+            body {{
+                font-family: 'Satoshi', sans-serif;
+                margin: 0;
+                padding: 20px;
+                background: #f5f5f5;
+                color: #2d2d2d;
+                line-height: 1.6;
+            }}
+            .container {{
+                max-width: 1200px;
+                margin: 0 auto;
+                background: white;
+                border-radius: 16px;
+                box-shadow: 0 4px 24px rgba(0,0,0,0.1);
+                overflow: hidden;
+            }}
+            .header {{
+                background: linear-gradient(135deg, #8B5A5C, #7A4B4D);
+                color: white;
+                padding: 2rem;
+                text-align: center;
+            }}
+            .header h1 {{
+                font-family: 'Sentient', serif;
+                font-size: 2.5rem;
+                margin: 0 0 0.5rem 0;
+                font-weight: 600;
+            }}
+            .content {{ padding: 2rem; }}
+            .nav-links {{
+                margin-bottom: 2rem;
+                text-align: center;
+            }}
+            .nav-links a {{
+                display: inline-block;
+                margin: 0 1rem;
+                padding: 12px 24px;
+                background: #8B5A5C;
+                color: white;
+                text-decoration: none;
+                border-radius: 8px;
+                font-weight: 600;
+                transition: background 0.2s;
+            }}
+            .nav-links a:hover {{ background: #7A4B4D; }}
+            table {{
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 1rem;
+                background: white;
+                border-radius: 8px;
+                overflow: hidden;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            }}
+            th {{
+                background: #f8f9fa;
+                padding: 16px 12px;
+                text-align: left;
+                font-weight: 600;
+                color: #2d2d2d;
+                border-bottom: 2px solid #dee2e6;
+            }}
+            tr:hover {{ background: #f8f9fa; }}
+            .stats {{
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                gap: 1rem;
+                margin-bottom: 2rem;
+            }}
+            .stat-card {{
+                background: linear-gradient(135deg, #8B5A5C, #7A4B4D);
+                color: white;
+                padding: 1.5rem;
+                border-radius: 12px;
+                text-align: center;
+            }}
+            .stat-number {{
+                font-size: 2rem;
+                font-weight: 700;
+                margin-bottom: 0.5rem;
+            }}
+            .stat-label {{
+                font-size: 0.9rem;
+                opacity: 0.9;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>Event Management</h1>
+                <p>Manage events for the friend-matching platform</p>
+            </div>
+
+            <div class="content">
+                <div class="nav-links">
+                    <a href="/admin/add-event?password={admin_password}">Add New Event</a>
+                    <a href="/admin/users?password={admin_password}">Manage Users</a>
+                    <a href="/admin/verification-queue?password={admin_password}">Verification Queue</a>
+                </div>
+
+                <div class="stats">
+                    <div class="stat-card">
+                        <div class="stat-number">{len(events)}</div>
+                        <div class="stat-label">Total Events</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">{len([e for e in events if e['is_active']])}</div>
+                        <div class="stat-label">Active Events</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">{sum(e['registered_count'] for e in events)}</div>
+                        <div class="stat-label">Total Registrations</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">{sum(e['feedback_count'] for e in events)}</div>
+                        <div class="stat-label">Feedback Submitted</div>
+                    </div>
+                </div>
+
+                <h2>All Events</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Event Details</th>
+                            <th>Venue</th>
+                            <th>Attendance</th>
+                            <th>Feedback</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {events_html}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </body>
+    </html>
+    '''
+
+@app.route('/admin/add-event')
+def admin_add_event():
+    """Admin form to add a new event"""
+    admin_password = request.args.get('password')
+    if admin_password != os.environ.get('ADMIN_PASSWORD', 'admin123'):
+        return redirect('/admin/events')
+
+    return f'''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Add New Event - Admin</title>
+        <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=sentient@400,500,600,700&display=swap" rel="stylesheet">
+        <style>
+            body {{
+                font-family: 'Satoshi', sans-serif;
+                margin: 0;
+                padding: 20px;
+                background: #f5f5f5;
+                color: #2d2d2d;
+                line-height: 1.6;
+            }}
+            .container {{
+                max-width: 800px;
+                margin: 0 auto;
+                background: white;
+                border-radius: 16px;
+                box-shadow: 0 4px 24px rgba(0,0,0,0.1);
+                overflow: hidden;
+            }}
+            .header {{
+                background: linear-gradient(135deg, #8B5A5C, #7A4B4D);
+                color: white;
+                padding: 2rem;
+                text-align: center;
+            }}
+            .header h1 {{
+                font-family: 'Sentient', serif;
+                font-size: 2rem;
+                margin: 0 0 0.5rem 0;
+            }}
+            .content {{ padding: 2rem; }}
+            .form-group {{
+                margin-bottom: 1.5rem;
+            }}
+            .form-label {{
+                display: block;
+                margin-bottom: 0.5rem;
+                font-weight: 600;
+                color: #2d2d2d;
+            }}
+            .form-input, .form-textarea, .form-select {{
+                width: 100%;
+                padding: 12px;
+                border: 2px solid #ddd;
+                border-radius: 8px;
+                font-family: 'Satoshi', sans-serif;
+                font-size: 1rem;
+                box-sizing: border-box;
+            }}
+            .form-input:focus, .form-textarea:focus, .form-select:focus {{
+                outline: none;
+                border-color: #8B5A5C;
+            }}
+            .form-textarea {{
+                resize: vertical;
+                min-height: 100px;
+            }}
+            .form-row {{
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 1rem;
+            }}
+            .submit-button {{
+                background: #8B5A5C;
+                color: white;
+                border: none;
+                padding: 16px 32px;
+                border-radius: 8px;
+                font-family: 'Satoshi', sans-serif;
+                font-weight: 600;
+                font-size: 1rem;
+                cursor: pointer;
+                width: 100%;
+                margin-top: 1rem;
+            }}
+            .submit-button:hover {{ background: #7A4B4D; }}
+            .back-link {{
+                display: inline-block;
+                margin-bottom: 1rem;
+                color: #8B5A5C;
+                text-decoration: none;
+                font-weight: 600;
+            }}
+            .back-link:hover {{ color: #7A4B4D; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>Add New Event</h1>
+                <p>Create a new event for users to attend and match</p>
+            </div>
+
+            <div class="content">
+                <a href="/admin/events?password={admin_password}" class="back-link">← Back to Event Management</a>
+
+                <form method="POST" action="/admin/create-event">
+                    <input type="hidden" name="password" value="{admin_password}">
+
+                    <div class="form-group">
+                        <label class="form-label" for="title">Event Title</label>
+                        <input type="text" name="title" id="title" class="form-input"
+                               placeholder="e.g., London Networking Mixer" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="description">Event Description</label>
+                        <textarea name="description" id="description" class="form-textarea"
+                                  placeholder="Describe what this event is about, what to expect, dress code, etc."></textarea>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label" for="date">Event Date</label>
+                            <input type="date" name="date" id="date" class="form-input" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="time">Event Time</label>
+                            <input type="time" name="time" id="time" class="form-input" required>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="venue_name">Venue Name</label>
+                        <input type="text" name="venue_name" id="venue_name" class="form-input"
+                               placeholder="e.g., The Shard Sky Lounge">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="venue_address">Venue Address</label>
+                        <textarea name="venue_address" id="venue_address" class="form-textarea"
+                                  placeholder="Full address including postcode"></textarea>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label" for="capacity">Capacity (Max Attendees)</label>
+                            <input type="number" name="capacity" id="capacity" class="form-input"
+                                   placeholder="e.g., 50" min="1" max="500" value="50" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="is_active">Status</label>
+                            <select name="is_active" id="is_active" class="form-select" required>
+                                <option value="true">Active (Users can register)</option>
+                                <option value="false">Inactive (Hidden from users)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="submit-button">Create Event</button>
+                </form>
+            </div>
+        </div>
+    </body>
+    </html>
+    '''
+
+@app.route('/admin/create-event', methods=['POST'])
+def admin_create_event():
+    """Handle creating a new event"""
+    admin_password = request.form.get('password')
+    if admin_password != os.environ.get('ADMIN_PASSWORD', 'admin123'):
+        return redirect('/admin/events')
+
+    title = request.form.get('title')
+    description = request.form.get('description', '')
+    date = request.form.get('date')
+    time = request.form.get('time')
+    venue_name = request.form.get('venue_name', '')
+    venue_address = request.form.get('venue_address', '')
+    capacity = request.form.get('capacity')
+    is_active = request.form.get('is_active') == 'true'
+
+    if not all([title, date, time, capacity]):
+        return "Missing required fields", 400
+
+    # Combine date and time
+    from datetime import datetime
+    try:
+        date_time = datetime.strptime(f"{date} {time}", "%Y-%m-%d %H:%M")
+    except ValueError:
+        return "Invalid date/time format", 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute('''
+            INSERT INTO events (title, description, venue_name, venue_address,
+                              date_time, capacity, is_active)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ''', (title, description, venue_name, venue_address, date_time, capacity, is_active))
+
+        conn.commit()
+        return redirect(f'/admin/events?password={admin_password}')
+
+    except Exception as e:
+        conn.rollback()
+        return f"Error creating event: {e}", 500
+    finally:
+        conn.close()
+
+@app.route('/admin/edit-event/<int:event_id>')
+def admin_edit_event(event_id):
+    """Admin form to edit an existing event"""
+    admin_password = request.args.get('password')
+    if admin_password != os.environ.get('ADMIN_PASSWORD', 'admin123'):
+        return redirect('/admin/events')
+
+    # Get event details
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('SELECT * FROM events WHERE id = %s', (event_id,))
+    event = cursor.fetchone()
+    conn.close()
+
+    if not event:
+        return "Event not found", 404
+
+    # Format date and time for form inputs
+    event_date = event['date_time'].strftime('%Y-%m-%d')
+    event_time = event['date_time'].strftime('%H:%M')
+
+    return f'''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Edit Event - Admin</title>
+        <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=sentient@400,500,600,700&display=swap" rel="stylesheet">
+        <style>
+            body {{
+                font-family: 'Satoshi', sans-serif;
+                margin: 0;
+                padding: 20px;
+                background: #f5f5f5;
+                color: #2d2d2d;
+                line-height: 1.6;
+            }}
+            .container {{
+                max-width: 800px;
+                margin: 0 auto;
+                background: white;
+                border-radius: 16px;
+                box-shadow: 0 4px 24px rgba(0,0,0,0.1);
+                overflow: hidden;
+            }}
+            .header {{
+                background: linear-gradient(135deg, #8B5A5C, #7A4B4D);
+                color: white;
+                padding: 2rem;
+                text-align: center;
+            }}
+            .header h1 {{
+                font-family: 'Sentient', serif;
+                font-size: 2rem;
+                margin: 0 0 0.5rem 0;
+            }}
+            .content {{ padding: 2rem; }}
+            .form-group {{
+                margin-bottom: 1.5rem;
+            }}
+            .form-label {{
+                display: block;
+                margin-bottom: 0.5rem;
+                font-weight: 600;
+                color: #2d2d2d;
+            }}
+            .form-input, .form-textarea, .form-select {{
+                width: 100%;
+                padding: 12px;
+                border: 2px solid #ddd;
+                border-radius: 8px;
+                font-family: 'Satoshi', sans-serif;
+                font-size: 1rem;
+                box-sizing: border-box;
+            }}
+            .form-input:focus, .form-textarea:focus, .form-select:focus {{
+                outline: none;
+                border-color: #8B5A5C;
+            }}
+            .form-textarea {{
+                resize: vertical;
+                min-height: 100px;
+            }}
+            .form-row {{
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 1rem;
+            }}
+            .submit-button {{
+                background: #8B5A5C;
+                color: white;
+                border: none;
+                padding: 16px 32px;
+                border-radius: 8px;
+                font-family: 'Satoshi', sans-serif;
+                font-weight: 600;
+                font-size: 1rem;
+                cursor: pointer;
+                width: 100%;
+                margin-top: 1rem;
+            }}
+            .submit-button:hover {{ background: #7A4B4D; }}
+            .back-link {{
+                display: inline-block;
+                margin-bottom: 1rem;
+                color: #8B5A5C;
+                text-decoration: none;
+                font-weight: 600;
+            }}
+            .back-link:hover {{ color: #7A4B4D; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>Edit Event</h1>
+                <p>Update event details</p>
+            </div>
+
+            <div class="content">
+                <a href="/admin/events?password={admin_password}" class="back-link">← Back to Event Management</a>
+
+                <form method="POST" action="/admin/update-event">
+                    <input type="hidden" name="password" value="{admin_password}">
+                    <input type="hidden" name="event_id" value="{event_id}">
+
+                    <div class="form-group">
+                        <label class="form-label" for="title">Event Title</label>
+                        <input type="text" name="title" id="title" class="form-input"
+                               value="{event['title']}" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="description">Event Description</label>
+                        <textarea name="description" id="description" class="form-textarea">{event['description'] or ''}</textarea>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label" for="date">Event Date</label>
+                            <input type="date" name="date" id="date" class="form-input"
+                                   value="{event_date}" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="time">Event Time</label>
+                            <input type="time" name="time" id="time" class="form-input"
+                                   value="{event_time}" required>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="venue_name">Venue Name</label>
+                        <input type="text" name="venue_name" id="venue_name" class="form-input"
+                               value="{event['venue_name'] or ''}">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="venue_address">Venue Address</label>
+                        <textarea name="venue_address" id="venue_address" class="form-textarea">{event['venue_address'] or ''}</textarea>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label" for="capacity">Capacity (Max Attendees)</label>
+                            <input type="number" name="capacity" id="capacity" class="form-input"
+                                   value="{event['capacity']}" min="1" max="500" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="is_active">Status</label>
+                            <select name="is_active" id="is_active" class="form-select" required>
+                                <option value="true" {"selected" if event['is_active'] else ""}>Active (Users can register)</option>
+                                <option value="false" {"selected" if not event['is_active'] else ""}>Inactive (Hidden from users)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="submit-button">Update Event</button>
+                </form>
+            </div>
+        </div>
+    </body>
+    </html>
+    '''
+
+@app.route('/admin/update-event', methods=['POST'])
+def admin_update_event():
+    """Handle updating an existing event"""
+    admin_password = request.form.get('password')
+    if admin_password != os.environ.get('ADMIN_PASSWORD', 'admin123'):
+        return redirect('/admin/events')
+
+    event_id = request.form.get('event_id')
+    title = request.form.get('title')
+    description = request.form.get('description', '')
+    date = request.form.get('date')
+    time = request.form.get('time')
+    venue_name = request.form.get('venue_name', '')
+    venue_address = request.form.get('venue_address', '')
+    capacity = request.form.get('capacity')
+    is_active = request.form.get('is_active') == 'true'
+
+    if not all([event_id, title, date, time, capacity]):
+        return "Missing required fields", 400
+
+    # Combine date and time
+    from datetime import datetime
+    try:
+        date_time = datetime.strptime(f"{date} {time}", "%Y-%m-%d %H:%M")
+    except ValueError:
+        return "Invalid date/time format", 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute('''
+            UPDATE events
+            SET title = %s, description = %s, venue_name = %s, venue_address = %s,
+                date_time = %s, capacity = %s, is_active = %s
+            WHERE id = %s
+        ''', (title, description, venue_name, venue_address, date_time, capacity, is_active, event_id))
+
+        conn.commit()
+        return redirect(f'/admin/events?password={admin_password}')
+
+    except Exception as e:
+        conn.rollback()
+        return f"Error updating event: {e}", 500
+    finally:
+        conn.close()
+
+@app.route('/admin/delete-event/<int:event_id>')
+def admin_delete_event(event_id):
+    """Handle deleting an event"""
+    admin_password = request.args.get('password')
+    if admin_password != os.environ.get('ADMIN_PASSWORD', 'admin123'):
+        return redirect('/admin/events')
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        # Check if event has registrations
+        cursor.execute('SELECT COUNT(*) as count FROM event_registrations WHERE event_id = %s', (event_id,))
+        registration_count = cursor.fetchone()['count']
+
+        if registration_count > 0:
+            # Don't delete events with registrations, just deactivate them
+            cursor.execute('UPDATE events SET is_active = FALSE WHERE id = %s', (event_id,))
+            conn.commit()
+        else:
+            # Safe to delete events with no registrations
+            cursor.execute('DELETE FROM events WHERE id = %s', (event_id,))
+            conn.commit()
+
+        return redirect(f'/admin/events?password={admin_password}')
+
+    except Exception as e:
+        conn.rollback()
+        return f"Error deleting event: {e}", 500
+    finally:
+        conn.close()
+
+# ============================================================================
+# USER EVENT MANAGEMENT ROUTES
+# ============================================================================
+
+def require_verification(user_id, verification_system):
+    """Helper function to check if user is verified"""
+    verification_status = verification_system.get_verification_status(user_id)
+    if not verification_status or not verification_status.get('is_verified', False):
+        flash('You must be verified to manage events', 'error')
+        return redirect('/profile-settings')
+    return None
+
+@app.route('/my-events')
+@login_required
+def my_events():
+    """Show events created by the current user"""
+    user_id = session['user_id']
+
+    # Check if user is verified
+    verification_check = require_verification(user_id, verification_system)
+    if verification_check:
+        return verification_check
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Get events created by this user
+    cursor.execute('''
+        SELECT e.*,
+               (SELECT COUNT(*) FROM event_registrations WHERE event_id = e.id) as registration_count
+        FROM events e
+        WHERE e.creator_id = %s
+        ORDER BY e.date_time ASC
+    ''', (user_id,))
+
+    my_events = cursor.fetchall()
+    conn.close()
+
+    # Generate the HTML content with events data
+    events_html = ""
+    if my_events:
+        for event in my_events:
+            event_date = event['date_time'].strftime('%B %d, %Y at %I:%M %p')
+            status_text = "✅ Active" if event['is_active'] else "❌ Inactive"
+            description = event['description'] or 'No description provided'
+
+            deactivate_button = ""
+            if event['is_active']:
+                deactivate_button = f'''
+                    <a href="/deactivate-event/{event['id']}" class="btn btn-danger" onclick="return confirm('Are you sure you want to deactivate this event?')">Deactivate</a>
+                '''
+
+            events_html += f'''
+                <div class="event-card">
+                    <div class="event-title">{event['title']}</div>
+                    <div class="event-details">
+                        <strong>Date:</strong> {event_date}<br>
+                        <strong>Venue:</strong> {event['venue_name']}<br>
+                        <strong>Address:</strong> {event['venue_address']}<br>
+                        <strong>Description:</strong> {description}
+                    </div>
+                    <div class="stats">
+                        👥 {event['registration_count']} / {event['capacity']} attendees | {status_text}
+                    </div>
+                    <div class="event-actions">
+                        <a href="/manage-event/{event['id']}" class="btn btn-primary">Manage Event</a>
+                        <a href="/edit-event/{event['id']}" class="btn btn-secondary">Edit Details</a>
+                        {deactivate_button}
+                    </div>
+                </div>
+            '''
+    else:
+        events_html = '''
+            <div class="no-events">
+                <h3>No Events Created Yet</h3>
+                <p>You haven't created any events yet. Create your first event to start bringing people together!</p>
+                <a href="/create-event" class="btn btn-primary">Create Your First Event</a>
+            </div>
+        '''
+
+    content = f'''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>My Events - Flock</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link href="https://fonts.googleapis.com/css2?family=Satoshi:wght@300..900&display=swap" rel="stylesheet">
+        <style>
+            @import url("https://fonts.googleapis.com/css2?family=Sentient:wght@300..700&display=swap");
+
+            :root {{
+                --color-charcoal: #2d2d2d;
+                --color-gray-600: #666;
+                --color-gray-300: #d1d5db;
+                --color-emerald: #059669;
+            }}
+
+            body {{
+                font-family: 'Satoshi', 'Sentient', -apple-system, BlinkMacSystemFont, sans-serif;
+                margin: 0;
+                padding: 2rem;
+                background: white;
+                color: black;
+                min-height: 100vh;
+            }}
+
+            .container {{
+                max-width: 1000px;
+                margin: 0 auto;
+            }}
+
+            .header {{
+                text-align: center;
+                margin-bottom: 3rem;
+            }}
+
+            .header h1 {{
+                font-family: 'Sentient', sans-serif;
+                font-size: 2.5rem;
+                font-weight: 600;
+                margin: 0 0 2rem 0;
+                color: black;
+            }}
+
+            .event-card {{
+                background: white;
+                border: 1px solid var(--color-gray-300);
+                border-radius: 16px;
+                padding: 2rem;
+                margin-bottom: 1.5rem;
+                transition: all 0.2s ease;
+            }}
+
+            .event-card:hover {{
+                border-color: var(--color-charcoal);
+                box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+            }}
+
+            .event-title {{
+                font-family: 'Sentient', sans-serif;
+                font-size: 1.5rem;
+                font-weight: 600;
+                color: black;
+                margin-bottom: 1rem;
+            }}
+
+            .event-details {{
+                margin-bottom: 1.5rem;
+                color: var(--color-gray-600);
+                line-height: 1.6;
+                font-family: 'Satoshi', sans-serif;
+            }}
+
+            .event-actions {{
+                margin-top: 1.5rem;
+                display: flex;
+                gap: 0.75rem;
+                flex-wrap: wrap;
+            }}
+
+            .btn {{
+                font-family: 'Satoshi', sans-serif;
+                padding: 0.75rem 1.5rem;
+                border: none;
+                border-radius: 8px;
+                cursor: pointer;
+                text-decoration: none;
+                display: inline-block;
+                font-weight: 600;
+                font-size: 0.9rem;
+                transition: all 0.2s ease;
+            }}
+
+            .btn-primary {{
+                background: black;
+                color: white;
+                border: 1px solid black;
+            }}
+
+            .btn-primary:hover {{
+                background: var(--color-charcoal);
+            }}
+
+            .btn-secondary {{
+                background: white;
+                color: black;
+                border: 1px solid var(--color-gray-300);
+            }}
+
+            .btn-secondary:hover {{
+                border-color: black;
+            }}
+
+            .btn-danger {{
+                background: white;
+                color: #dc3545;
+                border: 1px solid #dc3545;
+            }}
+
+            .btn-danger:hover {{
+                background: #dc3545;
+                color: white;
+            }}
+
+            .create-event-btn {{
+                font-family: 'Sentient', sans-serif;
+                background: black;
+                color: white;
+                padding: 1rem 2rem;
+                border-radius: 12px;
+                font-size: 1.125rem;
+                font-weight: 600;
+                border: 1px solid black;
+                transition: all 0.2s ease;
+            }}
+
+            .create-event-btn:hover {{
+                background: var(--color-charcoal);
+                transform: translateY(-1px);
+            }}
+
+            .stats {{
+                background: #f8f9fa;
+                color: var(--color-gray-600);
+                padding: 0.75rem 1rem;
+                border-radius: 8px;
+                display: inline-block;
+                margin-bottom: 1rem;
+                font-family: 'Satoshi', sans-serif;
+                font-size: 0.9rem;
+                border: 1px solid var(--color-gray-300);
+            }}
+
+            .no-events {{
+                text-align: center;
+                padding: 4rem 2rem;
+                background: white;
+                border: 1px solid var(--color-gray-300);
+                border-radius: 16px;
+            }}
+
+            .no-events h3 {{
+                font-family: 'Sentient', sans-serif;
+                font-size: 1.5rem;
+                font-weight: 600;
+                color: black;
+                margin-bottom: 1rem;
+            }}
+
+            .no-events p {{
+                font-family: 'Satoshi', sans-serif;
+                color: var(--color-gray-600);
+                margin-bottom: 2rem;
+                line-height: 1.6;
+            }}
+
+            .no-events .btn {{
+                font-family: 'Sentient', sans-serif;
+                font-size: 1rem;
+                padding: 1rem 2rem;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>My Events</h1>
+                <a href="/create-event" class="btn create-event-btn">+ Create New Event</a>
+            </div>
+            {events_html}
+        </div>
+    </body>
+    </html>
+    '''
+
+    return render_template_with_header("My Events", content, user_info=session.get('user_info'))
+
+@app.route('/create-event')
+@login_required
+def create_event():
+    """Show form to create a new event"""
+    user_id = session['user_id']
+
+    # Check if user is verified
+    verification_check = require_verification(user_id, verification_system)
+    if verification_check:
+        return verification_check
+    content = '''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Create Event - Flock</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link href="https://fonts.googleapis.com/css2?family=Satoshi:wght@300..900&display=swap" rel="stylesheet">
+        <style>
+            @import url("https://fonts.googleapis.com/css2?family=Sentient:wght@300..700&display=swap");
+
+            :root {
+                --color-charcoal: #2d2d2d;
+                --color-gray-600: #666;
+                --color-gray-300: #d1d5db;
+            }
+
+            body {
+                font-family: 'Satoshi', 'Sentient', -apple-system, BlinkMacSystemFont, sans-serif;
+                margin: 0;
+                padding: 2rem;
+                background: white;
+                color: black;
+                min-height: 100vh;
+            }
+
+            .container {
+                max-width: 600px;
+                margin: 0 auto;
+            }
+
+            .form-card {
+                background: white;
+                border: 1px solid var(--color-gray-300);
+                border-radius: 16px;
+                padding: 2rem;
+            }
+
+            .form-card h1 {
+                font-family: 'Sentient', sans-serif;
+                font-size: 2rem;
+                font-weight: 600;
+                color: black;
+                margin: 0 0 2rem 0;
+                text-align: center;
+            }
+
+            .form-group {
+                margin-bottom: 1.5rem;
+            }
+
+            label {
+                display: block;
+                margin-bottom: 0.5rem;
+                font-weight: 600;
+                font-family: 'Satoshi', sans-serif;
+                color: black;
+            }
+
+            input, textarea, select {
+                width: 100%;
+                padding: 0.75rem;
+                border: 1px solid var(--color-gray-300);
+                border-radius: 8px;
+                font-family: 'Satoshi', sans-serif;
+                box-sizing: border-box;
+                font-size: 1rem;
+                color: black;
+                background: white;
+                transition: border-color 0.2s ease;
+            }
+
+            input:focus, textarea:focus, select:focus {
+                outline: none;
+                border-color: black;
+            }
+
+            textarea {
+                height: 100px;
+                resize: vertical;
+            }
+
+            .btn {
+                font-family: 'Sentient', sans-serif;
+                background: black;
+                color: white;
+                padding: 1rem 2rem;
+                border: 1px solid black;
+                border-radius: 8px;
+                cursor: pointer;
+                font-size: 1rem;
+                font-weight: 600;
+                width: 100%;
+                transition: all 0.2s ease;
+            }
+
+            .btn:hover {
+                background: var(--color-charcoal);
+                transform: translateY(-1px);
+            }
+
+            .back-link {
+                color: var(--color-gray-600);
+                text-decoration: none;
+                margin-bottom: 2rem;
+                display: inline-block;
+                font-family: 'Satoshi', sans-serif;
+                font-weight: 500;
+                transition: color 0.2s ease;
+            }
+
+            .back-link:hover {
+                color: black;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <a href="/my-events" class="back-link">← Back to My Events</a>
+
+            <div class="form-card">
+                <h1>Create New Event</h1>
+                <form action="/create-event" method="POST">
+                    <div class="form-group">
+                        <label for="title">Event Title *</label>
+                        <input type="text" id="title" name="title" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="description">Description</label>
+                        <textarea id="description" name="description" placeholder="Tell people what this event is about..."></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="venue_name">Venue Name *</label>
+                        <input type="text" id="venue_name" name="venue_name" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="venue_address">Venue Address *</label>
+                        <input type="text" id="venue_address" name="venue_address" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="date_time">Date and Time *</label>
+                        <input type="datetime-local" id="date_time" name="date_time" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="capacity">Capacity</label>
+                        <input type="number" id="capacity" name="capacity" value="50" min="1" max="1000">
+                    </div>
+
+                    <button type="submit" class="btn">Create Event</button>
+                </form>
+            </div>
+        </div>
+    </body>
+    </html>
+    '''
+    return render_template_with_header("Create Event", content, user_info=session.get('user_info'))
+
+@app.route('/create-event', methods=['POST'])
+@login_required
+def handle_create_event():
+    """Handle event creation"""
+    user_id = session['user_id']
+
+    # Check if user is verified
+    verification_check = require_verification(user_id, verification_system)
+    if verification_check:
+        return verification_check
+
+    title = request.form.get('title')
+    description = request.form.get('description')
+    venue_name = request.form.get('venue_name')
+    venue_address = request.form.get('venue_address')
+    date_time = request.form.get('date_time')
+    capacity = request.form.get('capacity', 50)
+
+    if not all([title, venue_name, venue_address, date_time]):
+        flash('Please fill in all required fields', 'error')
+        return redirect('/create-event')
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute('''
+            INSERT INTO events (title, description, venue_name, venue_address, date_time, capacity, creator_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        ''', (title, description, venue_name, venue_address, date_time, capacity, user_id))
+
+        event_id = cursor.fetchone()['id']
+
+        # Automatically register the creator for their own event
+        cursor.execute('''
+            INSERT INTO event_registrations (user_id, event_id)
+            VALUES (%s, %s)
+        ''', (user_id, event_id))
+
+        conn.commit()
+        flash(f'Event "{title}" created successfully!', 'success')
+        return redirect('/my-events')
+
+    except Exception as e:
+        conn.rollback()
+        flash(f'Error creating event: {str(e)}', 'error')
+        return redirect('/create-event')
+    finally:
+        conn.close()
+
+@app.route('/edit-event/<int:event_id>')
+@login_required
+def edit_event(event_id):
+    """Show form to edit an event"""
+    user_id = session['user_id']
+
+    # Check if user is verified
+    verification_check = require_verification(user_id, verification_system)
+    if verification_check:
+        return verification_check
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Get event and verify ownership
+    cursor.execute('SELECT * FROM events WHERE id = %s AND creator_id = %s', (event_id, user_id))
+    event = cursor.fetchone()
+
+    if not event:
+        flash('Event not found or you do not have permission to edit it', 'error')
+        return redirect('/my-events')
+
+    conn.close()
+
+    # Format the datetime for the form
+    formatted_datetime = event['date_time'].strftime('%Y-%m-%dT%H:%M')
+    description = event['description'] or ''
+
+    content = f'''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Edit Event - Flock</title>
+        <style>
+            body {{ font-family: 'Satoshi', sans-serif; margin: 0; padding: 20px; background: #f8f9fa; color: #2d2d2d; }}
+            .container {{ max-width: 600px; margin: 0 auto; }}
+            .form-card {{ background: white; border-radius: 12px; padding: 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+            .form-group {{ margin-bottom: 20px; }}
+            label {{ display: block; margin-bottom: 5px; font-weight: 600; }}
+            input, textarea, select {{ width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 6px; font-family: 'Satoshi', sans-serif; box-sizing: border-box; }}
+            textarea {{ height: 100px; resize: vertical; }}
+            .btn {{ background: #8B5A5C; color: white; padding: 15px 30px; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: 600; width: 100%; }}
+            .btn:hover {{ background: #7a4c4e; }}
+            .back-link {{ color: #8B5A5C; text-decoration: none; margin-bottom: 20px; display: inline-block; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <a href="/my-events" class="back-link">← Back to My Events</a>
+
+            <div class="form-card">
+                <h1>Edit Event</h1>
+                <form action="/update-event/{event['id']}" method="POST">
+                    <div class="form-group">
+                        <label for="title">Event Title *</label>
+                        <input type="text" id="title" name="title" value="{event['title']}" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="description">Description</label>
+                        <textarea id="description" name="description">{description}</textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="venue_name">Venue Name *</label>
+                        <input type="text" id="venue_name" name="venue_name" value="{event['venue_name']}" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="venue_address">Venue Address *</label>
+                        <input type="text" id="venue_address" name="venue_address" value="{event['venue_address']}" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="date_time">Date and Time *</label>
+                        <input type="datetime-local" id="date_time" name="date_time" value="{formatted_datetime}" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="capacity">Capacity</label>
+                        <input type="number" id="capacity" name="capacity" value="{event['capacity']}" min="1" max="1000">
+                    </div>
+
+                    <button type="submit" class="btn">Update Event</button>
+                </form>
+            </div>
+        </div>
+    </body>
+    </html>
+    '''
+
+    return render_template_with_header("Edit Event", content, user_info=session.get('user_info'))
+
+@app.route('/update-event/<int:event_id>', methods=['POST'])
+@login_required
+def handle_update_event(event_id):
+    """Handle event updates"""
+    user_id = session['user_id']
+
+    # Check if user is verified
+    verification_check = require_verification(user_id, verification_system)
+    if verification_check:
+        return verification_check
+
+    title = request.form.get('title')
+    description = request.form.get('description')
+    venue_name = request.form.get('venue_name')
+    venue_address = request.form.get('venue_address')
+    date_time = request.form.get('date_time')
+    capacity = request.form.get('capacity', 50)
+
+    if not all([title, venue_name, venue_address, date_time]):
+        flash('Please fill in all required fields', 'error')
+        return redirect(f'/edit-event/{event_id}')
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        # Verify ownership and update
+        cursor.execute('''
+            UPDATE events
+            SET title = %s, description = %s, venue_name = %s, venue_address = %s,
+                date_time = %s, capacity = %s
+            WHERE id = %s AND creator_id = %s
+        ''', (title, description, venue_name, venue_address, date_time, capacity, event_id, user_id))
+
+        if cursor.rowcount == 0:
+            flash('Event not found or you do not have permission to edit it', 'error')
+        else:
+            conn.commit()
+            flash('Event updated successfully!', 'success')
+
+        return redirect('/my-events')
+
+    except Exception as e:
+        conn.rollback()
+        flash(f'Error updating event: {str(e)}', 'error')
+        return redirect(f'/edit-event/{event_id}')
+    finally:
+        conn.close()
+
+@app.route('/manage-event/<int:event_id>')
+@login_required
+def manage_event(event_id):
+    """Show event management page with attendee list"""
+    user_id = session['user_id']
+
+    # Check if user is verified
+    verification_check = require_verification(user_id, verification_system)
+    if verification_check:
+        return verification_check
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Get event and verify ownership
+    cursor.execute('SELECT * FROM events WHERE id = %s AND creator_id = %s', (event_id, user_id))
+    event = cursor.fetchone()
+
+    if not event:
+        flash('Event not found or you do not have permission to manage it', 'error')
+        return redirect('/my-events')
+
+    # Get attendees
+    cursor.execute('''
+        SELECT u.id, u.first_name, u.last_name, u.email, er.registered_at
+        FROM users u
+        JOIN event_registrations er ON u.id = er.user_id
+        WHERE er.event_id = %s
+        ORDER BY er.registered_at ASC
+    ''', (event_id,))
+
+    attendees = cursor.fetchall()
+    conn.close()
+
+    # Format event data
+    event_date = event['date_time'].strftime('%B %d, %Y at %I:%M %p')
+    status_text = "✅ Event is active" if event['is_active'] else "❌ Event is inactive"
+    attendee_count = len(attendees)
+
+    # Generate attendees HTML
+    attendees_html = ""
+    if attendees:
+        for attendee in attendees:
+            registered_date = attendee['registered_at'].strftime('%B %d, %Y at %I:%M %p')
+            attendees_html += f'''
+                <div class="attendee-item">
+                    <div class="attendee-info">
+                        <div class="attendee-name">{attendee['first_name']} {attendee['last_name']}</div>
+                        <div class="attendee-email">{attendee['email']}</div>
+                        <div class="registered-date">Registered: {registered_date}</div>
+                    </div>
+                </div>
+            '''
+    else:
+        attendees_html = '<p style="text-align: center; color: #666; padding: 40px;">No attendees registered yet.</p>'
+
+    # Generate deactivate button if event is active
+    deactivate_button = ""
+    if event['is_active']:
+        deactivate_button = f'''
+            <a href="/deactivate-event/{event['id']}" class="btn btn-secondary" onclick="return confirm('Are you sure you want to deactivate this event?')">Deactivate Event</a>
+        '''
+
+    description_html = ""
+    if event['description']:
+        description_html = f'<strong>Description:</strong> {event["description"]}<br>'
+
+    content = f'''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Manage Event - Flock</title>
+        <style>
+            body {{ font-family: 'Satoshi', sans-serif; margin: 0; padding: 20px; background: #f8f9fa; color: #2d2d2d; }}
+            .container {{ max-width: 1000px; margin: 0 auto; }}
+            .event-header {{ background: white; border-radius: 12px; padding: 30px; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+            .event-title {{ font-size: 28px; font-weight: 700; color: #8B5A5C; margin-bottom: 15px; }}
+            .event-details {{ color: #666; margin-bottom: 20px; }}
+            .attendees-section {{ background: white; border-radius: 12px; padding: 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+            .attendee-item {{ padding: 15px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }}
+            .attendee-item:last-child {{ border-bottom: none; }}
+            .attendee-info {{ flex-grow: 1; }}
+            .attendee-name {{ font-weight: 600; }}
+            .attendee-email {{ color: #666; font-size: 14px; }}
+            .registered-date {{ color: #888; font-size: 12px; }}
+            .back-link {{ color: #8B5A5C; text-decoration: none; margin-bottom: 20px; display: inline-block; }}
+            .stats {{ background: #e9ecef; padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align: center; }}
+            .btn {{ padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; text-decoration: none; display: inline-block; margin-right: 10px; font-weight: 600; }}
+            .btn-primary {{ background: #8B5A5C; color: white; }}
+            .btn-secondary {{ background: #6c757d; color: white; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <a href="/my-events" class="back-link">← Back to My Events</a>
+
+            <div class="event-header">
+                <div class="event-title">{event['title']}</div>
+                <div class="event-details">
+                    <strong>Date:</strong> {event_date}<br>
+                    <strong>Venue:</strong> {event['venue_name']}<br>
+                    <strong>Address:</strong> {event['venue_address']}<br>
+                    {description_html}
+                </div>
+                <div class="stats">
+                    👥 {attendee_count} / {event['capacity']} attendees registered | {status_text}
+                </div>
+                <a href="/edit-event/{event['id']}" class="btn btn-primary">Edit Event Details</a>
+                {deactivate_button}
+            </div>
+
+            <div class="attendees-section">
+                <h2>Attendees ({attendee_count})</h2>
+                {attendees_html}
+            </div>
+        </div>
+    </body>
+    </html>
+    '''
+
+    return render_template_with_header("Manage Event", content, user_info=session.get('user_info'))
+
+@app.route('/deactivate-event/<int:event_id>')
+@login_required
+def deactivate_event(event_id):
+    """Deactivate an event"""
+    user_id = session['user_id']
+
+    # Check if user is verified
+    verification_check = require_verification(user_id, verification_system)
+    if verification_check:
+        return verification_check
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        # Verify ownership and deactivate
+        cursor.execute('''
+            UPDATE events
+            SET is_active = FALSE
+            WHERE id = %s AND creator_id = %s
+        ''', (event_id, user_id))
+
+        if cursor.rowcount == 0:
+            flash('Event not found or you do not have permission to deactivate it', 'error')
+        else:
+            conn.commit()
+            flash('Event deactivated successfully', 'success')
+
+    except Exception as e:
+        conn.rollback()
+        flash(f'Error deactivating event: {str(e)}', 'error')
+    finally:
+        conn.close()
+
+    return redirect('/my-events')
 
 if __name__ == '__main__':
     # Initialize database
