@@ -1674,15 +1674,15 @@ def add_onboarding_routes(app, login_required, user_auth, render_template_with_h
                         <div class="form-help">Used for contact requests when matches want to connect</div>
                     </div>
                 </div>
-                <!-- Mode Selection Section -->
-<!--              
+                <!-- Mode Selection Section 
+   
                 <div class="form-section">
                     <h2 class="section-title">
                         Connection Mode
                     </h2>
 
                     <div class="form-group">
-                        <label class="form-label">How would you like to use Flock?</label>
+                        <label class="form-label">How would you like to use Connect?</label>
                         <div class="choice-container">
                             <div class="choice-item">
                                 <input type="radio" name="matching_mode" value="individual" {'checked' if existing_profile.get('matching_mode', 'individual') == 'individual' else ''} id="mode_individual">
@@ -1701,7 +1701,7 @@ def add_onboarding_routes(app, login_required, user_auth, render_template_with_h
                         </div>
                     </div>
                 </div>
--->
+                -->
                 <!-- Location Section -->
                 <div class="form-section">
                     <h2 class="section-title">
@@ -1964,15 +1964,16 @@ def add_onboarding_routes(app, login_required, user_auth, render_template_with_h
                 for phone in [p.strip() for p in blocked_phones.split(',') if p.strip()]:
                     user_auth.add_blocked_user(user_id, blocked_phone=phone)
             
-            # Start enhanced background matching
-            thread = threading.Thread(target=process_matching_background, args=(user_id,))
-            thread.daemon = True
-            thread.start()
-            
+            # Don't start matching yet - wait for event selection
+            # thread = threading.Thread(target=process_matching_background, args=(user_id,))
+            # thread.daemon = True
+            # thread.start()
+
             # Clear onboarding session data
             session.pop('onboarding_step', None)
-            
-            return redirect('/processing')
+
+            # Redirect to events selection instead of processing
+            return redirect('/events')
         
         # Show completion page with dashboard aesthetic
         content = '''

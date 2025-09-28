@@ -468,7 +468,151 @@ class MatchingSystem:
         
         print(f"✓ Found {len(matches)} compatible friendship matches")
         return matches
-    
+
+    def run_event_matching(self, user_id: int, event_id: int) -> List[Dict[str, Any]]:
+        """Run matching for a user against other attendees of the same event"""
+        print(f"\n=== Running Event-Based Matching for User {user_id} at Event {event_id} ===")
+
+        # Get current user's profile and info
+        current_user_profile = self.user_auth.get_user_profile(user_id)
+        current_user_info = self.user_auth.get_user_info(user_id)
+
+        if not current_user_profile or not current_user_info:
+            print("ERROR: Current user profile not found!")
+            return []
+
+        # Get other users attending the same event
+        event_attendees = self.get_event_attendees(event_id, exclude_user_id=user_id)
+        print(f"Found {len(event_attendees)} other attendees for event {event_id}")
+
+        if not event_attendees:
+            print("No other attendees found for this event")
+            return []
+
+        matches = []
+
+        for potential_match in event_attendees:
+            # Apply filters
+            if self.is_user_blocked(user_id, potential_match):
+                print(f"Skipping blocked user: {potential_match['first_name']} {potential_match['last_name']}")
+                continue
+
+            if not self.check_gender_compatibility(current_user_profile, potential_match['profile']):
+                print(f"Skipping due to gender preference: {potential_match['first_name']} {potential_match['last_name']}")
+                continue
+
+            print(f"Analyzing event compatibility with {potential_match['first_name']} {potential_match['last_name']}...")
+
+            # Calculate detailed compatibility scores
+            scores = self.calculate_compatibility_scores(current_user_profile, potential_match['profile'])
+
+            # Calculate distance and location score
+            distance = 999
+            location_score = 50  # Default neutral score
+            current_postcode = current_user_profile.get('postcode')
+            match_postcode = potential_match['profile'].get('postcode')
+
+            if current_postcode and match_postcode:
+                distance = self.calculate_distance(current_postcode, match_postcode)
+                # Location score based on distance
+                if distance <= 5:
+                    location_score = 95
+                elif distance <= 15:
+                    location_score = 85
+                elif distance <= 30:
+                    location_score = 75
+                elif distance <= 50:
+                    location_score = 65
+                else:
+                    location_score = 40
+
+            # Calculate weighted overall score with event context boost
+            overall_score = (
+                scores['personality'] * 0.25 +
+                scores['values'] * 0.20 +
+                scores['lifestyle'] * 0.15 +
+                scores['emotional'] * 0.20 +
+                scores['social'] * 0.10 +
+                location_score * 0.10
+            )
+
+            # Add bonus for being at same event (small boost for shared context)
+            overall_score += 5
+
+            # Generate AI analysis
+            analysis = self.get_ai_friendship_analysis(current_user_profile, potential_match['profile'])
+
+            match_result = {
+                'matched_user_id': potential_match['user_id'],
+                'matched_user_name': potential_match['first_name'],
+                'matched_user_email': potential_match['email'],
+                'compatibility_score': round(overall_score),
+                'personality_score': round(scores['personality']),
+                'values_score': round(scores['values']),
+                'lifestyle_score': round(scores['lifestyle']),
+                'emotional_score': round(scores['emotional']),
+                'social_score': round(scores['social']),
+                'location_score': round(location_score),
+                'distance_km': round(distance, 1),
+                'ai_analysis': analysis,
+                'postcode': potential_match['profile'].get('postcode', 'Unknown'),
+                'bio': potential_match['profile'].get('bio', ''),
+                'profile_photo_url': potential_match['profile'].get('profile_photo_url', ''),
+                'age': potential_match['profile'].get('age', 'Unknown'),
+                'linkedin_url': potential_match['profile'].get('linkedin_url', ''),
+                'matching_timestamp': datetime.now().isoformat(),
+                'event_based': True  # Flag to identify event-based matches
+            }
+
+            matches.append(match_result)
+
+        # Sort by compatibility score
+        matches.sort(key=lambda x: x['compatibility_score'], reverse=True)
+
+        # Save matches to database
+        self.save_user_matches(user_id, matches)
+
+        print(f"✅ Event matching complete! Found {len(matches)} compatible attendees")
+
+        return matches
+
+    def get_event_attendees(self, event_id: int, exclude_user_id: int) -> List[Dict[str, Any]]:
+        """Get all users attending a specific event, excluding the current user"""
+        try:
+            conn = sqlite3.connect('users.db')  # Use local connection to avoid circular import
+            cursor = conn.cursor()
+
+            # Get all attendees for this event except the current user
+            cursor.execute('''
+                SELECT u.id, u.first_name, u.last_name, u.email, u.age
+                FROM users u
+                JOIN event_registrations er ON u.id = er.user_id
+                WHERE er.event_id = ?
+                AND u.id != ?
+                AND u.profile_completed = 1
+                AND u.is_active = 1
+            ''', (event_id, exclude_user_id))
+
+            attendees = []
+            for row in cursor.fetchall():
+                user_profile = self.user_auth.get_user_profile(row[0])  # row[0] is user id
+                if user_profile:  # Only include users with complete profiles
+                    attendees.append({
+                        'user_id': row[0],
+                        'first_name': row[1],
+                        'last_name': row[2],
+                        'email': row[3],
+                        'age': row[4],
+                        'profile': user_profile
+                    })
+
+            conn.close()
+            return attendees
+
+        except Exception as e:
+            print(f"Error getting event attendees: {e}")
+            return []
+
     def get_ai_friendship_analysis(self, user1_profile: Dict, user2_profile: Dict) -> str:
         """Get AI-powered friendship compatibility analysis"""
         personality_summary = f"""
