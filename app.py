@@ -7650,13 +7650,9 @@ def render_no_matches_dashboard_with_event(event: Dict) -> str:
         
         <div class="content-overlay">
             <h1 class="no-matches-title">No matches found yet</h1>
-            <p class="no-matches-subtitle">Your agent didn't like anyone at the party</p>
+            <p class="no-matches-subtitle">Your agent didn't match with anyone just yet</p>
             
             <div class="reasons-list">
-                <div class="reason-item">
-                    <div class="reason-bullet"></div>
-                    <span>There aren't many users in your area yet</span>
-                </div>
                 <div class="reason-item">
                     <div class="reason-bullet"></div>
                     <span>Your preferences are very specific</span>
