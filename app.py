@@ -7353,6 +7353,7 @@ def dashboard():
         # User has an event selected, get event-based matches
         matches = user_auth.get_user_matches(user_id)
 
+<<<<<<< Updated upstream
         # If no matches yet, trigger event-based matching
         if not matches:
             # Check if matching is already in progress
@@ -7361,6 +7362,45 @@ def dashboard():
                 thread.daemon = True
                 thread.start()
                 return redirect('/processing')
+=======
+        # Verify that existing matches are actually event attendees
+        # If no matches exist OR if existing matches are not event-specific, trigger event matching
+        event_specific_matches = []
+        if matches:
+            # Check if existing matches are attending the same event
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            for match in matches:
+                cursor.execute('''
+                    SELECT 1 FROM event_registrations
+                    WHERE user_id = %s AND event_id = %s
+                ''', (match['matched_user_id'], current_event['id']))
+                if cursor.fetchone():
+                    event_specific_matches.append(match)
+            conn.close()
+
+        # If we don't have event-specific matches, check if we need to run matching
+        if not event_specific_matches:
+            # Check if matching is already in progress
+            if user_id in processing_status:
+                if processing_status[user_id].get('status') == 'processing':
+                    # Matching in progress, redirect to processing
+                    return redirect('/processing')
+                elif processing_status[user_id].get('status') == 'completed':
+                    # Matching completed but no matches found - show no matches dashboard
+                    pass
+                else:
+                    # Unknown status, but don't restart automatically - let user see dashboard
+                    pass
+            else:
+                # No matching status exists - but don't automatically start matching
+                # Let users manually trigger matching if needed, or show no matches dashboard
+                # This prevents the infinite redirect loop
+                pass
+
+        # Use only event-specific matches
+        matches = event_specific_matches
+>>>>>>> Stashed changes
 
         # Track dashboard view
         if interaction_tracker:
@@ -7371,7 +7411,7 @@ def dashboard():
             content = render_matches_dashboard_with_event(user_info, matches, current_event)
         else:
             # No matches found yet
-            content = render_no_matches_dashboard()
+            content = render_no_matches_dashboard_with_event(current_event)
     else:
         # No profile completed yet
         content = render_new_profile_dashboard()
@@ -7389,23 +7429,29 @@ def render_matches_dashboard_with_event(user_info: Dict, matches: List[Dict], ev
 
     # Event header section
     event_header = f'''
-    <div class="event-header" style="background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(20px); border-radius: 24px; padding: 2rem; margin-bottom: 2rem; border: 1px solid rgba(255, 255, 255, 0.2); text-align: center;">
-        <h2 style="font-family: 'Sentient', serif; font-size: 1.8rem; color: #2d2d2d; margin-bottom: 1rem;">Your Upcoming Event</h2>
-        <h3 style="font-family: 'Satoshi', sans-serif; font-size: 1.4rem; color: #8B5A5C; margin-bottom: 1rem;">{event['title']}</h3>
-        <div style="display: flex; justify-content: center; gap: 2rem; flex-wrap: wrap; font-family: 'Satoshi', sans-serif; color: #666;">
+    <div class="event-header" style="background: white; border: 2px solid black; border-radius: 15px; padding: 2rem; margin-bottom: 2rem; text-align: center;">
+        <h2 style="font-family: 'Sentient', serif; font-size: 1.8rem; color: black; margin-bottom: 1rem; font-weight: 600;">Your Upcoming Event</h2>
+        <h3 style="font-family: 'Satoshi', sans-serif; font-size: 1.4rem; color: black; margin-bottom: 1.5rem; font-weight: 700;">{event['title']}</h3>
+        <div style="display: flex; justify-content: center; gap: 2rem; flex-wrap: wrap; font-family: 'Satoshi', sans-serif; color: black; margin-bottom: 1rem;">
             <div style="display: flex; align-items: center; gap: 0.5rem;">
-                <strong>📅 Date:</strong> {event_date}
+                <strong>Date:</strong> {event_date}
             </div>
             <div style="display: flex; align-items: center; gap: 0.5rem;">
-                <strong>🕐 Time:</strong> {event_time}
+                <strong>Time:</strong> {event_time}
             </div>
             <div style="display: flex; align-items: center; gap: 0.5rem;">
-                <strong>📍 Venue:</strong> {event['venue_name'] or 'TBA'}
+                <strong>Venue:</strong> {event['venue_name'] or 'TBA'}
             </div>
         </div>
-        {f'<div style="margin-top: 1rem; color: #666; font-family: Satoshi, sans-serif;"><strong>Address:</strong> {event["venue_address"]}</div>' if event.get('venue_address') else ''}
-        <div style="margin-top: 1.5rem; padding: 1rem; background: rgba(139, 90, 92, 0.1); border-radius: 12px; font-family: 'Satoshi', sans-serif; color: #8B5A5C;">
-            💫 Below are your compatible matches who will also be attending this event!
+        {f'<div style="margin-bottom: 1.5rem; color: black; font-family: Satoshi, sans-serif;"><strong>Address:</strong> {event["venue_address"]}</div>' if event.get('venue_address') else ''}
+        <div style="margin-bottom: 1.5rem; padding: 1rem; background: black; color: white; border-radius: 8px; font-family: 'Satoshi', sans-serif; font-weight: 500;">
+            Below are your compatible matches who will also be attending this event
+        </div>
+        <div>
+            <a href="/withdraw-from-event" onclick="return confirm('Are you sure you want to withdraw from this event? You will no longer be matched with other attendees.')"
+               style="background: black; color: white; padding: 0.75rem 1.5rem; border-radius: 8px; text-decoration: none; font-family: 'Satoshi', sans-serif; font-weight: 600; font-size: 0.875rem; display: inline-block; transition: all 0.3s ease;">
+                Withdraw from Event
+            </a>
         </div>
     </div>
     '''
@@ -7429,9 +7475,42 @@ def render_matches_dashboard_with_event(user_info: Dict, matches: List[Dict], ev
 
     return modified_content
 
-def render_no_matches_dashboard() -> str:
-    """Render no matches dashboard with small orange sphere in draggable teal cube"""
-    return '''
+def render_no_matches_dashboard_with_event(event: Dict) -> str:
+    """Render no matches dashboard with event details and small orange sphere in draggable teal cube"""
+    # Format event date and time
+    event_date = event['date_time'].strftime('%A, %B %d, %Y')
+    event_time = event['date_time'].strftime('%I:%M %p')
+
+    # Event header section
+    event_header = f'''
+    <div class="event-header" style="background: white; border: 2px solid black; border-radius: 15px; padding: 2rem; margin-bottom: 2rem; text-align: center;">
+        <h2 style="font-family: 'Sentient', serif; font-size: 1.8rem; color: black; margin-bottom: 1rem; font-weight: 600;">Your Upcoming Event</h2>
+        <h3 style="font-family: 'Satoshi', sans-serif; font-size: 1.4rem; color: black; margin-bottom: 1.5rem; font-weight: 700;">{event['title']}</h3>
+        <div style="display: flex; justify-content: center; gap: 2rem; flex-wrap: wrap; font-family: 'Satoshi', sans-serif; color: black; margin-bottom: 1rem;">
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <strong>Date:</strong> {event_date}
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <strong>Time:</strong> {event_time}
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <strong>Venue:</strong> {event['venue_name'] or 'TBA'}
+            </div>
+        </div>
+        {f'<div style="margin-bottom: 1.5rem; color: black; font-family: Satoshi, sans-serif;"><strong>Address:</strong> {event["venue_address"]}</div>' if event.get('venue_address') else ''}
+        <div style="margin-bottom: 1.5rem; padding: 1rem; background: black; color: white; border-radius: 8px; font-family: 'Satoshi', sans-serif; font-weight: 500;">
+            No compatible matches found yet for this event
+        </div>
+        <div>
+            <a href="/withdraw-from-event" onclick="return confirm('Are you sure you want to withdraw from this event? You will no longer be matched with other attendees.')"
+               style="background: black; color: white; padding: 0.75rem 1.5rem; border-radius: 8px; text-decoration: none; font-family: 'Satoshi', sans-serif; font-weight: 600; font-size: 0.875rem; display: inline-block; transition: all 0.3s ease;">
+                Withdraw from Event
+            </a>
+        </div>
+    </div>
+    '''
+
+    no_matches_content = '''
     <style>
         @import url("https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=sentient@400,500,600,700&display=swap");
 
@@ -7792,6 +7871,22 @@ def render_no_matches_dashboard() -> str:
         });
     </script>
     '''
+
+    # Combine event header with no matches content
+    # Insert event header at the beginning of no matches content after the opening div
+    content_start = no_matches_content.find('<div class="no-matches-container">') + len('<div class="no-matches-container">')
+
+    if content_start > len('<div class="no-matches-container">') - 1:
+        final_content = (
+            no_matches_content[:content_start] +
+            event_header +
+            no_matches_content[content_start:]
+        )
+    else:
+        # Fallback if structure is different
+        final_content = event_header + no_matches_content
+
+    return final_content
 
 def render_new_profile_dashboard() -> str:
     """Render dashboard for new users without profile"""
@@ -13125,6 +13220,57 @@ def select_event():
         return redirect('/events')
     finally:
         conn.close()
+
+@app.route('/withdraw-from-event')
+@login_required
+def withdraw_from_event():
+    """Allow user to withdraw from their current event"""
+    if 'user_id' not in session:
+        return redirect('/login')
+
+    user_id = session['user_id']
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Get current event registration
+        cursor.execute('''
+            SELECT e.*, er.registered_at
+            FROM events e
+            JOIN event_registrations er ON e.id = er.event_id
+            WHERE er.user_id = %s AND e.date_time > NOW() AND e.is_active = TRUE
+            ORDER BY e.date_time ASC LIMIT 1
+        ''', (user_id,))
+
+        current_event = cursor.fetchone()
+
+        if not current_event:
+            flash('No active event registration found', 'info')
+            return redirect('/events')
+
+        # Remove user from event registration
+        cursor.execute('DELETE FROM event_registrations WHERE user_id = %s AND event_id = %s',
+                      (user_id, current_event['id']))
+
+        # Clear any matches for this user (they will need to re-register for new matches)
+        cursor.execute('DELETE FROM user_matches WHERE user_id = %s OR matched_user_id = %s',
+                      (user_id, user_id))
+
+        # Clear processing status so they can start fresh if they re-register
+        if user_id in processing_status:
+            del processing_status[user_id]
+
+        conn.commit()
+        flash(f'Successfully withdrawn from "{current_event["title"]}"', 'success')
+
+    except Exception as e:
+        conn.rollback()
+        flash('Error withdrawing from event. Please try again.', 'error')
+    finally:
+        conn.close()
+
+    return redirect('/events')
 
 @app.route('/event-feedback/<int:event_id>')
 @login_required
