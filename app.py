@@ -13238,6 +13238,10 @@ def withdraw_from_event():
         cursor.execute('DELETE FROM event_registrations WHERE user_id = %s AND event_id = %s',
                       (user_id, current_event['id']))
 
+        # Decrement attendee count
+        cursor.execute('UPDATE events SET current_attendees = current_attendees - 1 WHERE id = %s',
+                      (current_event['id'],))
+
         # Clear any matches for this user (they will need to re-register for new matches)
         cursor.execute('DELETE FROM user_matches WHERE user_id = %s OR matched_user_id = %s',
                       (user_id, user_id))
