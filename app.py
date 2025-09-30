@@ -7353,16 +7353,6 @@ def dashboard():
         # User has an event selected, get event-based matches
         matches = user_auth.get_user_matches(user_id)
 
-<<<<<<< Updated upstream
-        # If no matches yet, trigger event-based matching
-        if not matches:
-            # Check if matching is already in progress
-            if user_id not in processing_status or processing_status[user_id].get('status') != 'processing':
-                thread = threading.Thread(target=process_event_matching_background, args=(user_id, current_event['id']))
-                thread.daemon = True
-                thread.start()
-                return redirect('/processing')
-=======
         # Verify that existing matches are actually event attendees
         # If no matches exist OR if existing matches are not event-specific, trigger event matching
         event_specific_matches = []
@@ -7400,7 +7390,6 @@ def dashboard():
 
         # Use only event-specific matches
         matches = event_specific_matches
->>>>>>> Stashed changes
 
         # Track dashboard view
         if interaction_tracker:
