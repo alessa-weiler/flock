@@ -537,7 +537,7 @@ def render_step_1_content(profile: Dict) -> str:
         <input type="url" name="linkedin_url" 
             value="{profile.get('linkedin_url', '')}"
             placeholder="https://www.linkedin.com/in/your-profile"
-            pattern=r"https://(www\.)?linkedin\.com/in/[\w\-]+"
+            pattern="https://(www\.)?linkedin\.com/in/[\w\-]+"
             title="Please enter a valid LinkedIn profile URL (e.g., https://linkedin.com/in/yourname)"
             class="form-input" id="linkedin-url-input">
         <div style="font-size: 12px; color: #6b9b99; margin-top: 5px; line-height: 1.4;">
@@ -1984,8 +1984,8 @@ def add_onboarding_routes(app, login_required, user_auth, render_template_with_h
             # Clear onboarding session data
             session.pop('onboarding_step', None)
 
-            # Redirect to create organization page
-            return redirect('/create-organization')
+            # Redirect to events selection instead of processing
+            return redirect('/events')
         
         # Show completion page with dashboard aesthetic
         content = '''
@@ -2178,14 +2178,14 @@ def add_onboarding_routes(app, login_required, user_auth, render_template_with_h
         <div class="completion-container">
             <div class="completion-header">
                 <h1 class="completion-title">Profile Complete!</h1>
-                <p class="completion-subtitle">Ready to create your organization and start simulations</p>
+                <p class="completion-subtitle">Your agent is ready to find amazing connections</p>
             </div>
-
+            
             <form method="POST">
                 <div class="block-list-section">
-                    <h3 class="block-list-title">Privacy Controls (Optional)</h3>
+                    <h3 class="block-list-title">Privacy Controls</h3>
                     <p class="block-list-description">
-                        Optionally exclude specific people from your organization. This data is kept completely private.
+                        Optionally exclude specific people from matching. This data is kept completely private and helps improve matching accuracy.
                     </p>
                     
                     <div class="form-group">
@@ -2211,7 +2211,7 @@ def add_onboarding_routes(app, login_required, user_auth, render_template_with_h
                 </div>
                 
                 <button type="submit" class="launch-button">
-                    Continue to Create Organization
+                    Launch Agent & Find Matches
                 </button>
             </form>
         </div>

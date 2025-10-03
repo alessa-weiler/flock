@@ -1,50 +1,102 @@
 import os
 import warnings
-
-# Standard library imports
-import base64
-import hashlib
-import json
-import logging
-import math
-import random
-import re
-import secrets
-import smtplib
-import time
-from dataclasses import dataclass
-from datetime import datetime, timedelta
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from functools import wraps
-from typing import Any, Dict, List, Optional, Tuple
-
-# Third-party imports
-import psycopg2
-import requests
-import stripe
-from cryptography.fernet import Fernet
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+# Fix for macOS TensorFlow threading issues
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
+os.environ['OMP_NUM_THREADS'] = '1'
+os.environ['MKL_NUM_THREADS'] = '1'
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+os.environ['CUDA_VISIBLE_DEVICES'] = ''
 from dotenv import load_dotenv
-from flask import (Flask, abort, flash, get_flashed_messages, jsonify, redirect,
-                   render_template_string, request, send_from_directory, session, url_for)
-from flask_cors import CORS
-from openai import OpenAI
-from psycopg2.extras import RealDictCursor
-from werkzeug.security import check_password_hash, generate_password_hash
-
-# Local imports
-from enhanced_matching_system import (EnhancedMatchingSystem, InteractionTracker,
-                                       MatchingDataCollector, MatchingSystem,
-                                       integrate_enhanced_matching)
-from payment import SubscriptionManager
 
 # Load environment variables
 load_dotenv()
 
+import psycopg2
+from psycopg2.extras import RealDictCursor
+import urllib.parse
+import logging
+
+import secrets
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Tuple, Any
+import json
+import os
+import base64
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+import secrets
+import hashlib
+import smtplib
+
+from datetime import datetime, timedelta
+import secrets
+import threading
+import time
+import math
+import requests
+import numpy as np
+import json
+import os
+import sqlite3
+import hashlib
+import secrets
+import random
+import re
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Tuple, Any
+from dataclasses import dataclass
+
+import secrets
+from datetime import datetime, timedelta
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from urllib.parse import quote
+
+
 # Suppress protobuf warnings
 warnings.filterwarnings("ignore", category=UserWarning)
+
+from functools import wraps
+try:
+    import tensorflow as tf
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.model_selection import train_test_split
+    HAS_ML_LIBRARIES = True
+except ImportError:
+    HAS_ML_LIBRARIES = False
+    print("Warning: TensorFlow/sklearn not installed. Using fallback methods.")
+
+
+# Flask and related imports
+from flask import (
+    Flask, render_template_string, request, redirect, session, 
+    jsonify, flash, url_for, send_from_directory, abort, get_flashed_messages
+)
+from flask_cors import CORS
+from werkzeug.security import generate_password_hash, check_password_hash
+
+# External APIs
+from openai import OpenAI
+from dotenv import load_dotenv
+
+from payment import SubscriptionManager
+import stripe
+
+from enhanced_matching_system import (
+    MatchingSystem,
+    MatchingDataCollector,
+    EnhancedMatchingSystem, 
+    InteractionTracker, 
+    integrate_enhanced_matching
+)
+
+# Load environment variables
+load_dotenv()
 
 # ============================================================================
 # APP CONFIGURATION
@@ -56,10 +108,6 @@ CORS(app, origins="*", supports_credentials=True)
 
 # Configuration
 API_KEY = os.environ.get('OPENAI_API_KEY')
-if API_KEY:
-    print(f"✓ OpenAI API Key loaded: {API_KEY[:8]}...{API_KEY[-4:]}")
-else:
-    print("⚠️  WARNING: OPENAI_API_KEY not found in environment variables!")
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-change-in-production')
 app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_HTTPONLY'] = True
@@ -501,65 +549,6 @@ class UserAuthSystem:
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (network_id) REFERENCES networks (id) ON DELETE CASCADE,
                 UNIQUE(network_id)
-            )
-        ''')
-
-        # Organizations table - stores business/team organizations for simulation
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS organizations (
-                id SERIAL PRIMARY KEY,
-                name TEXT NOT NULL,
-                description TEXT,
-                created_by INTEGER NOT NULL,
-                invite_token TEXT UNIQUE NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                is_active BOOLEAN DEFAULT TRUE,
-                FOREIGN KEY (created_by) REFERENCES users (id)
-            )
-        ''')
-
-        # Organization members - junction table linking users to organizations
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS organization_members (
-                id SERIAL PRIMARY KEY,
-                organization_id INTEGER NOT NULL,
-                user_id INTEGER NOT NULL,
-                role TEXT DEFAULT 'member',
-                joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                is_active BOOLEAN DEFAULT TRUE,
-                FOREIGN KEY (organization_id) REFERENCES organizations (id) ON DELETE CASCADE,
-                FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
-                UNIQUE(organization_id, user_id)
-            )
-        ''')
-
-        # Simulations table - stores each scenario simulation run
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS simulations (
-                id SERIAL PRIMARY KEY,
-                organization_id INTEGER NOT NULL,
-                scenario_text TEXT NOT NULL,
-                created_by INTEGER NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                status TEXT DEFAULT 'pending',
-                completed_at TIMESTAMP,
-                FOREIGN KEY (organization_id) REFERENCES organizations (id) ON DELETE CASCADE,
-                FOREIGN KEY (created_by) REFERENCES users (id)
-            )
-        ''')
-
-        # Simulation responses - stores AI-generated responses for each user
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS simulation_responses (
-                id SERIAL PRIMARY KEY,
-                simulation_id INTEGER NOT NULL,
-                user_id INTEGER NOT NULL,
-                response_json TEXT NOT NULL,
-                generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (simulation_id) REFERENCES simulations (id) ON DELETE CASCADE,
-                FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
-                UNIQUE(simulation_id, user_id)
             )
         ''')
 
@@ -2765,7 +2754,9 @@ def get_base_styles() -> str:
 
 def render_template_with_header(title: str, content: str, user_info: Dict = None, minimal_nav: bool = False) -> str:
     """Enhanced render template with transition support"""
-
+    
+    # Add notification badge for contact requests (only if logged in)
+    notification_badge = ""
     user_nav = ""
     
     # Check if user is actually logged in (has user_id in session)
@@ -2786,9 +2777,14 @@ def render_template_with_header(title: str, content: str, user_info: Dict = None
             '''
         else:
             # Full navigation for completed profiles
+            pending_requests = user_auth.get_contact_requests(user_id, 'received')
+            pending_count = len([r for r in pending_requests if r['status'] == 'pending'])
+            if pending_count > 0:
+                notification_badge = f'<span style="background: #dc3545; color: white; border-radius: 50%; padding: 4px 8px; font-size: 12px; margin-left: 8px;">{pending_count}</span>'
+            
             user_nav = f'''
                 <div class="user-info">
-                    <a href="/dashboard" class="btn btn-secondary">Dashboard</a>
+                    <a href="/contact-requests" class="btn btn-secondary">Requests{notification_badge}</a>
                     <a href="/profile-settings" class="btn btn-secondary">Settings</a>
                     <a href="/logout" class="btn btn-secondary no-transition">Logout</a>
                 </div>
@@ -6462,17 +6458,42 @@ def reset_password(token):
     return render_template_with_header("Set New Password", content)
 
 # ============================================================================
-# DEPRECATED: Old verification routes removed
+# ROUTES - VERIFICATION
 # ============================================================================
+
+@app.route('/request-verification', methods=['POST'])
+@login_required
+def request_verification():
+    """Request identity verification"""
+    user_id = session['user_id']
+    
+    result = verification_system.request_verification(user_id)
+    
+    if result['success']:
+        flash('Verification instructions sent to your email!', 'success')
+    else:
+        flash(result['error'], 'error')
+    
+    return redirect('/profile-settings')
+
+@app.route('/verification-status')
+@login_required  
+def verification_status():
+    """Get verification status for current user"""
+    user_id = session['user_id']
+    
+    status = verification_system.get_verification_status(user_id)
+    return jsonify(status)
 
 @app.route('/profile-settings')
 @login_required
 def profile_settings():
-    """Profile settings page"""
+    """Profile settings page with verification and subscription management"""
     user_id = session['user_id']
     user_info = user_auth.get_user_info(user_id)
+    verification_status = verification_system.get_verification_status(user_id)
     subscription_status = subscription_manager.get_user_subscription_status(user_id)
-
+    
     # Get flash messages and convert to HTML
     flash_html = ""
     messages = get_flashed_messages(with_categories=True)
@@ -6481,9 +6502,12 @@ def profile_settings():
         for category, message in messages:
             flash_html += f'<div class="flash-{category}">{message}</div>'
         flash_html += '</div>'
-
+    
+    # Render verification section
+    verification_html = render_verification_section(verification_status)
+    
     # Render subscription management section
-    subscription_html = render_subscription_management_section(subscription_status, user_id)
+    subscription_html = render_subscription_management_section(subscription_status)
     
     content = f'''
     <style>
@@ -6841,6 +6865,7 @@ def profile_settings():
         </div>
 
         {subscription_html}
+        {verification_html}
 
         <div style="text-align: center; margin-top: 3rem;">
             <a href="/dashboard" class="back-link">Back to Dashboard</a>
@@ -6970,22 +6995,9 @@ def render_verification_section(verification_status: Dict) -> str:
         </div>
         '''
 
-def render_subscription_management_section(subscription_status: Dict, user_id: int = None) -> str:
+def render_subscription_management_section(subscription_status: Dict) -> str:
     """Render subscription management section based on user's current status"""
-
-    # Get simulation count if user_id provided
-    sim_count = 0
-    if user_id:
-        try:
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute('SELECT COUNT(*) as count FROM simulations WHERE created_by = %s', (user_id,))
-            result = cursor.fetchone()
-            sim_count = result['count'] if result else 0
-            conn.close()
-        except:
-            sim_count = 0
-
+    
     if subscription_status['is_subscribed']:
         status = subscription_status.get('status')
         expires_at = subscription_status.get('expires_at', 'Unknown')
@@ -7020,27 +7032,27 @@ def render_subscription_management_section(subscription_status: Dict, user_id: i
                     <div class="usage-stats">
                         <div class="usage-stat">
                             <div class="stat-number">∞</div>
-                            <div class="stat-label">Simulations Available</div>
+                            <div class="stat-label">Matches Available</div>
                         </div>
                         <div class="usage-stat">
-                            <div class="stat-number">{sim_count}</div>
-                            <div class="stat-label">Total Simulations Run</div>
+                            <div class="stat-number">{subscription_status.get('matches_this_month', 0)}</div>
+                            <div class="stat-label">Used This Month</div>
                         </div>
                     </div>
-
+                    
                     <p><strong>Expires:</strong> {expires_at_formatted}</p>
-                    <p><strong>Plan:</strong> Premium (£9.99/month)</p>
+                    <p><strong>Plan:</strong> Premium Matching (£9.99/month)</p>
                     <p style="color: black; font-weight: 600;">Your subscription has been cancelled and will expire on {expires_at_formatted}. You'll continue to have premium access until then.</p>
                 </div>
-
+                
                 <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
                     <a href="/subscription/plans" class="btn-manage btn-upgrade">
                         Reactivate Subscription
                     </a>
                 </div>
-
+                
                 <div style="margin-top: 1.5rem; font-size: 0.875rem; color: var(--color-gray-600);">
-                    After expiry, you'll be limited to 20 free simulations total.
+                    After expiry, you'll be moved to the free plan with 1 match per month.
                 </div>
             </div>
             '''
@@ -7058,75 +7070,83 @@ def render_subscription_management_section(subscription_status: Dict, user_id: i
                     <div class="usage-stats">
                         <div class="usage-stat">
                             <div class="stat-number">∞</div>
-                            <div class="stat-label">Simulations Available</div>
+                            <div class="stat-label">Matches Available</div>
                         </div>
                         <div class="usage-stat">
-                            <div class="stat-number">{sim_count}</div>
-                            <div class="stat-label">Total Simulations Run</div>
+                            <div class="stat-number">{subscription_status.get('matches_this_month', 0)}</div>
+                            <div class="stat-label">Used This Month</div>
                         </div>
                     </div>
-
+                    
                     <p><strong>Next Billing:</strong> {expires_at_formatted}</p>
-                    <p><strong>Plan:</strong> Premium (£9.99/month)</p>
+                    <p><strong>Plan:</strong> Premium Matching (£9.99/month)</p>
                 </div>
-
+                
                 <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
                     <a href="/subscription/cancel" class="btn-manage btn-cancel">
                         Cancel Subscription
                     </a>
                 </div>
-
+                
                 <div style="margin-top: 1.5rem; font-size: 0.875rem; color: var(--color-gray-600);">
-                    Your subscription includes unlimited simulations and priority support.
+                    Your subscription includes unlimited matching, enhanced AI analysis, and priority support.
                 </div>
             </div>
             '''
     else:
         # Free plan
-        remaining = max(0, 20 - sim_count)
-
+        remaining = subscription_status['free_matches_remaining']
+        used = subscription_status.get('free_matches_used', 0)
+        
         return f'''
         <div class="subscription-section subscription-free">
             <h3 style="color: var(--color-emerald); margin-bottom: 1rem;">Subscription Management</h3>
-
+            
             <div class="plan-badge free">
                 Free Plan
             </div>
-
+            
             <div class="subscription-details">
                 <div class="usage-stats">
                     <div class="usage-stat">
                         <div class="stat-number">{remaining}</div>
-                        <div class="stat-label">Simulations Remaining</div>
+                        <div class="stat-label">Matches Remaining</div>
                     </div>
                     <div class="usage-stat">
-                        <div class="stat-number">{sim_count}</div>
-                        <div class="stat-label">Simulations Used</div>
+                        <div class="stat-number">{used}</div>
+                        <div class="stat-label">Used This Month</div>
                     </div>
                     <div class="usage-stat">
-                        <div class="stat-number">20</div>
-                        <div class="stat-label">Free Total Limit</div>
+                        <div class="stat-number">1</div>
+                        <div class="stat-label">Free Monthly Limit</div>
                     </div>
                 </div>
-
-                <p>You're currently on the free plan with {remaining} simulation{"s" if remaining != 1 else ""} remaining.</p>
+                
+                <p>You're currently on the free plan with {remaining} match{"" if remaining == 1 else "es"} remaining this month.</p>
             </div>
-
+            
             <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
                 <a href="/subscription/plans" class="btn-manage btn-upgrade">
                     Upgrade to Premium
                 </a>
             </div>
-
+            
             <div style="margin-top: 1.5rem; font-size: 0.875rem; color: var(--color-gray-600);">
-                Upgrade to Premium for unlimited simulations and priority support.
+                Upgrade to Premium for unlimited matching, enhanced AI analysis, and priority support.
             </div>
         </div>
         '''
     
 # ============================================================================
-# ROUTES - DASHBOARD & MATCHING
+# ADMIN VERIFICATION MANAGEMENT ROUTES
 # ============================================================================
+
+@app.route('/admin/verification-queue')
+def admin_verification_queue():
+    """Admin interface for managing verification requests"""
+    # Simple password protection (in production, use proper admin authentication)
+    admin_password = request.args.get('password')
+    if admin_password != os.environ.get('ADMIN_PASSWORD', 'admin123'):
         return '''
         <form method="GET">
             <h2>Admin Access Required</h2>
@@ -7284,290 +7304,6 @@ def admin_mark_photo_received():
 # ROUTES - DASHBOARD & MATCHING
 # ============================================================================
 
-def render_organizations_dashboard(user_info: Dict, organizations: List[Dict]) -> str:
-    """Render the organizations dashboard"""
-    if organizations:
-        org_cards = []
-        for org in organizations:
-            role_badge = '<span style="background: gold; color: black; padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.75rem; font-weight: 600;">OWNER</span>' if org['is_owner'] else ''
-
-            # Add action buttons (edit/delete for owner, leave for members)
-            action_buttons = ''
-            if org['is_owner']:
-                action_buttons = f'''
-                <div class="org-card-actions" style="display: flex; gap: 0.5rem; margin-top: 1rem;" onclick="event.stopPropagation();">
-                    <button onclick="window.location.href='/organization/{org['id']}/edit'"
-                            style="flex: 1; padding: 0.5rem; background: white; border: 1px solid #ddd; border-radius: 8px; cursor: pointer; font-size: 0.875rem; font-weight: 500; font-family: 'Satoshi', sans-serif;">
-                        Edit
-                    </button>
-                    <button onclick="if(confirm('Delete this organization? This cannot be undone.')) window.location.href='/organization/{org['id']}/delete'"
-                            style="flex: 1; padding: 0.5rem; background: white; border: 1px solid #dc3545; color: #dc3545; border-radius: 8px; cursor: pointer; font-size: 0.875rem; font-weight: 500; font-family: 'Satoshi', sans-serif;">
-                        Delete
-                    </button>
-                </div>
-                '''
-            else:
-                action_buttons = f'''
-                <div class="org-card-actions" style="margin-top: 1rem;" onclick="event.stopPropagation();">
-                    <button onclick="if(confirm('Leave this organization?')) window.location.href='/organization/{org['id']}/leave'"
-                            style="width: 100%; padding: 0.5rem; background: white; border: 1px solid #dc3545; color: #dc3545; border-radius: 8px; cursor: pointer; font-size: 0.875rem; font-weight: 500; font-family: 'Satoshi', sans-serif;">
-                        Leave Organization
-                    </button>
-                </div>
-                '''
-
-            org_card = f'''
-            <div class="org-card" onclick="window.location.href='/organization/{org['id']}'" style="cursor: pointer;">
-                <div class="org-card-header">
-                    <h3 class="org-card-title">{org['name']}</h3>
-                    {role_badge}
-                </div>
-                <p class="org-card-description">{org['description'] or 'No description'}</p>
-                <div class="org-card-footer">
-                    <span class="org-card-members">{org['member_count']} member{'s' if org['member_count'] != 1 else ''}</span>
-                    <span class="org-card-arrow">→</span>
-                </div>
-                {action_buttons}
-            </div>
-            '''
-            org_cards.append(org_card)
-
-        orgs_html = '\n'.join(org_cards)
-    else:
-        orgs_html = '''
-        <div class="empty-state">
-            <p class="empty-state-message">No organizations yet. Create one or join one!</p>
-            <a href="/create-organization" class="btn btn-primary">Create Organization</a>
-        </div>
-        '''
-
-    content = f'''
-    <style>
-        @import url("https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=sentient@400,500,600,700&display=swap");
-
-        .dashboard-container {{
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 2rem;
-        }}
-
-        .dashboard-header {{
-            text-align: center;
-            margin-bottom: 3rem;
-            padding: 2.5rem 2rem;
-            background: rgba(255, 255, 255, 0.7);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-        }}
-
-        .dashboard-title {{
-            font-family: "Sentient", "Satoshi", sans-serif;
-            font-size: 2.5rem;
-            font-weight: 500;
-            margin: 0 0 1rem 0;
-            color: black;
-            letter-spacing: -0.02em;
-        }}
-
-        .dashboard-subtitle {{
-            font-family: "Satoshi", sans-serif;
-            font-size: 1.125rem;
-            color: black;
-        }}
-
-        .organizations-grid {{
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-            gap: 1.5rem;
-            margin-bottom: 2rem;
-        }}
-
-        .org-card {{
-            background: rgba(255, 255, 255, 0.9);
-            backdrop-filter: blur(20px);
-            border-radius: 16px;
-            padding: 1.5rem;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            transition: all 0.3s ease;
-        }}
-
-        .org-card:hover {{
-            transform: translateY(-4px);
-            box-shadow: 0 8px 32px rgba(0,0,0,0.12);
-            border-color: rgba(0, 0, 0, 0.3);
-        }}
-
-        .org-card-header {{
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 1rem;
-        }}
-
-        .org-card-title {{
-            font-family: "Sentient", "Satoshi", sans-serif;
-            font-size: 1.5rem;
-            font-weight: 600;
-            margin: 0;
-            color: black;
-        }}
-
-        .org-card-description {{
-            font-family: "Satoshi", sans-serif;
-            color: #666;
-            margin-bottom: 1rem;
-            line-height: 1.5;
-        }}
-
-        .org-card-footer {{
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-family: "Satoshi", sans-serif;
-            color: black;
-            font-weight: 500;
-        }}
-
-        .org-card-arrow {{
-            font-size: 1.5rem;
-            transition: transform 0.3s ease;
-        }}
-
-        .org-card:hover .org-card-arrow {{
-            transform: translateX(4px);
-        }}
-
-        .empty-state {{
-            text-align: center;
-            padding: 4rem 2rem;
-            background: rgba(255, 255, 255, 0.9);
-            backdrop-filter: blur(20px);
-            border-radius: 16px;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-        }}
-
-        .empty-state-message {{
-            font-family: "Satoshi", sans-serif;
-            font-size: 1.125rem;
-            color: #666;
-            margin-bottom: 2rem;
-        }}
-
-        .btn {{
-            font-family: "Satoshi", sans-serif;
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-            padding: 1rem 2rem;
-            border-radius: 50px;
-            font-weight: 600;
-            font-size: 0.875rem;
-            text-decoration: none;
-            transition: all 0.3s ease;
-            border: none;
-            cursor: pointer;
-        }}
-
-        .btn-primary {{
-            background: black;
-            color: white;
-            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-        }}
-
-        .btn-primary:hover {{
-            transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-        }}
-
-        .action-bar {{
-            display: flex;
-            justify-content: center;
-            gap: 1rem;
-            margin-top: 2rem;
-            flex-wrap: wrap;
-        }}
-
-        .btn-secondary {{
-            background: white;
-            color: black;
-            border: 2px solid black;
-        }}
-
-        .btn-secondary:hover {{
-            background: black;
-            color: white;
-        }}
-
-        .join-org-form {{
-            background: rgba(255, 255, 255, 0.9);
-            backdrop-filter: blur(20px);
-            border-radius: 16px;
-            padding: 2rem;
-            margin-top: 2rem;
-            border: 1px solid rgba(0, 0, 0, 0.1);
-            max-width: 600px;
-            margin-left: auto;
-            margin-right: auto;
-        }}
-
-        .join-org-title {{
-            font-family: "Sentient", "Satoshi", sans-serif;
-            font-size: 1.5rem;
-            font-weight: 600;
-            margin-bottom: 1rem;
-            color: black;
-        }}
-
-        .form-input {{
-            font-family: "Satoshi", sans-serif;
-            width: 100%;
-            padding: 1rem;
-            border: 1px solid rgba(0, 0, 0, 0.2);
-            border-radius: 12px;
-            font-size: 1rem;
-            margin-bottom: 1rem;
-            box-sizing: border-box;
-        }}
-
-        .form-input:focus {{
-            outline: none;
-            border-color: black;
-        }}
-    </style>
-
-    <div class="dashboard-container">
-        <div class="dashboard-header">
-            <h1 class="dashboard-title">Your Organizations</h1>
-            <p class="dashboard-subtitle">Select an organization to run simulations</p>
-        </div>
-
-        <div class="organizations-grid">
-            {orgs_html}
-        </div>
-
-        <div class="action-bar">
-            <a href="/create-organization" class="btn btn-primary">+ Create Organization</a>
-            <button onclick="document.getElementById('joinOrgForm').style.display='block'; this.style.display='none';" class="btn btn-secondary">Join Organization</button>
-        </div>
-
-        <div id="joinOrgForm" class="join-org-form" style="display: none;">
-            <h3 class="join-org-title">Join an Organization</h3>
-            <p style="color: #666; margin-bottom: 1.5rem; font-family: 'Satoshi', sans-serif;">Enter the invite code or paste the invite link</p>
-            <form method="POST" action="/join-organization-by-code">
-                <input type="text" name="invite_code" class="form-input" placeholder="Invite code or full invite link" required>
-                <div style="display: flex; gap: 0.5rem;">
-                    <button type="submit" class="btn btn-primary" style="flex: 1;">Join</button>
-                    <button type="button" onclick="this.closest('form').reset(); document.getElementById('joinOrgForm').style.display='none'; document.querySelector('.btn-secondary').style.display='inline-flex';" class="btn btn-secondary" style="flex: 1;">Cancel</button>
-                </div>
-            </form>
-        </div>
-    </div>
-    '''
-
-    return content
-
-
 @app.route('/settings')
 @login_required
 def settings():
@@ -7577,7 +7313,7 @@ def settings():
 @app.route('/dashboard')
 @login_required
 def dashboard():
-    """User dashboard - shows list of organizations"""
+    """User dashboard - shows existing matches or profile setup option"""
     user_id = session['user_id']
     user_info = user_auth.get_user_info(user_id)
 
@@ -7585,36 +7321,91 @@ def dashboard():
         flash('Account information not found', 'error')
         return redirect('/login')
 
-    # If profile not completed, redirect to onboarding
-    if not user_info.get('profile_completed', False):
-        return redirect('/onboarding/step/1')
+    # Check user's matching mode and redirect to appropriate dashboard
+    user_profile = user_auth.get_user_profile(user_id)
+    matching_mode = user_profile.get('matching_mode', 'individual') if user_profile else 'individual'
+    print(f"DEBUG: Dashboard - user {user_id} has matching_mode: {matching_mode}")
 
-    try:
+    if matching_mode == 'network':
+        print(f"DEBUG: Redirecting user {user_id} to network-mode")
+        return redirect('/network-mode')
+
+    if user_info['profile_completed']:
+        # Check if user has selected an event
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Get all organizations the user is a member of
         cursor.execute('''
-            SELECT o.id, o.name, o.description, o.created_at,
-                   COUNT(om.user_id) as member_count,
-                   (o.created_by = %s) as is_owner
-            FROM organizations o
-            INNER JOIN organization_members om ON o.id = om.organization_id
-            WHERE om.user_id = %s AND o.is_active = TRUE
-            GROUP BY o.id, o.name, o.description, o.created_at, o.created_by
-            ORDER BY o.created_at DESC
-        ''', (user_id, user_id))
+            SELECT e.*, er.registered_at
+            FROM events e
+            JOIN event_registrations er ON e.id = er.event_id
+            WHERE er.user_id = %s AND e.date_time > NOW() AND e.is_active = TRUE
+            ORDER BY e.date_time ASC LIMIT 1
+        ''', (user_id,))
 
-        organizations = cursor.fetchall()
+        current_event = cursor.fetchone()
         conn.close()
 
-        content = render_organizations_dashboard(user_info, organizations)
-        return render_template_with_header("Dashboard", content, user_info)
+        if not current_event:
+            # User hasn't selected an event yet, redirect to events page
+            return redirect('/events')
 
-    except Exception as e:
-        print(f"Error loading dashboard: {e}")
-        flash('Error loading dashboard', 'error')
-        return redirect('/login')
+        # User has an event selected, get event-based matches
+        matches = user_auth.get_user_matches(user_id)
+
+        # Verify that existing matches are actually event attendees
+        # If no matches exist OR if existing matches are not event-specific, trigger event matching
+        event_specific_matches = []
+        if matches:
+            # Check if existing matches are attending the same event
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            for match in matches:
+                cursor.execute('''
+                    SELECT 1 FROM event_registrations
+                    WHERE user_id = %s AND event_id = %s
+                ''', (match['matched_user_id'], current_event['id']))
+                if cursor.fetchone():
+                    event_specific_matches.append(match)
+            conn.close()
+
+        # If we don't have event-specific matches, check if we need to run matching
+        if not event_specific_matches:
+            # Check if matching is already in progress
+            if user_id in processing_status:
+                if processing_status[user_id].get('status') == 'processing':
+                    # Matching in progress, redirect to processing
+                    return redirect('/processing')
+                elif processing_status[user_id].get('status') == 'completed':
+                    # Matching completed but no matches found - show no matches dashboard
+                    pass
+                else:
+                    # Unknown status, but don't restart automatically - let user see dashboard
+                    pass
+            else:
+                # No matching status exists - but don't automatically start matching
+                # Let users manually trigger matching if needed, or show no matches dashboard
+                # This prevents the infinite redirect loop
+                pass
+
+        # Use only event-specific matches
+        matches = event_specific_matches
+
+        # Track dashboard view
+        if interaction_tracker:
+            interaction_tracker.track_profile_view(user_id, None, 0)
+
+        if matches:
+            # Show matches with event details
+            content = render_matches_dashboard_with_event(user_info, matches, current_event)
+        else:
+            # No matches found yet
+            content = render_no_matches_dashboard_with_event(current_event)
+    else:
+        # No profile completed yet
+        content = render_new_profile_dashboard()
+    
+    return render_template_with_header("Dashboard", content, user_info)
 
 
 def render_matches_dashboard_with_event(user_info: Dict, matches: List[Dict], event: Dict) -> str:
@@ -8156,1771 +7947,6 @@ def generate_agents_metadata_for_user(current_user_id):
                 }
     
     return agents_metadata
-
-# ============================================================================
-# ROUTES - ORGANIZATION & SIMULATION MANAGEMENT
-# ============================================================================
-
-@app.route('/create-organization', methods=['GET', 'POST'])
-@login_required
-def create_organization():
-    """Create a new organization"""
-    user_id = session['user_id']
-    user_info = user_auth.get_user_info(user_id)
-
-    if request.method == 'POST':
-        org_name = request.form.get('org_name', '').strip()
-        org_description = request.form.get('org_description', '').strip()
-
-        if not org_name:
-            flash('Organization name is required', 'error')
-            return redirect('/create-organization')
-
-        try:
-            conn = get_db_connection()
-            cursor = conn.cursor()
-
-            # Generate unique invite token
-            invite_token = secrets.token_urlsafe(16)
-
-            # Create organization
-            cursor.execute('''
-                INSERT INTO organizations (name, description, created_by, invite_token)
-                VALUES (%s, %s, %s, %s)
-                RETURNING id
-            ''', (org_name, org_description, user_id, invite_token))
-
-            org_id = cursor.fetchone()['id']
-
-            # Add creator as first member with 'owner' role
-            cursor.execute('''
-                INSERT INTO organization_members (organization_id, user_id, role)
-                VALUES (%s, %s, 'owner')
-            ''', (org_id, user_id))
-
-            conn.commit()
-            conn.close()
-
-            flash(f'Organization "{org_name}" created successfully!', 'success')
-            return redirect(f'/organization/{org_id}')
-
-        except Exception as e:
-            print(f"Error creating organization: {e}")
-            flash('Error creating organization. Please try again.', 'error')
-            return redirect('/create-organization')
-
-    # GET request - show form
-    content = '''
-    <style>
-        @import url("https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=sentient@400,500,600,700&display=swap");
-
-        .create-org-container {
-            max-width: 700px;
-            margin: 0 auto;
-            padding: 2rem;
-            min-height: 80vh;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-        }
-
-        .org-header {
-            text-align: center;
-            margin-bottom: 3rem;
-            padding: 2.5rem 2rem;
-            background: rgba(255, 255, 255, 0.7);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-        }
-
-        .org-title {
-            font-family: "Sentient", "Satoshi", sans-serif;
-            font-size: 2.5rem;
-            font-weight: 500;
-            margin: 0 0 1rem 0;
-            color: black;
-            letter-spacing: -0.02em;
-        }
-
-        .org-subtitle {
-            font-family: "Satoshi", sans-serif;
-            font-size: 1.125rem;
-            line-height: 1.6;
-            color: black;
-            margin: 0;
-        }
-
-        .form-section {
-            background: rgba(255, 255, 255, 0.9);
-            backdrop-filter: blur(20px);
-            border-radius: 24px;
-            padding: 2.5rem;
-            margin: 2rem 0;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-        }
-
-        .form-group {
-            margin-bottom: 1.5rem;
-        }
-
-        .form-label {
-            font-family: "Satoshi", sans-serif;
-            display: block;
-            font-size: 0.75rem;
-            text-transform: uppercase;
-            letter-spacing: 0.1em;
-            margin-bottom: 0.75rem;
-            opacity: 0.8;
-            font-weight: 600;
-            color: #2d2d2d;
-        }
-
-        .form-input, .form-textarea {
-            font-family: "Satoshi", sans-serif;
-            width: 100%;
-            padding: 1rem 1.25rem;
-            background: rgba(255, 255, 255, 0.8);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 16px;
-            color: #2d2d2d;
-            font-size: 1rem;
-            transition: all 0.3s ease;
-            box-sizing: border-box;
-        }
-
-        .form-input:focus, .form-textarea:focus {
-            outline: none;
-            border-color: rgba(107, 155, 153, 0.3);
-            background: rgba(255, 255, 255, 0.9);
-            transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(107, 155, 153, 0.15);
-        }
-
-        .form-textarea {
-            resize: vertical;
-            min-height: 100px;
-        }
-
-        .btn {
-            font-family: "Satoshi", sans-serif;
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-            padding: 1rem 2rem;
-            border-radius: 50px;
-            font-weight: 600;
-            font-size: 0.875rem;
-            text-decoration: none;
-            transition: all 0.3s ease;
-            border: none;
-            cursor: pointer;
-            backdrop-filter: blur(10px);
-        }
-
-        .btn-primary {
-            background: black;
-            color: white;
-            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-        }
-
-        .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-        }
-
-        .action-buttons {
-            display: flex;
-            gap: 1rem;
-            justify-content: center;
-            margin-top: 2rem;
-        }
-    </style>
-
-    <div class="create-org-container">
-        <div class="org-header">
-            <h1 class="org-title">Create Your Organization</h1>
-            <p class="org-subtitle">Start by setting up your team or business organization</p>
-        </div>
-
-        <form method="POST" class="form-section">
-            <div class="form-group">
-                <label class="form-label">Organization Name</label>
-                <input type="text" name="org_name" required
-                       placeholder="e.g., Acme Corp, Marketing Team, Product Squad"
-                       class="form-input">
-            </div>
-
-            <div class="form-group">
-                <label class="form-label">Description (Optional)</label>
-                <textarea name="org_description"
-                          placeholder="Brief description of your organization or team..."
-                          class="form-textarea"></textarea>
-            </div>
-
-            <div class="action-buttons">
-                <button type="submit" class="btn btn-primary">
-                    Create Organization
-                </button>
-            </div>
-        </form>
-    </div>
-    '''
-
-    return render_template_with_header("Create Organization", content, user_info)
-
-
-@app.route('/join-organization-by-code', methods=['POST'])
-@login_required
-def join_organization_by_code():
-    """Join organization by entering invite code/link"""
-    user_id = session['user_id']
-    invite_input = request.form.get('invite_code', '').strip()
-
-    if not invite_input:
-        flash('Please enter an invite code or link', 'error')
-        return redirect('/dashboard')
-
-    # Extract token from full URL or use as-is
-    if '/' in invite_input:
-        # It's a full URL, extract the token
-        invite_token = invite_input.split('/')[-1]
-    else:
-        invite_token = invite_input
-
-    # Redirect to the join-organization handler
-    return redirect(f'/join-organization/{invite_token}')
-
-
-@app.route('/join-organization/<invite_token>')
-def join_organization(invite_token):
-    """Join an organization via invite link"""
-    # Check if user is logged in
-    if 'user_id' not in session:
-        # Store invite token in session and redirect to register/login
-        session['pending_org_invite'] = invite_token
-        flash('Please sign up or log in to join this organization', 'info')
-        return redirect('/register')
-
-    user_id = session['user_id']
-    user_info = user_auth.get_user_info(user_id)
-
-    # Check if user has completed profile
-    if not user_info.get('profile_completed', False):
-        # Store invite token and redirect to onboarding
-        session['pending_org_invite'] = invite_token
-        flash('Please complete your profile first', 'info')
-        return redirect('/onboarding/step/1')
-
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        # Find organization by invite token
-        cursor.execute('''
-            SELECT id, name, description FROM organizations
-            WHERE invite_token = %s AND is_active = TRUE
-        ''', (invite_token,))
-
-        org = cursor.fetchone()
-
-        if not org:
-            conn.close()
-            flash('Invalid or expired invite link', 'error')
-            return redirect('/dashboard')
-
-        # Check if user is already a member
-        cursor.execute('''
-            SELECT id FROM organization_members
-            WHERE organization_id = %s AND user_id = %s
-        ''', (org['id'], user_id))
-
-        if cursor.fetchone():
-            conn.close()
-            flash(f'You are already a member of {org["name"]}', 'info')
-            return redirect(f'/organization/{org["id"]}')
-
-        # Add user to organization
-        cursor.execute('''
-            INSERT INTO organization_members (organization_id, user_id, role)
-            VALUES (%s, %s, 'member')
-        ''', (org['id'], user_id))
-
-        conn.commit()
-        conn.close()
-
-        # Clear pending invite from session
-        session.pop('pending_org_invite', None)
-
-        flash(f'Successfully joined {org["name"]}!', 'success')
-        return redirect(f'/organization/{org["id"]}')
-
-    except Exception as e:
-        print(f"Error joining organization: {e}")
-        flash('Error joining organization. Please try again.', 'error')
-        return redirect('/dashboard')
-
-
-@app.route('/organization/<int:org_id>/leave')
-@login_required
-def leave_organization(org_id):
-    """Leave an organization"""
-    user_id = session['user_id']
-
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        # Check if user is a member
-        cursor.execute('''
-            SELECT o.created_by FROM organizations o
-            INNER JOIN organization_members om ON o.id = om.organization_id
-            WHERE o.id = %s AND om.user_id = %s
-        ''', (org_id, user_id))
-
-        result = cursor.fetchone()
-
-        if not result:
-            flash('You are not a member of this organization', 'error')
-            conn.close()
-            return redirect('/dashboard')
-
-        # Don't allow owner to leave
-        if result['created_by'] == user_id:
-            flash('Owners cannot leave their organization. Delete it instead.', 'error')
-            conn.close()
-            return redirect('/dashboard')
-
-        # Remove user from organization
-        cursor.execute('''
-            DELETE FROM organization_members
-            WHERE organization_id = %s AND user_id = %s
-        ''', (org_id, user_id))
-
-        conn.commit()
-        conn.close()
-
-        flash('Successfully left the organization', 'success')
-        return redirect('/dashboard')
-
-    except Exception as e:
-        print(f"Error leaving organization: {e}")
-        flash('Error leaving organization', 'error')
-        return redirect('/dashboard')
-
-
-@app.route('/organization/<int:org_id>/edit', methods=['GET', 'POST'])
-@login_required
-def edit_organization(org_id):
-    """Edit organization (owner only)"""
-    user_id = session['user_id']
-
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        # Check if user is the owner
-        cursor.execute('''
-            SELECT id, name, description, created_by
-            FROM organizations
-            WHERE id = %s AND created_by = %s AND is_active = TRUE
-        ''', (org_id, user_id))
-
-        org = cursor.fetchone()
-
-        if not org:
-            conn.close()
-            flash('Organization not found or you do not have permission', 'error')
-            return redirect('/dashboard')
-
-        if request.method == 'POST':
-            new_name = request.form.get('org_name', '').strip()
-            new_description = request.form.get('org_description', '').strip()
-
-            if not new_name:
-                flash('Organization name is required', 'error')
-            else:
-                cursor.execute('''
-                    UPDATE organizations
-                    SET name = %s, description = %s, updated_at = CURRENT_TIMESTAMP
-                    WHERE id = %s
-                ''', (new_name, new_description, org_id))
-
-                conn.commit()
-                conn.close()
-
-                flash('Organization updated successfully', 'success')
-                return redirect('/dashboard')
-
-        conn.close()
-
-        # Show edit form
-        user_info = user_auth.get_user_info(user_id)
-        content = f'''
-        <style>
-            @import url("https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=sentient@400,500,600,700&display=swap");
-            /* Reuse create-org styles */
-        </style>
-        <div class="create-org-container" style="max-width: 700px; margin: 2rem auto; padding: 2rem;">
-            <div class="org-header" style="text-align: center; margin-bottom: 2rem; padding: 2rem; background: rgba(255,255,255,0.9); border-radius: 20px;">
-                <h1 style="font-family: 'Sentient', sans-serif; font-size: 2rem; color: black;">Edit Organization</h1>
-            </div>
-            <form method="POST" style="background: rgba(255,255,255,0.9); padding: 2rem; border-radius: 20px;">
-                <div style="margin-bottom: 1.5rem;">
-                    <label style="display: block; font-family: 'Satoshi', sans-serif; font-weight: 600; margin-bottom: 0.5rem;">Organization Name</label>
-                    <input type="text" name="org_name" value="{org['name']}" required
-                           style="width: 100%; padding: 1rem; border: 1px solid #ddd; border-radius: 12px; font-size: 1rem; font-family: 'Satoshi', sans-serif; box-sizing: border-box;">
-                </div>
-                <div style="margin-bottom: 1.5rem;">
-                    <label style="display: block; font-family: 'Satoshi', sans-serif; font-weight: 600; margin-bottom: 0.5rem;">Description</label>
-                    <textarea name="org_description" rows="4"
-                           style="width: 100%; padding: 1rem; border: 1px solid #ddd; border-radius: 12px; font-size: 1rem; font-family: 'Satoshi', sans-serif; box-sizing: border-box;">{org['description'] or ''}</textarea>
-                </div>
-                <div style="display: flex; gap: 1rem;">
-                    <button type="submit" style="flex: 1; padding: 1rem; background: black; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer; font-family: 'Satoshi', sans-serif;">
-                        Save Changes
-                    </button>
-                    <a href="/dashboard" style="flex: 1; padding: 1rem; background: white; color: black; border: 2px solid black; border-radius: 12px; font-weight: 600; text-decoration: none; text-align: center; font-family: 'Satoshi', sans-serif; display: block;">
-                        Cancel
-                    </a>
-                </div>
-            </form>
-        </div>
-        '''
-
-        return render_template_with_header("Edit Organization", content, user_info)
-
-    except Exception as e:
-        print(f"Error editing organization: {e}")
-        flash('Error loading organization', 'error')
-        return redirect('/dashboard')
-
-
-@app.route('/organization/<int:org_id>/delete')
-@login_required
-def delete_organization(org_id):
-    """Delete organization (owner only)"""
-    user_id = session['user_id']
-
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        # Check if user is the owner
-        cursor.execute('''
-            SELECT created_by FROM organizations
-            WHERE id = %s AND created_by = %s AND is_active = TRUE
-        ''', (org_id, user_id))
-
-        if not cursor.fetchone():
-            conn.close()
-            flash('Organization not found or you do not have permission', 'error')
-            return redirect('/dashboard')
-
-        # Soft delete - set is_active to false
-        cursor.execute('''
-            UPDATE organizations
-            SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP
-            WHERE id = %s
-        ''', (org_id,))
-
-        conn.commit()
-        conn.close()
-
-        flash('Organization deleted successfully', 'success')
-        return redirect('/dashboard')
-
-    except Exception as e:
-        print(f"Error deleting organization: {e}")
-        flash('Error deleting organization', 'error')
-        return redirect('/dashboard')
-
-
-@app.route('/organization/<int:org_id>')
-@login_required
-def organization_view(org_id):
-    """View organization with Three.js visualization and simulation interface"""
-    user_id = session['user_id']
-    user_info = user_auth.get_user_info(user_id)
-
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        # Check if user is a member of this organization
-        cursor.execute('''
-            SELECT om.role, o.id, o.name, o.description, o.invite_token, o.created_by
-            FROM organization_members om
-            INNER JOIN organizations o ON om.organization_id = o.id
-            WHERE om.organization_id = %s AND om.user_id = %s AND o.is_active = TRUE
-        ''', (org_id, user_id))
-
-        membership = cursor.fetchone()
-
-        if not membership:
-            conn.close()
-            flash('You do not have access to this organization', 'error')
-            return redirect('/dashboard')
-
-        org_info = {
-            'id': membership['id'],
-            'name': membership['name'],
-            'description': membership['description'],
-            'invite_token': membership['invite_token'],
-            'is_owner': membership['created_by'] == user_id,
-            'role': membership['role']
-        }
-
-        # Get all members of the organization
-        cursor.execute('''
-            SELECT u.id, u.first_name, u.last_name, om.role, om.joined_at
-            FROM organization_members om
-            INNER JOIN users u ON om.user_id = u.id
-            WHERE om.organization_id = %s AND om.is_active = TRUE
-            ORDER BY om.joined_at ASC
-        ''', (org_id,))
-
-        members = cursor.fetchall()
-
-        # Get recent simulations for this organization
-        cursor.execute('''
-            SELECT s.id, s.scenario_text, s.created_at, s.status,
-                   u.first_name as created_by_name
-            FROM simulations s
-            INNER JOIN users u ON s.created_by = u.id
-            WHERE s.organization_id = %s
-            ORDER BY s.created_at DESC
-            LIMIT 10
-        ''', (org_id,))
-
-        recent_simulations = cursor.fetchall()
-
-        conn.close()
-
-        content = render_organization_view(org_info, members, recent_simulations, user_info)
-        return render_template_with_header(f"{org_info['name']}", content, user_info)
-
-    except Exception as e:
-        print(f"Error loading organization: {e}")
-        import traceback
-        traceback.print_exc()
-        flash('Error loading organization', 'error')
-        return redirect('/dashboard')
-
-
-def render_organization_view(org_info: Dict, members: List[Dict], simulations: List[Dict], user_info: Dict) -> str:
-    """Render the organization view with Three.js visualization"""
-
-    # Prepare members data for Three.js
-    members_json = []
-    for idx, member in enumerate(members):
-        members_json.append({
-            'id': member['id'],
-            'name': f"{member['first_name']} {member['last_name']}",
-            'role': member['role'],
-            'position': {
-                'x': 0,  # Will be positioned by Three.js
-                'y': 0,
-                'z': 0
-            }
-        })
-
-    members_json_str = json.dumps(members_json)
-
-    # Prepare simulations for sidebar
-    simulations_html = ''
-    if simulations:
-        for sim in simulations:
-            sim_preview = sim['scenario_text'][:50] + '...' if len(sim['scenario_text']) > 50 else sim['scenario_text']
-            sim_date = sim['created_at'].strftime('%b %d, %Y')
-            simulations_html += f'''
-            <div class="simulation-item" onclick="loadSimulation({sim['id']})">
-                <div class="simulation-title">{sim_preview}</div>
-                <div class="simulation-meta">{sim_date} • by {sim['created_by_name']}</div>
-            </div>
-            '''
-    else:
-        simulations_html = '<div class="no-simulations">No simulations yet</div>'
-
-    # Generate invite link
-    invite_url = f"{request.host_url}join-organization/{org_info['invite_token']}"
-
-    content = f'''
-    <style>
-        @import url("https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=sentient@400,500,600,700&display=swap");
-
-        * {{
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }}
-
-        .org-view-container {{
-            display: flex;
-            height: calc(100vh - 80px);
-            width: 100%;
-            gap: 0;
-            font-family: "Satoshi", sans-serif;
-        }}
-
-        /* Left Sidebar - Saved Simulations */
-        .left-sidebar {{
-            width: 280px;
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(20px);
-            border-right: 1px solid rgba(0, 0, 0, 0.1);
-            overflow-y: auto;
-            display: flex;
-            flex-direction: column;
-            transition: transform 0.3s ease;
-        }}
-
-        .left-sidebar.collapsed {{
-            transform: translateX(-280px);
-        }}
-
-        .sidebar-header {{
-            padding: 1rem 1.5rem;
-            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }}
-
-        .sidebar-title {{
-            font-family: "Sentient", "Satoshi", sans-serif;
-            font-size: 1.25rem;
-            font-weight: 600;
-            color: black;
-        }}
-
-        .new-simulation-btn {{
-            background: black;
-            color: white;
-            border: none;
-            width: 32px;
-            height: 32px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 1.25rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.2s ease;
-        }}
-
-        .new-simulation-btn:hover {{
-            transform: scale(1.1);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-        }}
-
-        .simulations-list {{
-            padding: 1rem;
-            flex: 1;
-            overflow-y: auto;
-        }}
-
-        .simulation-item {{
-            padding: 1rem;
-            background: white;
-            border-radius: 12px;
-            margin-bottom: 0.75rem;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            border: 1px solid rgba(0, 0, 0, 0.05);
-        }}
-
-        .simulation-item:hover {{
-            transform: translateX(4px);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-            border-color: rgba(0, 0, 0, 0.2);
-        }}
-
-        .simulation-title {{
-            font-weight: 600;
-            font-size: 0.875rem;
-            color: black;
-            margin-bottom: 0.5rem;
-        }}
-
-        .simulation-meta {{
-            font-size: 0.75rem;
-            color: #666;
-        }}
-
-        .no-simulations {{
-            text-align: center;
-            padding: 2rem 1rem;
-            color: #666;
-            font-size: 0.875rem;
-        }}
-
-        /* Center - Three.js Canvas */
-        .center-content {{
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%);
-            position: relative;
-        }}
-
-        .org-header-bar {{
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(20px);
-            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
-            padding: 1rem 1.5rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }}
-
-        .org-name {{
-            font-family: "Sentient", "Satoshi", sans-serif;
-            font-size: 1.5rem;
-            font-weight: 600;
-            color: black;
-        }}
-
-        .invite-section {{
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }}
-
-        .invite-link-input {{
-            font-family: "Satoshi", sans-serif;
-            padding: 0.5rem 1rem;
-            background: white;
-            border: 1px solid rgba(0, 0, 0, 0.1);
-            border-radius: 8px;
-            font-size: 0.875rem;
-            width: 300px;
-        }}
-
-        .copy-btn {{
-            background: black;
-            color: white;
-            border: none;
-            padding: 0.5rem 1rem;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 0.875rem;
-            font-weight: 600;
-            transition: all 0.2s ease;
-        }}
-
-        .copy-btn:hover {{
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-        }}
-
-        .canvas-container {{
-            flex: 1;
-            position: relative;
-            overflow: hidden;
-        }}
-
-        #three-canvas {{
-            width: 100%;
-            height: 100%;
-            display: block;
-        }}
-
-        .simulation-form {{
-            position: absolute;
-            bottom: 2rem;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 90%;
-            max-width: 600px;
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(20px);
-            border-radius: 16px;
-            padding: 1.5rem;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-        }}
-
-        .scenario-input {{
-            font-family: "Satoshi", sans-serif;
-            width: 100%;
-            padding: 1rem;
-            border: 1px solid rgba(0, 0, 0, 0.1);
-            border-radius: 12px;
-            font-size: 1rem;
-            resize: vertical;
-            min-height: 80px;
-            margin-bottom: 1rem;
-        }}
-
-        .scenario-input:focus {{
-            outline: none;
-            border-color: rgba(0, 0, 0, 0.3);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-        }}
-
-        .simulate-btn {{
-            background: black;
-            color: white;
-            border: none;
-            padding: 1rem 2rem;
-            border-radius: 12px;
-            font-size: 1rem;
-            font-weight: 600;
-            cursor: pointer;
-            width: 100%;
-            transition: all 0.2s ease;
-            font-family: "Satoshi", sans-serif;
-        }}
-
-        .simulate-btn:hover {{
-            transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-        }}
-
-        .simulate-btn:disabled {{
-            background: #ccc;
-            cursor: not-allowed;
-            transform: none;
-        }}
-
-        /* Right Sidebar - Results */
-        .right-sidebar {{
-            width: 350px;
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(20px);
-            border-left: 1px solid rgba(0, 0, 0, 0.1);
-            overflow-y: auto;
-            transition: transform 0.3s ease;
-            transform: translateX(350px);
-        }}
-
-        .right-sidebar.visible {{
-            transform: translateX(0);
-        }}
-
-        .response-container {{
-            padding: 1.5rem;
-        }}
-
-        .response-header {{
-            font-family: "Sentient", "Satoshi", sans-serif;
-            font-size: 1.25rem;
-            font-weight: 600;
-            color: black;
-            margin-bottom: 1rem;
-            padding-bottom: 1rem;
-            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
-        }}
-
-        .response-content {{
-            font-size: 0.875rem;
-            line-height: 1.6;
-            color: #333;
-        }}
-
-        .response-json {{
-            background: #f8f9fa;
-            padding: 1rem;
-            border-radius: 8px;
-            font-family: monospace;
-            font-size: 0.8rem;
-            overflow-x: auto;
-            margin-top: 1rem;
-        }}
-
-        .member-count {{
-            font-size: 0.875rem;
-            color: #666;
-            margin-left: 1rem;
-        }}
-
-    </style>
-
-    <div class="org-view-container">
-        <!-- Left Sidebar: Saved Simulations -->
-        <div class="left-sidebar" id="leftSidebar">
-            <div class="sidebar-header">
-                <div class="sidebar-title">Chats</div>
-                <button class="new-simulation-btn" onclick="clearSimulation()" title="New Simulation">+</button>
-            </div>
-            <div class="simulations-list">
-                {simulations_html}
-            </div>
-        </div>
-
-        <!-- Center: Three.js Visualization -->
-        <div class="center-content">
-            <div class="org-header-bar">
-                <div>
-                    <span class="org-name">{org_info['name']}</span>
-                    <span class="member-count">{len(members)} member{'s' if len(members) != 1 else ''}</span>
-                </div>
-                <div class="invite-section">
-                    <input type="text" class="invite-link-input" id="inviteLink" value="{invite_url}" readonly>
-                    <button class="copy-btn" onclick="copyInviteLink()">Copy Link</button>
-                </div>
-            </div>
-
-            <div class="canvas-container">
-                <canvas id="three-canvas"></canvas>
-
-                <div class="simulation-form">
-                    <textarea
-                        class="scenario-input"
-                        id="scenarioInput"
-                        placeholder="Enter a scenario to simulate... (e.g., 'A major deadline is moved up by two weeks')"
-                    ></textarea>
-                    <button class="simulate-btn" id="simulateBtn" onclick="runSimulation()">
-                        Simulate Responses
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Right Sidebar: Response Details -->
-        <div class="right-sidebar" id="rightSidebar">
-            <div class="response-container" id="responseContainer">
-                <div class="response-header">Select a team member</div>
-                <div class="response-content">
-                    Click on a team member's sphere to see their predicted response to the scenario.
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script>
-        const orgId = {org_info['id']};
-        const members = {members_json_str};
-        let currentSimulationId = null;
-        let simulationResults = {{}};
-
-        console.log('Setting up Three.js with', members.length, 'members');
-
-        // Three.js Setup with cleaner aesthetic
-        const canvas = document.getElementById('three-canvas');
-        if (!canvas) {{
-            console.error('Canvas element #three-canvas not found!');
-            alert('ERROR: Canvas element not found. Please refresh the page.');
-        }} else {{
-        console.log('Canvas element found:', canvas);
-
-        const scene = new THREE.Scene();
-
-        // Clean single-color background - white
-        const bgColor = new THREE.Color(0xffffff);
-        scene.background = bgColor;
-        console.log('Scene background set to:', bgColor.getHexString());
-
-        // Camera setup
-        const camera = new THREE.PerspectiveCamera(
-            50,
-            canvas.clientWidth / canvas.clientHeight,
-            0.1,
-            1000
-        );
-        camera.position.set(0, 5, 15);
-        camera.lookAt(0, 0, 0);
-
-        // Renderer with better quality
-        const renderer = new THREE.WebGLRenderer({{
-            canvas: canvas,
-            antialias: true,
-            alpha: false
-        }});
-
-        // Ensure canvas has proper dimensions
-        const containerWidth = canvas.parentElement.clientWidth;
-        const containerHeight = canvas.parentElement.clientHeight;
-        console.log('Canvas container size:', containerWidth, 'x', containerHeight);
-
-        renderer.setSize(containerWidth, containerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-        renderer.setClearColor(0xffffff, 1);
-
-        // Update camera aspect ratio
-        camera.aspect = containerWidth / containerHeight;
-        camera.updateProjectionMatrix();
-
-        console.log('Renderer initialized. Size:', containerWidth, 'x', containerHeight);
-
-        // Enhanced lighting setup
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-        scene.add(ambientLight);
-
-        const mainLight = new THREE.DirectionalLight(0xffffff, 0.8);
-        mainLight.position.set(10, 10, 10);
-        scene.add(mainLight);
-
-        const fillLight = new THREE.DirectionalLight(0xffffff, 0.4);
-        fillLight.position.set(-5, 5, -5);
-        scene.add(fillLight);
-
-        // Add interactive grid plane (like voxel painter)
-        const gridSize = 20;
-        const gridDivisions = 20;
-        const gridHelper = new THREE.GridHelper(gridSize, gridDivisions, 0x888888, 0xdddddd);
-        gridHelper.position.y = -2;
-        scene.add(gridHelper);
-
-        // Create cleaner spheres for members
-        const spheres = [];
-        const labels = [];
-        const memberCount = members.length;
-        const radius = Math.max(4, memberCount * 0.5);
-
-        console.log('Creating', memberCount, 'spheres with radius', radius);
-
-        members.forEach((member, index) => {{
-            const angle = (index / memberCount) * Math.PI * 2;
-            const x = Math.cos(angle) * radius;
-            const z = Math.sin(angle) * radius;
-            const y = 0;
-
-            // Create sphere with visible color
-            const geometry = new THREE.SphereGeometry(0.6, 32, 32);
-            const material = new THREE.MeshStandardMaterial({{
-                color: 0x4a5568,
-                metalness: 0.2,
-                roughness: 0.5,
-                emissive: 0x1a202c,
-                emissiveIntensity: 0.1
-            }});
-
-            const sphere = new THREE.Mesh(geometry, material);
-            sphere.position.set(x, y, z);
-            sphere.userData = {{
-                memberId: member.id,
-                memberName: member.name,
-                originalY: y,
-                hoverOffset: 0,
-                targetScale: 1.0
-            }};
-            scene.add(sphere);
-            spheres.push(sphere);
-
-            console.log('Created sphere for', member.name, 'at', x, y, z);
-
-            // Create label using sprite
-            const canvas2d = document.createElement('canvas');
-            const context = canvas2d.getContext('2d');
-            canvas2d.width = 256;
-            canvas2d.height = 64;
-
-            context.fillStyle = 'rgba(0, 0, 0, 0)';
-            context.fillRect(0, 0, canvas2d.width, canvas2d.height);
-
-            context.font = 'Bold 24px Satoshi, Arial, sans-serif';
-            context.fillStyle = '#2d3748';
-            context.textAlign = 'center';
-            context.textBaseline = 'middle';
-            context.fillText(member.name, 128, 32);
-
-            const texture = new THREE.CanvasTexture(canvas2d);
-            const spriteMaterial = new THREE.SpriteMaterial({{
-                map: texture,
-                transparent: true
-            }});
-            const sprite = new THREE.Sprite(spriteMaterial);
-            sprite.position.set(x, y + 1.2, z);
-            sprite.scale.set(3, 0.75, 1);
-            scene.add(sprite);
-            labels.push(sprite);
-        }});
-
-        console.log('Total spheres created:', spheres.length);
-
-        // Mouse interaction
-        const raycaster = new THREE.Raycaster();
-        const mouse = new THREE.Vector2();
-        let INTERSECTED = null;
-
-        canvas.addEventListener('mousemove', (event) => {{
-            const rect = canvas.getBoundingClientRect();
-            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
-            raycaster.setFromCamera(mouse, camera);
-            const intersects = raycaster.intersectObjects(spheres);
-
-            if (intersects.length > 0) {{
-                if (INTERSECTED !== intersects[0].object) {{
-                    if (INTERSECTED) {{
-                        INTERSECTED.userData.hoverOffset = 0;
-                        INTERSECTED.userData.targetScale = 1.0;
-                    }}
-                    INTERSECTED = intersects[0].object;
-                    INTERSECTED.userData.hoverOffset = 0.3;
-                    INTERSECTED.userData.targetScale = 1.1;
-                    canvas.style.cursor = 'pointer';
-                }}
-            }} else {{
-                if (INTERSECTED) {{
-                    INTERSECTED.userData.hoverOffset = 0;
-                    INTERSECTED.userData.targetScale = 1.0;
-                }}
-                INTERSECTED = null;
-                canvas.style.cursor = 'default';
-            }}
-        }});
-
-        canvas.addEventListener('click', () => {{
-            if (INTERSECTED && currentSimulationId) {{
-                const memberId = INTERSECTED.userData.memberId;
-                const memberName = INTERSECTED.userData.memberName;
-                showMemberResponse(memberId, memberName);
-            }}
-        }});
-
-        // Animation loop
-        const clock = new THREE.Clock();
-
-        function animate() {{
-            requestAnimationFrame(animate);
-            const elapsed = clock.getElapsedTime();
-
-            // Animate spheres
-            spheres.forEach((sphere, index) => {{
-                // Gentle floating
-                const bob = Math.sin(elapsed * 0.6 + index * 0.5) * 0.15;
-                const targetY = sphere.userData.originalY + bob + sphere.userData.hoverOffset;
-                sphere.position.y += (targetY - sphere.position.y) * 0.08;
-
-                // Gentle rotation
-                sphere.rotation.y += 0.003;
-
-                // Update label
-                if (labels[index]) {{
-                    labels[index].position.y = sphere.position.y + 1.2;
-                }}
-
-                // Smooth scale
-                const targetScale = sphere.userData.targetScale;
-                sphere.scale.x += (targetScale - sphere.scale.x) * 0.1;
-                sphere.scale.y += (targetScale - sphere.scale.y) * 0.1;
-                sphere.scale.z += (targetScale - sphere.scale.z) * 0.1;
-            }});
-
-            // Update particle effects
-            updateParticles();
-
-            renderer.render(scene, camera);
-        }}
-
-        console.log('Starting animation loop');
-        animate();
-
-        // Handle window resize
-        window.addEventListener('resize', () => {{
-            camera.aspect = canvas.clientWidth / canvas.clientHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(canvas.clientWidth, canvas.clientHeight);
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-        }});
-
-        // Particle system for spark effects
-        const particleSystems = [];
-
-        function createSparkEffect(position) {{
-            const particleCount = 30;
-            const particles = new THREE.BufferGeometry();
-            const positions = new Float32Array(particleCount * 3);
-            const velocities = [];
-
-            for (let i = 0; i < particleCount; i++) {{
-                positions[i * 3] = position.x;
-                positions[i * 3 + 1] = position.y;
-                positions[i * 3 + 2] = position.z;
-
-                // Random velocities for spark effect
-                velocities.push({{
-                    x: (Math.random() - 0.5) * 0.1,
-                    y: Math.random() * 0.15,
-                    z: (Math.random() - 0.5) * 0.1
-                }});
-            }}
-
-            particles.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-
-            const particleMaterial = new THREE.PointsMaterial({{
-                color: 0xffd700,
-                size: 0.1,
-                transparent: true,
-                opacity: 1.0,
-                blending: THREE.AdditiveBlending
-            }});
-
-            const particleSystem = new THREE.Points(particles, particleMaterial);
-            particleSystem.userData = {{
-                velocities: velocities,
-                age: 0,
-                maxAge: 60
-            }};
-
-            scene.add(particleSystem);
-            particleSystems.push(particleSystem);
-
-            return particleSystem;
-        }}
-
-        function updateParticles() {{
-            for (let i = particleSystems.length - 1; i >= 0; i--) {{
-                const system = particleSystems[i];
-                const positions = system.geometry.attributes.position.array;
-                const velocities = system.userData.velocities;
-
-                system.userData.age++;
-
-                // Update particle positions
-                for (let j = 0; j < velocities.length; j++) {{
-                    positions[j * 3] += velocities[j].x;
-                    positions[j * 3 + 1] += velocities[j].y;
-                    positions[j * 3 + 2] += velocities[j].z;
-
-                    // Apply gravity
-                    velocities[j].y -= 0.003;
-                }}
-
-                system.geometry.attributes.position.needsUpdate = true;
-
-                // Fade out
-                const ageRatio = system.userData.age / system.userData.maxAge;
-                system.material.opacity = 1.0 - ageRatio;
-
-                // Remove old particle systems
-                if (system.userData.age >= system.userData.maxAge) {{
-                    scene.remove(system);
-                    system.geometry.dispose();
-                    system.material.dispose();
-                    particleSystems.splice(i, 1);
-                }}
-            }}
-        }}
-
-        // Simulation functions
-        async function runSimulation() {{
-            const scenario = document.getElementById('scenarioInput').value.trim();
-            if (!scenario) {{
-                alert('Please enter a scenario');
-                return;
-            }}
-
-            const btn = document.getElementById('simulateBtn');
-
-            btn.disabled = true;
-            btn.textContent = 'Simulating...';
-
-            try {{
-                const response = await fetch('/api/run-simulation', {{
-                    method: 'POST',
-                    headers: {{ 'Content-Type': 'application/json' }},
-                    body: JSON.stringify({{
-                        org_id: orgId,
-                        scenario: scenario
-                    }})
-                }});
-
-                const data = await response.json();
-
-                if (data.success) {{
-                    currentSimulationId = data.simulation_id;
-                    simulationResults = data.responses;
-
-                    // Animate spheres with spark effects
-                    spheres.forEach((sphere, index) => {{
-                        if (simulationResults[sphere.userData.memberId]) {{
-                            // Stagger the animation and spark effects
-                            setTimeout(() => {{
-                                const targetColor = new THREE.Color(0x6b9b99); // Teal accent
-                                animateColorTransition(sphere.material, targetColor, 1000);
-
-                                // Create spark effect around the sphere
-                                createSparkEffect(sphere.position);
-                            }}, index * 150);
-                        }}
-                    }});
-                }} else {{
-                    // Check if subscription is required
-                    if (data.requires_subscription) {{
-                        if (confirm(data.message + '\\n\\nWould you like to upgrade now?')) {{
-                            window.location.href = '/subscription/plans';
-                        }}
-                    }} else {{
-                        alert('Error: ' + data.error);
-                    }}
-                }}
-            }} catch (error) {{
-                console.error('Error:', error);
-                alert('Failed to run simulation');
-            }} finally {{
-                btn.disabled = false;
-                btn.textContent = 'Simulate Responses';
-            }}
-        }}
-
-        function showMemberResponse(memberId, memberName) {{
-            const response = simulationResults[memberId];
-            if (!response) {{
-                alert('No response available for this member');
-                return;
-            }}
-
-            const sidebar = document.getElementById('rightSidebar');
-            const container = document.getElementById('responseContainer');
-
-            // Format response nicely
-            let formattedResponse = '';
-
-            if (response.error) {{
-                formattedResponse = `
-                    <div style="padding: 1rem; background: #fee; border-radius: 8px; color: #c33;">
-                        <strong>Error:</strong> ${{response.error}}
-                    </div>
-                `;
-            }} else {{
-                formattedResponse = `
-                    <div class="response-section">
-                        <h4 style="font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.05em; color: #666; margin-bottom: 0.5rem; font-weight: 600;">Immediate Reaction</h4>
-                        <p style="color: #333; line-height: 1.6; margin-bottom: 1.5rem;">${{response.immediate_reaction || 'N/A'}}</p>
-                    </div>
-
-                    <div class="response-section">
-                        <h4 style="font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.05em; color: #666; margin-bottom: 0.5rem; font-weight: 600;">Likely Action</h4>
-                        <p style="color: #333; line-height: 1.6; margin-bottom: 1.5rem;">${{response.likely_action || 'N/A'}}</p>
-                    </div>
-
-                    <div class="response-section">
-                        <h4 style="font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.05em; color: #666; margin-bottom: 0.5rem; font-weight: 600;">Reasoning</h4>
-                        <p style="color: #333; line-height: 1.6; margin-bottom: 1.5rem;">${{response.reasoning || 'N/A'}}</p>
-                    </div>
-
-                    <div class="response-section">
-                        <h4 style="font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.05em; color: #666; margin-bottom: 0.5rem; font-weight: 600;">Stress Level</h4>
-                        <div style="margin-bottom: 1.5rem;">
-                            <span style="display: inline-block; padding: 0.5rem 1rem; background: ${{
-                                response.stress_level === 'low' ? '#d4edda' :
-                                response.stress_level === 'high' ? '#f8d7da' : '#fff3cd'
-                            }}; color: ${{
-                                response.stress_level === 'low' ? '#155724' :
-                                response.stress_level === 'high' ? '#721c24' : '#856404'
-                            }}; border-radius: 8px; font-weight: 600; text-transform: uppercase; font-size: 0.75rem;">
-                                ${{response.stress_level || 'N/A'}}
-                            </span>
-                        </div>
-                    </div>
-
-                    <div class="response-section">
-                        <h4 style="font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.05em; color: #666; margin-bottom: 0.5rem; font-weight: 600;">Suggested Approach</h4>
-                        <p style="color: #333; line-height: 1.6; padding: 1rem; background: #f8f9fa; border-radius: 8px; border-left: 3px solid #6b9b99;">${{response.suggested_approach || 'N/A'}}</p>
-                    </div>
-                `;
-            }}
-
-            container.innerHTML = `
-                <div class="response-header">${{memberName}}</div>
-                <div class="response-content">
-                    ${{formattedResponse}}
-                </div>
-            `;
-
-            sidebar.classList.add('visible');
-        }}
-
-        // Smooth color transition helper
-        function animateColorTransition(material, targetColor, duration) {{
-            const startColor = material.color.clone();
-            const startTime = Date.now();
-
-            function updateColor() {{
-                const elapsed = Date.now() - startTime;
-                const progress = Math.min(elapsed / duration, 1);
-
-                // Ease out cubic
-                const eased = 1 - Math.pow(1 - progress, 3);
-
-                material.color.lerpColors(startColor, targetColor, eased);
-
-                if (progress < 1) {{
-                    requestAnimationFrame(updateColor);
-                }}
-            }}
-
-            updateColor();
-        }}
-
-        function clearSimulation() {{
-            document.getElementById('scenarioInput').value = '';
-            currentSimulationId = null;
-            simulationResults = {{}};
-
-            // Reset sphere colors with animation
-            const originalColor = new THREE.Color(0x4a5568);
-            spheres.forEach((sphere, index) => {{
-                setTimeout(() => {{
-                    animateColorTransition(sphere.material, originalColor, 800);
-                }}, index * 50);
-            }});
-
-            document.getElementById('rightSidebar').classList.remove('visible');
-        }}
-
-        function copyInviteLink() {{
-            const input = document.getElementById('inviteLink');
-            input.select();
-            document.execCommand('copy');
-
-            const btn = event.target;
-            const originalText = btn.textContent;
-            btn.textContent = 'Copied!';
-            setTimeout(() => {{
-                btn.textContent = originalText;
-            }}, 2000);
-        }}
-
-        async function loadSimulation(simId) {{
-            console.log('Loading simulation:', simId);
-
-            try {{
-                const response = await fetch(`/api/load-simulation/${{simId}}`);
-                const data = await response.json();
-
-                if (data.success) {{
-                    // Load the scenario into the input
-                    document.getElementById('scenarioInput').value = data.scenario;
-
-                    // Set current simulation
-                    currentSimulationId = data.simulation_id;
-                    simulationResults = data.responses;
-
-                    // Update sphere colors with animation
-                    const targetColor = new THREE.Color(0x6b9b99);
-                    spheres.forEach((sphere, index) => {{
-                        if (simulationResults[sphere.userData.memberId]) {{
-                            setTimeout(() => {{
-                                animateColorTransition(sphere.material, targetColor, 800);
-                            }}, index * 80);
-                        }}
-                    }});
-
-                    // Close right sidebar if open
-                    document.getElementById('rightSidebar').classList.remove('visible');
-
-                    console.log('Loaded simulation with', Object.keys(simulationResults).length, 'responses');
-                }} else {{
-                    alert('Error loading simulation: ' + data.error);
-                }}
-            }} catch (error) {{
-                console.error('Error loading simulation:', error);
-                alert('Failed to load simulation');
-            }}
-        }}
-        }} // Close the else block for canvas check
-    </script>
-    '''
-
-    return content
-
-
-@app.route('/api/run-simulation', methods=['POST'])
-@login_required
-def run_simulation():
-    """Run a simulation for all members of an organization"""
-    user_id = session['user_id']
-
-    try:
-        data = request.get_json()
-        org_id = data.get('org_id')
-        scenario = data.get('scenario', '').strip()
-
-        if not org_id or not scenario:
-            return jsonify({'success': False, 'error': 'Missing org_id or scenario'}), 400
-
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        # Verify user is a member of this organization
-        cursor.execute('''
-            SELECT 1 FROM organization_members
-            WHERE organization_id = %s AND user_id = %s AND is_active = TRUE
-        ''', (org_id, user_id))
-
-        if not cursor.fetchone():
-            conn.close()
-            return jsonify({'success': False, 'error': 'Not authorized'}), 403
-
-        # Check subscription status and simulation count
-        subscription_status = subscription_manager.get_user_subscription_status(user_id)
-
-        # Count user's simulations
-        cursor.execute('''
-            SELECT COUNT(*) as sim_count FROM simulations
-            WHERE created_by = %s
-        ''', (user_id,))
-
-        sim_count = cursor.fetchone()['sim_count']
-
-        # Check if user needs subscription (20 free simulations)
-        if not subscription_status['is_subscribed'] and sim_count >= 20:
-            conn.close()
-            return jsonify({
-                'success': False,
-                'error': 'Simulation limit reached',
-                'message': f'You have used all 20 free simulations. Please subscribe to continue.',
-                'simulations_used': sim_count,
-                'requires_subscription': True
-            }), 402  # Payment Required status code
-
-        # Create simulation record
-        cursor.execute('''
-            INSERT INTO simulations (organization_id, scenario_text, created_by, status)
-            VALUES (%s, %s, %s, 'processing')
-            RETURNING id
-        ''', (org_id, scenario, user_id))
-
-        simulation_id = cursor.fetchone()['id']
-        conn.commit()
-
-        # Get all members of the organization with their profiles
-        cursor.execute('''
-            SELECT u.id, u.first_name, u.last_name, up.profile_data
-            FROM organization_members om
-            INNER JOIN users u ON om.user_id = u.id
-            LEFT JOIN user_profiles up ON u.id = up.user_id
-            WHERE om.organization_id = %s AND om.is_active = TRUE
-        ''', (org_id,))
-
-        members = cursor.fetchall()
-
-        # Initialize OpenAI client
-        from openai import OpenAI
-        client = OpenAI(api_key=API_KEY)
-
-        responses = {}
-
-        # Generate responses for each member
-        for member in members:
-            member_id = member['id']
-            member_name = f"{member['first_name']} {member['last_name']}"
-
-            # Get profile data
-            profile_data = {}
-            if member['profile_data']:
-                try:
-                    profile_data = json.loads(member['profile_data'])
-                except:
-                    profile_data = {}
-
-            # Build prompt from profile data
-            profile_summary = build_profile_summary(profile_data, member_name)
-
-            # Call OpenAI to generate response
-            prompt = f"""You are simulating how {member_name} would respond to a workplace scenario.
-
-Based on their personality profile:
-{profile_summary}
-
-Scenario: {scenario}
-
-Predict how {member_name} would respond to this scenario. Provide your response in the following JSON format:
-{{
-    "immediate_reaction": "Their first emotional/mental response",
-    "likely_action": "What they would actually do or say",
-    "reasoning": "Why they would respond this way based on their personality",
-    "stress_level": "low/medium/high",
-    "suggested_approach": "How to best work with them in this situation"
-}}
-
-Return ONLY the JSON, no other text."""
-
-            try:
-                completion = client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=[
-                        {"role": "system", "content": "You are a workplace psychology expert who predicts how people will respond to scenarios based on their personality profiles."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=0.7,
-                    max_tokens=500
-                )
-
-                response_text = completion.choices[0].message.content.strip()
-
-                # Try to parse JSON response
-                try:
-                    # Remove markdown code blocks if present
-                    if response_text.startswith('```'):
-                        response_text = response_text.split('```')[1]
-                        if response_text.startswith('json'):
-                            response_text = response_text[4:]
-                        response_text = response_text.strip()
-
-                    response_json = json.loads(response_text)
-                except json.JSONDecodeError:
-                    # Fallback if JSON parsing fails
-                    response_json = {
-                        "immediate_reaction": response_text[:200],
-                        "likely_action": "Unable to parse structured response",
-                        "reasoning": response_text,
-                        "stress_level": "medium",
-                        "suggested_approach": "Review response manually"
-                    }
-
-                responses[member_id] = response_json
-
-                # Save response to database
-                cursor.execute('''
-                    INSERT INTO simulation_responses (simulation_id, user_id, response_json)
-                    VALUES (%s, %s, %s)
-                ''', (simulation_id, member_id, json.dumps(response_json)))
-
-            except Exception as e:
-                print(f"Error generating response for member {member_id}: {e}")
-                responses[member_id] = {
-                    "error": "Failed to generate response",
-                    "details": str(e)
-                }
-
-        # Mark simulation as completed
-        cursor.execute('''
-            UPDATE simulations
-            SET status = 'completed', completed_at = CURRENT_TIMESTAMP
-            WHERE id = %s
-        ''', (simulation_id,))
-
-        conn.commit()
-        conn.close()
-
-        return jsonify({
-            'success': True,
-            'simulation_id': simulation_id,
-            'responses': responses
-        })
-
-    except Exception as e:
-        print(f"Error running simulation: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-
-def build_profile_summary(profile_data: dict, member_name: str) -> str:
-    """Build a readable summary of a user's profile for the AI prompt"""
-    if not profile_data:
-        return f"{member_name} has not completed their personality profile yet."
-
-    summary_parts = [f"Profile for {member_name}:"]
-
-    # Add key personality dimensions
-    personality_fields = {
-        'decision_making': ('Decision Making', 'Logic-driven', 'Emotion-driven'),
-        'social_energy': ('Social Energy', 'Intimate connections', 'Wide social circles'),
-        'communication_depth': ('Communication', 'Surface-level', 'Deep conversations'),
-        'conflict_approach': ('Conflict Style', 'Direct confrontation', 'Gentle discussion'),
-        'life_pace': ('Life Pace', 'Structured routine', 'Spontaneous flow')
-    }
-
-    for field, (label, low_label, high_label) in personality_fields.items():
-        if field in profile_data:
-            value = profile_data[field]
-            if isinstance(value, (int, float)):
-                if value <= 3:
-                    desc = f"Tends toward {low_label.lower()}"
-                elif value >= 7:
-                    desc = f"Tends toward {high_label.lower()}"
-                else:
-                    desc = f"Balanced between {low_label.lower()} and {high_label.lower()}"
-                summary_parts.append(f"- {label}: {desc}")
-
-    # Add categorical responses
-    categorical_fields = {
-        'friendship_superpower': 'Friendship Strength',
-        'friend_support_style': 'Support Style',
-        'stress_preference': 'Under Stress Prefers',
-        'processing_style': 'Emotional Processing',
-        'friend_motivation': 'Motivation for Connection'
-    }
-
-    for field, label in categorical_fields.items():
-        if field in profile_data:
-            value = profile_data[field]
-            if value:
-                readable_value = value.replace('_', ' ').title()
-                summary_parts.append(f"- {label}: {readable_value}")
-
-    # Add text responses
-    text_fields = {
-        'ideal_friendship_description': 'Ideal Relationship',
-        'unique_interest': 'Unique Interest',
-        'life_experience_impact': 'Formative Experience'
-    }
-
-    for field, label in text_fields.items():
-        if field in profile_data:
-            value = profile_data[field]
-            if value and len(str(value).strip()) > 0:
-                summary_parts.append(f"- {label}: {value}")
-
-    return '\n'.join(summary_parts)
-
-
-@app.route('/api/load-simulation/<int:simulation_id>', methods=['GET'])
-@login_required
-def load_simulation(simulation_id):
-    """Load a historical simulation with all responses"""
-    user_id = session['user_id']
-
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        # Get simulation details
-        cursor.execute('''
-            SELECT s.id, s.organization_id, s.scenario_text, s.created_at, s.status
-            FROM simulations s
-            INNER JOIN organization_members om ON s.organization_id = om.organization_id
-            WHERE s.id = %s AND om.user_id = %s AND om.is_active = TRUE
-        ''', (simulation_id, user_id))
-
-        simulation = cursor.fetchone()
-
-        if not simulation:
-            conn.close()
-            return jsonify({'success': False, 'error': 'Simulation not found'}), 404
-
-        # Get all responses for this simulation
-        cursor.execute('''
-            SELECT sr.user_id, sr.response_json
-            FROM simulation_responses sr
-            WHERE sr.simulation_id = %s
-        ''', (simulation_id,))
-
-        response_rows = cursor.fetchall()
-        conn.close()
-
-        # Parse responses
-        responses = {}
-        for row in response_rows:
-            try:
-                responses[row['user_id']] = json.loads(row['response_json'])
-            except:
-                responses[row['user_id']] = {'error': 'Failed to parse response'}
-
-        return jsonify({
-            'success': True,
-            'simulation_id': simulation['id'],
-            'scenario': simulation['scenario_text'],
-            'responses': responses,
-            'created_at': simulation['created_at'].isoformat() if simulation['created_at'] else None
-        })
-
-    except Exception as e:
-        print(f"Error loading simulation: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'success': False, 'error': str(e)}), 500
-
 
 # ============================================================================
 # ROUTES - V2 NETWORK MANAGEMENT
@@ -12711,6 +10737,67 @@ def init_database():
 # ============================================================================
 # MAIN APPLICATION
 # ============================================================================
+@app.route('/debug-users')
+def debug_users():
+    email = "alessa@pont-diagnostics.com"  # The email from your user record
+    test_password = "123456"  # The password you're trying to use
+    
+    # Test hash generation
+    hash_salt = os.environ.get('HASH_SALT', 'default-salt')
+    generated_hash = data_encryption.hash_for_matching(email.lower().strip())
+    expected_hash = "0c91053185e01034240ee9ea508ada319f342dceb0d91291505fd556476859d6"
+    
+    # Get the actual password hash from database
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT password_hash FROM users WHERE id = 1')
+        user = cursor.fetchone()
+        stored_password_hash = user['password_hash'] if user else None
+        conn.close()
+    except Exception as e:
+        stored_password_hash = f"Error: {e}"
+    
+    # Test password verification
+    password_test_result = "N/A"
+    if stored_password_hash and isinstance(stored_password_hash, str):
+        try:
+            password_test_result = check_password_hash(stored_password_hash, test_password)
+        except Exception as e:
+            password_test_result = f"Error: {e}"
+    
+    return f'''
+    <h3>Authentication Debug:</h3>
+    
+    <h4>Email Hash Test:</h4>
+    <p><strong>Email:</strong> {email}</p>
+    <p><strong>HASH_SALT env var:</strong> {hash_salt}</p>
+    <p><strong>Generated hash:</strong> {generated_hash}</p>
+    <p><strong>Expected hash:</strong> {expected_hash}</p>
+    <p><strong>Hashes match:</strong> {generated_hash == expected_hash}</p>
+    
+    <h4>Password Test:</h4>
+    <p><strong>Test password:</strong> {test_password}</p>
+    <p><strong>Stored hash:</strong> {stored_password_hash}</p>
+    <p><strong>Password verification result:</strong> {password_test_result}</p>
+    
+    <h4>Manual Hash Calculation:</h4>
+    <p><strong>Input string:</strong> {email.lower().strip()}_{hash_salt}</p>
+    <p><strong>SHA256:</strong> {hashlib.sha256(f"{email.lower().strip()}_{hash_salt}".encode()).hexdigest()}</p>
+    
+    <h4>Environment Check:</h4>
+    <p><strong>ENCRYPTION_PASSWORD:</strong> {"SET" if os.environ.get('ENCRYPTION_PASSWORD') else "NOT SET (using default)"}</p>
+    <p><strong>ENCRYPTION_SALT:</strong> {"SET" if os.environ.get('ENCRYPTION_SALT') else "NOT SET (using default)"}</p>
+    <p><strong>HASH_SALT:</strong> {"SET" if os.environ.get('HASH_SALT') else "NOT SET (using default)"}</p>
+    
+    <hr>
+    <h4>Quick Login Test:</h4>
+    <form method="POST" action="/debug-login-test">
+        <input type="email" name="email" value="{email}" placeholder="Email">
+        <input type="password" name="password" value="{test_password}" placeholder="Password">
+        <button type="submit">Test Login</button>
+    </form>
+    '''
 
 @app.route('/privacy-policy')
 def privacy_policy():
@@ -14533,10 +12620,1721 @@ def handle_subscription_deleted(subscription):
         
     except Exception as e:
         print(f"Error handling subscription deletion: {e}")
+# ============================================================================
+# DEBUG AND TESTING
+# ============================================================================
+
+#debugging the recommender system
+@app.route('/debug/data-check')
+def debug_data_check():
+    """Check if recommender data is being saved"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Check user interactions
+        cursor.execute('SELECT COUNT(*) as count FROM user_interactions')
+        interactions_count = cursor.fetchone()['count']
+        
+        # Check recent interactions
+        cursor.execute('''
+            SELECT user_id, interaction_type, target_user_id, outcome, timestamp 
+            FROM user_interactions 
+            ORDER BY timestamp DESC 
+            LIMIT 10
+        ''')
+        recent_interactions = cursor.fetchall()
+        
+        # Check training data
+        cursor.execute('SELECT COUNT(*) as count FROM training_data')
+        training_count = cursor.fetchone()['count']
+        
+        # Check model performance
+        cursor.execute('SELECT COUNT(*) as count FROM model_performance')
+        model_count = cursor.fetchone()['count']
+        
+        # Check social clusters
+        cursor.execute('SELECT COUNT(*) as count FROM social_clusters')
+        clusters_count = cursor.fetchone()['count']
+        
+        # Check user matches
+        cursor.execute('SELECT COUNT(*) as count FROM user_matches')
+        matches_count = cursor.fetchone()['count']
+        
+        conn.close()
+        
+        html = f'''
+        <h2>Recommender System Data Check</h2>
+        
+        <h3>Data Counts:</h3>
+        <ul>
+            <li>User Interactions: {interactions_count}</li>
+            <li>Training Data Points: {training_count}</li>
+            <li>Model Performance Records: {model_count}</li>
+            <li>Social Clusters: {clusters_count}</li>
+            <li>User Matches: {matches_count}</li>
+        </ul>
+        
+        <h3>Recent Interactions:</h3>
+        <table border="1" style="border-collapse: collapse;">
+            <tr>
+                <th>User ID</th>
+                <th>Type</th>
+                <th>Target User</th>
+                <th>Outcome</th>
+                <th>Timestamp</th>
+            </tr>
+        '''
+        
+        for interaction in recent_interactions:
+            html += f'''
+            <tr>
+                <td>{interaction['user_id']}</td>
+                <td>{interaction['interaction_type']}</td>
+                <td>{interaction['target_user_id'] or 'N/A'}</td>
+                <td>{interaction['outcome'] or 'N/A'}</td>
+                <td>{interaction['timestamp']}</td>
+            </tr>
+            '''
+        
+        html += '''
+        </table>
+        
+        <h3>Next Steps:</h3>
+        <ul>
+            <li><a href="/debug/test-interaction">Test Recording an Interaction</a></li>
+            <li><a href="/debug/neural-status">Check Neural Network Status</a></li>
+        </ul>
+        '''
+        
+        return html
+        
+    except Exception as e:
+        return f"<h2>Error</h2><p>{e}</p>"
+
+@app.route('/debug/test-tracker')
+@login_required
+def test_tracker():
+    """Test if interaction tracker is working"""
+    user_id = session['user_id']
+    
+    try:
+        # Test direct tracking
+        print(f"Testing interaction tracker for user {user_id}")
+        
+        # Check if interaction_tracker exists
+        if not interaction_tracker:
+            return "<h2>Error</h2><p>interaction_tracker is None</p>"
+        
+        print(f"interaction_tracker type: {type(interaction_tracker)}")
+        print(f"interaction_tracker methods: {dir(interaction_tracker)}")
+        
+        # Test recording with more logging
+        print("About to call track_profile_view...")
+        result = interaction_tracker.track_profile_view(user_id, 999, 30.0)
+        print(f"Track result: {result}")
+        print(f"Track result type: {type(result)}")
+        
+        # Check database connection
+        conn = get_db_connection()
+        print(f"Database connection: {conn}")
+        
+        cursor = conn.cursor()
+        
+        # Check if table exists
+        cursor.execute("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'user_interactions')")
+        table_exists = cursor.fetchone()
+        print(f"Table exists: {table_exists}")
+        
+        if table_exists:
+            # Check table structure
+            cursor.execute("SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'user_interactions'")
+            structure = cursor.fetchall()
+            print(f"Table structure: {structure}")
+            
+            # Check all records for this user
+            cursor.execute('SELECT COUNT(*) as count FROM user_interactions WHERE user_id = %s', (user_id,))
+            count_result = cursor.fetchone()
+            print(f"Total interactions for user {user_id}: {count_result}")
+            
+            # Check latest record
+            cursor.execute('SELECT * FROM user_interactions WHERE user_id = %s ORDER BY timestamp DESC LIMIT 1', (user_id,))
+            latest = cursor.fetchone()
+            print(f"Latest record: {latest}")
+        
+        conn.close()
+        
+        # Return detailed debug info
+        return f'''
+        <h2>Debug Information</h2>
+        <p>Check the console/logs for detailed output</p>
+        <p>Result: {result}</p>
+        <p>Table exists: {table_exists}</p>
+        '''
+            
+    except Exception as e:
+        import traceback
+        return f'''
+        <h2>Tracking Test ERROR</h2>
+        <p>Error: {e}</p>
+        <pre>{traceback.format_exc()}</pre>
+        '''
+
+def debug_track_test(self, user_id):
+    """Debug method to test tracking"""
+    print(f"InteractionTracker.debug_track_test called for user {user_id}")
+    try:
+        result = self.matching_system.record_user_interaction(
+            user_id, 'debug_test', None, {'test': True}, 'test_outcome'
+        )
+        print(f"record_user_interaction result: {result}")
+        return result
+    except Exception as e:
+        print(f"debug_track_test error: {e}")
+        raise
+
+@app.route('/system-health')
+def system_health():
+    """Quick health check for the recommender system"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Check basic database connectivity
+        cursor.execute('SELECT COUNT(*) FROM users')
+        total_users = cursor.fetchone()[0]
+        
+        cursor.execute('SELECT COUNT(*) FROM user_profiles')
+        total_profiles = cursor.fetchone()[0]
+        
+        cursor.execute('SELECT COUNT(*) FROM users WHERE profile_completed = TRUE')
+        completed_profiles = cursor.fetchone()[0]
+        
+        cursor.execute('SELECT COUNT(*) FROM user_matches')
+        total_matches = cursor.fetchone()[0]
+        
+        conn.close()
+        
+        # Check if matching system is accessible
+        matching_system_available = enhanced_matching_system is not None
+        neural_network_trained = enhanced_matching_system.neural_predictor.is_trained if enhanced_matching_system else False
+        
+        status = {
+            'database_connected': True,
+            'total_users': total_users,
+            'total_profiles': total_profiles,
+            'completed_profiles': completed_profiles,
+            'total_matches_generated': total_matches,
+            'matching_system_available': matching_system_available,
+            'neural_network_trained': neural_network_trained,
+            'can_generate_matches': completed_profiles >= 2
+        }
+        
+        return f"""
+        <h2>Recommender System Health Check</h2>
+        <ul>
+            <li>Database Connected: {'✅' if status['database_connected'] else '❌'}</li>
+            <li>Total Users: {status['total_users']}</li>
+            <li>User Profiles: {status['total_profiles']}</li>
+            <li>Completed Profiles: {status['completed_profiles']}</li>
+            <li>Matches Generated: {status['total_matches_generated']}</li>
+            <li>Matching System Available: {'✅' if status['matching_system_available'] else '❌'}</li>
+            <li>Neural Network Trained: {'✅' if status['neural_network_trained'] else '❌'}</li>
+            <li>Can Generate Matches: {'✅' if status['can_generate_matches'] else '❌'}</li>
+        </ul>
+        
+        <h3>Next Steps:</h3>
+        {'<p>✅ System ready for matching!</p>' if status['can_generate_matches'] else '<p>❌ Need at least 2 completed profiles to test matching</p>'}
+        
+        <h3>Test Links:</h3>
+        <ul>
+            
+            <li><a href="/test-matching">Test Matching Process</a></li>
+        </ul>
+        """
+        
+    except Exception as e:
+        return f"<h2>System Error</h2><p>Error: {e}</p>"
+
+
+@app.route('/test-matching')
+def test_matching():
+    """Test the matching system with existing users"""
+    try:
+        # Get users with completed profiles using proper decryption
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT id FROM users WHERE profile_completed = TRUE LIMIT 5')
+        user_ids = [row['id'] for row in cursor.fetchall()]
+        conn.close()
+        
+        if len(user_ids) < 2:
+            return """
+            <h2>Cannot Test Matching</h2>
+            <p>Need at least 2 users with completed profiles.</p>
+            <p><a href="/create-test-users">Create Test Users First</a></p>
+            """
+        
+        # Get user info properly
+        test_user_id = user_ids[0]
+        test_user_info = user_auth.get_user_info(test_user_id)
+        test_user_name = test_user_info['first_name'] if test_user_info else 'Unknown'
+        
+        print(f"Testing matching for user {test_user_id} ({test_user_name})")
+        
+        # Run the matching
+        matches = enhanced_matching_system.run_matching(test_user_id)
+        
+        
+        results_html = f"""
+        <h2>Matching Test Results</h2>
+        <p><strong>Test User:</strong> {test_user_name} (ID: {test_user_id})</p>
+        <p><strong>Matches Found:</strong> {len(matches)}</p>
+        """
+        
+        if matches:
+            results_html += "<h3>Top Matches:</h3><ul>"
+            for i, match in enumerate(matches[:3]):
+                results_html += f"""
+                <li>
+                    <strong>{match['matched_user_name']}</strong> 
+                    - Overall Score: {match['overall_score']}%
+                    - Personality: {match['personality_score']}%
+                    - Values: {match.get('values_score', 'N/A')}%
+                </li>
+                """
+            results_html += "</ul>"
+        else:
+            results_html += "<p>No matches found - this could indicate an issue with the matching algorithm.</p>"
+        
+        results_html += """
+        <h3>Test More:</h3>
+        <ul>
+            <li><a href="/system-health">System Health Check</a></li>
+            
+        </ul>
+        """
+        
+        return results_html
+        
+    except Exception as e:
+        import traceback
+        return f"""
+        <h2>Matching Test Failed</h2>
+        <p><strong>Error:</strong> {e}</p>
+        <pre>{traceback.format_exc()}</pre>
+        <p><a href="/system-health">Check System Health</a></p>
+        """
+
+@app.route('/events')
+def events():
+    """Events selection page - shown after onboarding completion"""
+    if 'user_id' not in session:
+        return redirect('/login')
+
+    user_id = session['user_id']
+
+    # Check if user has already selected an event and hasn't completed it
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Check for existing registration for active events
+    cursor.execute('''
+        SELECT e.*, er.registered_at
+        FROM events e
+        JOIN event_registrations er ON e.id = er.event_id
+        WHERE er.user_id = %s AND e.date_time > NOW() AND e.is_active = TRUE
+        ORDER BY e.date_time ASC LIMIT 1
+    ''', (user_id,))
+
+    current_event = cursor.fetchone()
+
+    if current_event:
+        # User already has an upcoming event, redirect to dashboard
+        return redirect('/dashboard')
+
+    # Check if user needs to submit feedback for past events
+    cursor.execute('''
+        SELECT e.id, e.title
+        FROM events e
+        JOIN event_registrations er ON e.id = er.event_id
+        WHERE er.user_id = %s AND e.date_time < NOW()
+        AND NOT er.feedback_submitted
+        ORDER BY e.date_time DESC LIMIT 1
+    ''', (user_id,))
+
+    pending_feedback = cursor.fetchone()
+
+    if pending_feedback:
+        # Redirect to feedback form
+        return redirect(f'/event-feedback/{pending_feedback["id"]}')
+
+    # Get upcoming events
+    cursor.execute('''
+        SELECT * FROM events
+        WHERE date_time > NOW() AND is_active = TRUE
+        ORDER BY date_time ASC
+    ''')
+
+    upcoming_events = cursor.fetchall()
+    conn.close()
+
+    content = f'''
+    <style>
+        @import url("https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=sentient@400,500,600,700&display=swap");
+
+        .events-container {{
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 2rem;
+            min-height: 100vh;
+        }}
+
+        .events-header {{
+            text-align: center;
+            margin-bottom: 3rem;
+        }}
+
+        .events-title {{
+            font-family: 'Sentient', serif;
+            font-size: 2.5rem;
+            font-weight: 600;
+            color: #2d2d2d;
+            margin-bottom: 1rem;
+        }}
+
+        .events-subtitle {{
+            font-family: 'Satoshi', sans-serif;
+            font-size: 1.1rem;
+            color: #666;
+            line-height: 1.6;
+        }}
+
+        .event-card {{
+            background: white;
+            border-radius: 16px;
+            padding: 2rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+            border: 1px solid #f0f0f0;
+            transition: all 0.3s ease;
+        }}
+
+        .event-card:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+        }}
+
+        .event-title {{
+            font-family: 'Sentient', serif;
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #2d2d2d;
+            margin-bottom: 0.5rem;
+        }}
+
+        .event-details {{
+            font-family: 'Satoshi', sans-serif;
+            color: #666;
+            margin-bottom: 1rem;
+        }}
+
+        .event-detail {{
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+        }}
+
+        .event-detail strong {{
+            width: 100px;
+            flex-shrink: 0;
+        }}
+
+        .select-button {{
+            background: #8B5A5C;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-family: 'Satoshi', sans-serif;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s ease;
+            width: 100%;
+            margin-top: 1rem;
+        }}
+
+        .select-button:hover {{
+            background: #7A4B4D;
+        }}
+
+        .capacity-info {{
+            font-size: 0.9rem;
+            color: #999;
+            margin-top: 0.5rem;
+        }}
+
+        .no-events {{
+            text-align: center;
+            padding: 3rem;
+            color: #666;
+        }}
+    </style>
+
+    <div class="events-container">
+        <div class="events-header">
+            <h1 class="events-title">Choose Your Event</h1>
+            <p class="events-subtitle">
+                Select an upcoming event you'd like to attend. We'll match you with compatible attendees to help you make meaningful connections.
+            </p>
+        </div>
+
+        <div class="events-list">
+    '''
+
+    if upcoming_events:
+        for event in upcoming_events:
+            # Format date and time
+            event_date = event['date_time'].strftime('%A, %B %d, %Y')
+            event_time = event['date_time'].strftime('%I:%M %p')
+
+            content += f'''
+            <div class="event-card">
+                <h3 class="event-title">{event['title']}</h3>
+                <div class="event-details">
+                    <div class="event-detail">
+                        <strong>Date:</strong> {event_date}
+                    </div>
+                    <div class="event-detail">
+                        <strong>Time:</strong> {event_time}
+                    </div>
+                    <div class="event-detail">
+                        <strong>Venue:</strong> {event['venue_name'] or 'TBA'}
+                    </div>
+                    {f'<div class="event-detail"><strong>Address:</strong> {event["venue_address"]}</div>' if event['venue_address'] else ''}
+                </div>
+                {f'<p style="margin-bottom: 1rem; font-family: Satoshi, sans-serif; color: #666;">{event["description"]}</p>' if event['description'] else ''}
+                <form method="POST" action="/select-event" style="margin: 0;">
+                    <input type="hidden" name="event_id" value="{event['id']}">
+                    <button type="submit" class="select-button">Select This Event</button>
+                </form>
+                <div class="capacity-info">
+                    {event['current_attendees']}/{event['capacity']} attendees
+                </div>
+            </div>
+            '''
+    else:
+        content += '''
+        <div class="no-events">
+            <h3>No upcoming events</h3>
+            <p>Check back soon for new events!</p>
+        </div>
+        '''
+
+    content += '''
+        </div>
+    </div>
+    '''
+
+    return render_template_with_header("Select Event", content, session.get('user_id'))
+
+@app.route('/select-event', methods=['POST'])
+def select_event():
+    """Handle event selection"""
+    if 'user_id' not in session:
+        return redirect('/login')
+
+    user_id = session['user_id']
+    event_id = request.form.get('event_id')
+
+    if not event_id:
+        flash('Please select an event')
+        return redirect('/events')
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        # Check if event exists and has capacity
+        cursor.execute('''
+            SELECT * FROM events
+            WHERE id = %s AND date_time > NOW() AND is_active = TRUE
+        ''', (event_id,))
+
+        event = cursor.fetchone()
+        if not event:
+            flash('Event not found or no longer available')
+            return redirect('/events')
+
+        if event['current_attendees'] >= event['capacity']:
+            flash('Event is full')
+            return redirect('/events')
+
+        # Check if user already registered for this event
+        cursor.execute('''
+            SELECT id FROM event_registrations
+            WHERE user_id = %s AND event_id = %s
+        ''', (user_id, event_id))
+
+        if cursor.fetchone():
+            flash('You are already registered for this event')
+            return redirect('/dashboard')
+
+        # Register user for event
+        cursor.execute('''
+            INSERT INTO event_registrations (user_id, event_id)
+            VALUES (%s, %s)
+        ''', (user_id, event_id))
+
+        # Update attendee count
+        cursor.execute('''
+            UPDATE events
+            SET current_attendees = current_attendees + 1
+            WHERE id = %s
+        ''', (event_id,))
+
+        conn.commit()
+        flash('Successfully registered for event!')
+
+        # Now redirect to dashboard where matching will happen
+        return redirect('/dashboard')
+
+    except Exception as e:
+        conn.rollback()
+        flash('Error registering for event')
+        return redirect('/events')
+    finally:
+        conn.close()
+
+@app.route('/withdraw-from-event')
+@login_required
+def withdraw_from_event():
+    """Allow user to withdraw from their current event"""
+    if 'user_id' not in session:
+        return redirect('/login')
+
+    user_id = session['user_id']
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Get current event registration
+        cursor.execute('''
+            SELECT e.*, er.registered_at
+            FROM events e
+            JOIN event_registrations er ON e.id = er.event_id
+            WHERE er.user_id = %s AND e.date_time > NOW() AND e.is_active = TRUE
+            ORDER BY e.date_time ASC LIMIT 1
+        ''', (user_id,))
+
+        current_event = cursor.fetchone()
+
+        if not current_event:
+            flash('No active event registration found', 'info')
+            return redirect('/events')
+
+        # Remove user from event registration
+        cursor.execute('DELETE FROM event_registrations WHERE user_id = %s AND event_id = %s',
+                      (user_id, current_event['id']))
+
+        # Decrement attendee count
+        cursor.execute('UPDATE events SET current_attendees = current_attendees - 1 WHERE id = %s',
+                      (current_event['id'],))
+
+        # Clear any matches for this user (they will need to re-register for new matches)
+        cursor.execute('DELETE FROM user_matches WHERE user_id = %s OR matched_user_id = %s',
+                      (user_id, user_id))
+
+        # Clear processing status so they can start fresh if they re-register
+        if user_id in processing_status:
+            del processing_status[user_id]
+
+        conn.commit()
+        flash(f'Successfully withdrawn from "{current_event["title"]}"', 'success')
+
+    except Exception as e:
+        conn.rollback()
+        flash('Error withdrawing from event. Please try again.', 'error')
+    finally:
+        conn.close()
+
+    return redirect('/events')
+
+@app.route('/event-feedback/<int:event_id>')
+@login_required
+def event_feedback(event_id):
+    """Post-event feedback form"""
+    if 'user_id' not in session:
+        return redirect('/login')
+
+    user_id = session['user_id']
+
+    # Check if user attended this event
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT e.*, er.registered_at, er.feedback_submitted
+        FROM events e
+        JOIN event_registrations er ON e.id = er.event_id
+        WHERE er.user_id = %s AND e.id = %s
+    ''', (user_id, event_id))
+
+    event_registration = cursor.fetchone()
+
+    if not event_registration:
+        flash('Event not found or you were not registered')
+        return redirect('/events')
+
+    if event_registration['feedback_submitted']:
+        flash('You have already submitted feedback for this event')
+        return redirect('/events')
+
+    # Check if event has ended
+    if event_registration['date_time'] > datetime.now():
+        flash('Cannot submit feedback for future events')
+        return redirect('/dashboard')
+
+    # Get other attendees who the user could have matched with
+    cursor.execute('''
+        SELECT u.id, u.first_name, u.last_name
+        FROM users u
+        JOIN event_registrations er ON u.id = er.user_id
+        WHERE er.event_id = %s AND u.id != %s
+        ORDER BY u.first_name, u.last_name
+    ''', (event_id, user_id))
+
+    other_attendees = cursor.fetchall()
+    conn.close()
+
+    content = f'''
+    <style>
+        @import url("https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=sentient@400,500,600,700&display=swap");
+
+        .feedback-container {{
+            max-width: 700px;
+            margin: 0 auto;
+            padding: 2rem;
+            min-height: 100vh;
+        }}
+
+        .feedback-header {{
+            text-align: center;
+            margin-bottom: 3rem;
+            padding: 2.5rem 2rem;
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }}
+
+        .feedback-title {{
+            font-family: 'Sentient', serif;
+            font-size: 2.5rem;
+            font-weight: 600;
+            color: #2d2d2d;
+            margin-bottom: 1rem;
+        }}
+
+        .feedback-subtitle {{
+            font-family: 'Satoshi', sans-serif;
+            font-size: 1.1rem;
+            color: #666;
+            line-height: 1.6;
+        }}
+
+        .feedback-section {{
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(20px);
+            border-radius: 24px;
+            padding: 2.5rem;
+            margin-bottom: 2rem;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }}
+
+        .section-title {{
+            font-family: 'Sentient', serif;
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #2d2d2d;
+            margin-bottom: 1.5rem;
+        }}
+
+        .attendee-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+            margin: 1.5rem 0;
+        }}
+
+        .attendee-card {{
+            background: rgba(255, 255, 255, 0.8);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 16px;
+            padding: 1.5rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+        }}
+
+        .attendee-card:hover {{
+            transform: translateY(-2px);
+            border-color: rgba(139, 90, 92, 0.3);
+            box-shadow: 0 8px 24px rgba(139, 90, 92, 0.15);
+        }}
+
+        .attendee-card.selected {{
+            border-color: #8B5A5C;
+            background: rgba(139, 90, 92, 0.1);
+        }}
+
+        .attendee-name {{
+            font-family: 'Satoshi', sans-serif;
+            font-weight: 600;
+            color: #2d2d2d;
+            margin-bottom: 0.5rem;
+        }}
+
+        .no-show-option {{
+            background: rgba(255, 149, 0, 0.1);
+            border-color: rgba(255, 149, 0, 0.3);
+            margin-top: 1rem;
+        }}
+
+        .no-show-option:hover {{
+            border-color: #ff9500;
+            background: rgba(255, 149, 0, 0.2);
+        }}
+
+        .submit-button {{
+            background: #8B5A5C;
+            color: white;
+            border: none;
+            padding: 1.25rem 2.5rem;
+            border-radius: 50px;
+            font-family: 'Satoshi', sans-serif;
+            font-weight: 600;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            width: 100%;
+            margin-top: 2rem;
+        }}
+
+        .submit-button:hover {{
+            background: #7A4B4D;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(139, 90, 92, 0.4);
+        }}
+
+        .submit-button:disabled {{
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }}
+
+        .feedback-text {{
+            width: 100%;
+            min-height: 100px;
+            padding: 1rem;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            font-family: 'Satoshi', sans-serif;
+            background: rgba(255, 255, 255, 0.8);
+            resize: vertical;
+        }}
+
+        .feedback-text:focus {{
+            outline: none;
+            border-color: rgba(139, 90, 92, 0.5);
+        }}
+    </style>
+
+    <div class="feedback-container">
+        <div class="feedback-header">
+            <h1 class="feedback-title">Event Feedback</h1>
+            <p class="feedback-subtitle">
+                How was "{event_registration['title']}"? Your feedback helps us improve future matches and events.
+            </p>
+        </div>
+
+        <form method="POST" action="/submit-event-feedback">
+            <input type="hidden" name="event_id" value="{event_id}">
+
+            <div class="feedback-section">
+                <h3 class="section-title">Who did you connect with best?</h3>
+                <p style="color: #666; margin-bottom: 1.5rem; font-family: 'Satoshi', sans-serif;">
+                    Select the people you had meaningful conversations with or felt a good connection to.
+                    You can select multiple people or mark that you didn't connect with anyone.
+                </p>
+
+                <div class="attendee-grid">
+    '''
+
+    # Add attendee cards
+    for attendee in other_attendees:
+        content += f'''
+                    <div class="attendee-card" onclick="toggleAttendee(this, {attendee['id']})">
+                        <div class="attendee-name">{attendee['first_name']} {attendee['last_name']}</div>
+                        <input type="checkbox" name="connected_users" value="{attendee['id']}" style="display: none;">
+                    </div>
+        '''
+
+    content += '''
+                    <div class="attendee-card no-show-option" onclick="toggleNoShow(this)">
+                        <div class="attendee-name">❌ I didn't attend / No meaningful connections</div>
+                        <input type="checkbox" name="no_show" value="true" style="display: none;">
+                    </div>
+                </div>
+            </div>
+
+            <div class="feedback-section">
+                <h3 class="section-title">Additional Feedback (Optional)</h3>
+                <p style="color: #666; margin-bottom: 1.5rem; font-family: 'Satoshi', sans-serif;">
+                    Tell us about your experience. What worked well? What could be improved?
+                </p>
+                <textarea name="feedback_text" class="feedback-text"
+                          placeholder="Share your thoughts about the event, the venue, the matching, or anything else..."></textarea>
+            </div>
+
+            <button type="submit" class="submit-button" id="submitBtn">
+                Submit Feedback & Continue
+            </button>
+        </form>
+    </div>
+
+    <script>
+        function toggleAttendee(card, userId) {
+            const checkbox = card.querySelector('input[type="checkbox"]');
+            const noShowCard = document.querySelector('.no-show-option');
+            const noShowCheckbox = noShowCard.querySelector('input[type="checkbox"]');
+
+            // If selecting an attendee, uncheck no-show
+            if (!checkbox.checked) {
+                noShowCheckbox.checked = false;
+                noShowCard.classList.remove('selected');
+            }
+
+            // Toggle this attendee
+            checkbox.checked = !checkbox.checked;
+            card.classList.toggle('selected', checkbox.checked);
+
+            updateSubmitButton();
+        }
+
+        function toggleNoShow(card) {
+            const checkbox = card.querySelector('input[type="checkbox"]');
+            const attendeeCards = document.querySelectorAll('.attendee-card:not(.no-show-option)');
+
+            // If selecting no-show, uncheck all attendees
+            if (!checkbox.checked) {
+                attendeeCards.forEach(attendeeCard => {
+                    const attendeeCheckbox = attendeeCard.querySelector('input[type="checkbox"]');
+                    attendeeCheckbox.checked = false;
+                    attendeeCard.classList.remove('selected');
+                });
+            }
+
+            // Toggle no-show
+            checkbox.checked = !checkbox.checked;
+            card.classList.toggle('selected', checkbox.checked);
+
+            updateSubmitButton();
+        }
+
+        function updateSubmitButton() {
+            const anySelected = document.querySelector('input[type="checkbox"]:checked');
+            const submitBtn = document.getElementById('submitBtn');
+            submitBtn.disabled = !anySelected;
+        }
+
+        // Initialize
+        updateSubmitButton();
+    </script>
+    '''
+
+    return render_template_with_header("Event Feedback", content, session.get('user_id'))
+
+@app.route('/submit-event-feedback', methods=['POST'])
+@login_required
+def submit_event_feedback():
+    """Handle event feedback submission"""
+    if 'user_id' not in session:
+        return redirect('/login')
+
+    user_id = session['user_id']
+    event_id = request.form.get('event_id')
+    connected_users = request.form.getlist('connected_users')
+    no_show = request.form.get('no_show') == 'true'
+    feedback_text = request.form.get('feedback_text', '').strip()
+
+    if not event_id:
+        flash('Invalid event')
+        return redirect('/events')
+
+    # Convert connected_users to integers
+    try:
+        connected_user_ids = [int(uid) for uid in connected_users] if connected_users else []
+    except ValueError:
+        flash('Invalid user selection')
+        return redirect(f'/event-feedback/{event_id}')
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        # Check if feedback already submitted
+        cursor.execute('''
+            SELECT feedback_submitted FROM event_registrations
+            WHERE user_id = %s AND event_id = %s
+        ''', (user_id, event_id))
+
+        registration = cursor.fetchone()
+        if not registration:
+            flash('Event registration not found')
+            return redirect('/events')
+
+        if registration['feedback_submitted']:
+            flash('Feedback already submitted')
+            return redirect('/events')
+
+        # Insert feedback record
+        cursor.execute('''
+            INSERT INTO event_feedback (event_id, user_id, matched_users, no_show, feedback_text)
+            VALUES (%s, %s, %s, %s, %s)
+        ''', (event_id, user_id, connected_user_ids, no_show, feedback_text))
+
+        # Mark feedback as submitted
+        cursor.execute('''
+            UPDATE event_registrations
+            SET feedback_submitted = TRUE
+            WHERE user_id = %s AND event_id = %s
+        ''', (user_id, event_id))
+
+        conn.commit()
+        flash('Thank you for your feedback!', 'success')
+
+        # Redirect to events page to see next events
+        return redirect('/events')
+
+    except Exception as e:
+        conn.rollback()
+        flash('Error submitting feedback')
+        print(f"Feedback submission error: {e}")
+        return redirect(f'/event-feedback/{event_id}')
+    finally:
+        conn.close()
 
 # ============================================================================
-# MAIN APPLICATION RUNNER
+# ADMIN EVENT MANAGEMENT ROUTES
 # ============================================================================
+
+@app.route('/admin/events')
+def admin_events():
+    """Admin interface for managing events"""
+    admin_password = request.args.get('password')
+    if admin_password != os.environ.get('ADMIN_PASSWORD', 'admin123'):
+        return '''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Admin Access Required</title>
+            <style>
+                body { font-family: 'Satoshi', sans-serif; padding: 40px; background: #f5f5f5; color: #2d2d2d; }
+                .form-container { max-width: 400px; margin: 0 auto; padding: 30px; background: white; border-radius: 16px; box-shadow: 0 4px 24px rgba(0,0,0,0.1); }
+                input { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 8px; font-family: 'Satoshi', sans-serif; }
+                button { background: #8B5A5C; color: white; padding: 12px 20px; border: none; border-radius: 8px; cursor: pointer; width: 100%; font-family: 'Satoshi', sans-serif; font-weight: 600; }
+                button:hover { background: #7A4B4D; }
+                h2 { color: #2d2d2d; margin-bottom: 1rem; }
+            </style>
+        </head>
+        <body>
+            <div class="form-container">
+                <h2>Admin Access Required</h2>
+                <p>Enter admin password to access event management:</p>
+                <form method="GET">
+                    <input type="password" name="password" placeholder="Admin Password" required>
+                    <button type="submit">Access Event Management</button>
+                </form>
+            </div>
+        </body>
+        </html>
+        '''
+
+    # Get all events
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT e.*,
+               COUNT(er.user_id) as registered_count,
+               COUNT(CASE WHEN ef.no_show = FALSE THEN 1 END) as feedback_count
+        FROM events e
+        LEFT JOIN event_registrations er ON e.id = er.event_id
+        LEFT JOIN event_feedback ef ON e.id = ef.event_id
+        GROUP BY e.id
+        ORDER BY e.date_time DESC
+    ''')
+
+    events = cursor.fetchall()
+    conn.close()
+
+    events_html = ""
+    for event in events:
+        status_color = "#28a745" if event['is_active'] else "#dc3545"
+        status_text = "Active" if event['is_active'] else "Inactive"
+
+        # Format date
+        event_date = event['date_time'].strftime('%A, %B %d, %Y at %I:%M %p')
+
+        events_html += f'''
+        <tr>
+            <td style="padding: 12px; border-bottom: 1px solid #eee;">
+                <strong>{event['title']}</strong><br>
+                <small style="color: #666;">{event_date}</small>
+            </td>
+            <td style="padding: 12px; border-bottom: 1px solid #eee;">{event['venue_name'] or 'TBA'}</td>
+            <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: center;">{event['registered_count']}/{event['capacity']}</td>
+            <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: center;">{event['feedback_count']}</td>
+            <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: center;">
+                <span style="color: {status_color}; font-weight: 600;">{status_text}</span>
+            </td>
+            <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: center;">
+                <a href="/admin/edit-event/{event['id']}?password={admin_password}"
+                   style="color: #8B5A5C; text-decoration: none; margin-right: 10px;">Edit</a>
+                <a href="/admin/delete-event/{event['id']}?password={admin_password}"
+                   style="color: #dc3545; text-decoration: none;"
+                   onclick="return confirm('Are you sure you want to delete this event?')">Delete</a>
+            </td>
+        </tr>
+        '''
+
+    return f'''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Event Management - Admin</title>
+        <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=sentient@400,500,600,700&display=swap" rel="stylesheet">
+        <style>
+            body {{
+                font-family: 'Satoshi', sans-serif;
+                margin: 0;
+                padding: 20px;
+                background: #f5f5f5;
+                color: #2d2d2d;
+                line-height: 1.6;
+            }}
+            .container {{
+                max-width: 1200px;
+                margin: 0 auto;
+                background: white;
+                border-radius: 16px;
+                box-shadow: 0 4px 24px rgba(0,0,0,0.1);
+                overflow: hidden;
+            }}
+            .header {{
+                background: linear-gradient(135deg, #8B5A5C, #7A4B4D);
+                color: white;
+                padding: 2rem;
+                text-align: center;
+            }}
+            .header h1 {{
+                font-family: 'Sentient', serif;
+                font-size: 2.5rem;
+                margin: 0 0 0.5rem 0;
+                font-weight: 600;
+            }}
+            .content {{ padding: 2rem; }}
+            .nav-links {{
+                margin-bottom: 2rem;
+                text-align: center;
+            }}
+            .nav-links a {{
+                display: inline-block;
+                margin: 0 1rem;
+                padding: 12px 24px;
+                background: #8B5A5C;
+                color: white;
+                text-decoration: none;
+                border-radius: 8px;
+                font-weight: 600;
+                transition: background 0.2s;
+            }}
+            .nav-links a:hover {{ background: #7A4B4D; }}
+            table {{
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 1rem;
+                background: white;
+                border-radius: 8px;
+                overflow: hidden;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            }}
+            th {{
+                background: #f8f9fa;
+                padding: 16px 12px;
+                text-align: left;
+                font-weight: 600;
+                color: #2d2d2d;
+                border-bottom: 2px solid #dee2e6;
+            }}
+            tr:hover {{ background: #f8f9fa; }}
+            .stats {{
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                gap: 1rem;
+                margin-bottom: 2rem;
+            }}
+            .stat-card {{
+                background: linear-gradient(135deg, #8B5A5C, #7A4B4D);
+                color: white;
+                padding: 1.5rem;
+                border-radius: 12px;
+                text-align: center;
+            }}
+            .stat-number {{
+                font-size: 2rem;
+                font-weight: 700;
+                margin-bottom: 0.5rem;
+            }}
+            .stat-label {{
+                font-size: 0.9rem;
+                opacity: 0.9;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>Event Management</h1>
+                <p>Manage events for the friend-matching platform</p>
+            </div>
+
+            <div class="content">
+                <div class="nav-links">
+                    <a href="/admin/add-event?password={admin_password}">Add New Event</a>
+                    <a href="/admin/users?password={admin_password}">Manage Users</a>
+                    <a href="/admin/verification-queue?password={admin_password}">Verification Queue</a>
+                </div>
+
+                <div class="stats">
+                    <div class="stat-card">
+                        <div class="stat-number">{len(events)}</div>
+                        <div class="stat-label">Total Events</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">{len([e for e in events if e['is_active']])}</div>
+                        <div class="stat-label">Active Events</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">{sum(e['registered_count'] for e in events)}</div>
+                        <div class="stat-label">Total Registrations</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">{sum(e['feedback_count'] for e in events)}</div>
+                        <div class="stat-label">Feedback Submitted</div>
+                    </div>
+                </div>
+
+                <h2>All Events</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Event Details</th>
+                            <th>Venue</th>
+                            <th>Attendance</th>
+                            <th>Feedback</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {events_html}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </body>
+    </html>
+    '''
+
+@app.route('/admin/add-event')
+def admin_add_event():
+    """Admin form to add a new event"""
+    admin_password = request.args.get('password')
+    if admin_password != os.environ.get('ADMIN_PASSWORD', 'admin123'):
+        return redirect('/admin/events')
+
+    return f'''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Add New Event - Admin</title>
+        <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=sentient@400,500,600,700&display=swap" rel="stylesheet">
+        <style>
+            body {{
+                font-family: 'Satoshi', sans-serif;
+                margin: 0;
+                padding: 20px;
+                background: #f5f5f5;
+                color: #2d2d2d;
+                line-height: 1.6;
+            }}
+            .container {{
+                max-width: 800px;
+                margin: 0 auto;
+                background: white;
+                border-radius: 16px;
+                box-shadow: 0 4px 24px rgba(0,0,0,0.1);
+                overflow: hidden;
+            }}
+            .header {{
+                background: linear-gradient(135deg, #8B5A5C, #7A4B4D);
+                color: white;
+                padding: 2rem;
+                text-align: center;
+            }}
+            .header h1 {{
+                font-family: 'Sentient', serif;
+                font-size: 2rem;
+                margin: 0 0 0.5rem 0;
+            }}
+            .content {{ padding: 2rem; }}
+            .form-group {{
+                margin-bottom: 1.5rem;
+            }}
+            .form-label {{
+                display: block;
+                margin-bottom: 0.5rem;
+                font-weight: 600;
+                color: #2d2d2d;
+            }}
+            .form-input, .form-textarea, .form-select {{
+                width: 100%;
+                padding: 12px;
+                border: 2px solid #ddd;
+                border-radius: 8px;
+                font-family: 'Satoshi', sans-serif;
+                font-size: 1rem;
+                box-sizing: border-box;
+            }}
+            .form-input:focus, .form-textarea:focus, .form-select:focus {{
+                outline: none;
+                border-color: #8B5A5C;
+            }}
+            .form-textarea {{
+                resize: vertical;
+                min-height: 100px;
+            }}
+            .form-row {{
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 1rem;
+            }}
+            .submit-button {{
+                background: #8B5A5C;
+                color: white;
+                border: none;
+                padding: 16px 32px;
+                border-radius: 8px;
+                font-family: 'Satoshi', sans-serif;
+                font-weight: 600;
+                font-size: 1rem;
+                cursor: pointer;
+                width: 100%;
+                margin-top: 1rem;
+            }}
+            .submit-button:hover {{ background: #7A4B4D; }}
+            .back-link {{
+                display: inline-block;
+                margin-bottom: 1rem;
+                color: #8B5A5C;
+                text-decoration: none;
+                font-weight: 600;
+            }}
+            .back-link:hover {{ color: #7A4B4D; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>Add New Event</h1>
+                <p>Create a new event for users to attend and match</p>
+            </div>
+
+            <div class="content">
+                <a href="/admin/events?password={admin_password}" class="back-link">← Back to Event Management</a>
+
+                <form method="POST" action="/admin/create-event">
+                    <input type="hidden" name="password" value="{admin_password}">
+
+                    <div class="form-group">
+                        <label class="form-label" for="title">Event Title</label>
+                        <input type="text" name="title" id="title" class="form-input"
+                               placeholder="e.g., London Networking Mixer" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="description">Event Description</label>
+                        <textarea name="description" id="description" class="form-textarea"
+                                  placeholder="Describe what this event is about, what to expect, dress code, etc."></textarea>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label" for="date">Event Date</label>
+                            <input type="date" name="date" id="date" class="form-input" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="time">Event Time</label>
+                            <input type="time" name="time" id="time" class="form-input" required>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="venue_name">Venue Name</label>
+                        <input type="text" name="venue_name" id="venue_name" class="form-input"
+                               placeholder="e.g., The Shard Sky Lounge">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="venue_address">Venue Address</label>
+                        <textarea name="venue_address" id="venue_address" class="form-textarea"
+                                  placeholder="Full address including postcode"></textarea>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label" for="capacity">Capacity (Max Attendees)</label>
+                            <input type="number" name="capacity" id="capacity" class="form-input"
+                                   placeholder="e.g., 50" min="1" max="500" value="50" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="is_active">Status</label>
+                            <select name="is_active" id="is_active" class="form-select" required>
+                                <option value="true">Active (Users can register)</option>
+                                <option value="false">Inactive (Hidden from users)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="submit-button">Create Event</button>
+                </form>
+            </div>
+        </div>
+    </body>
+    </html>
+    '''
+
+@app.route('/admin/create-event', methods=['POST'])
+def admin_create_event():
+    """Handle creating a new event"""
+    admin_password = request.form.get('password')
+    if admin_password != os.environ.get('ADMIN_PASSWORD', 'admin123'):
+        return redirect('/admin/events')
+
+    title = request.form.get('title')
+    description = request.form.get('description', '')
+    date = request.form.get('date')
+    time = request.form.get('time')
+    venue_name = request.form.get('venue_name', '')
+    venue_address = request.form.get('venue_address', '')
+    capacity = request.form.get('capacity')
+    is_active = request.form.get('is_active') == 'true'
+
+    if not all([title, date, time, capacity]):
+        return "Missing required fields", 400
+
+    # Combine date and time
+    from datetime import datetime
+    try:
+        date_time = datetime.strptime(f"{date} {time}", "%Y-%m-%d %H:%M")
+    except ValueError:
+        return "Invalid date/time format", 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute('''
+            INSERT INTO events (title, description, venue_name, venue_address,
+                              date_time, capacity, is_active)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ''', (title, description, venue_name, venue_address, date_time, capacity, is_active))
+
+        conn.commit()
+        return redirect(f'/admin/events?password={admin_password}')
+
+    except Exception as e:
+        conn.rollback()
+        return f"Error creating event: {e}", 500
+    finally:
+        conn.close()
+
+@app.route('/admin/edit-event/<int:event_id>')
+def admin_edit_event(event_id):
+    """Admin form to edit an existing event"""
+    admin_password = request.args.get('password')
+    if admin_password != os.environ.get('ADMIN_PASSWORD', 'admin123'):
+        return redirect('/admin/events')
+
+    # Get event details
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('SELECT * FROM events WHERE id = %s', (event_id,))
+    event = cursor.fetchone()
+    conn.close()
+
+    if not event:
+        return "Event not found", 404
+
+    # Format date and time for form inputs
+    event_date = event['date_time'].strftime('%Y-%m-%d')
+    event_time = event['date_time'].strftime('%H:%M')
+
+    return f'''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Edit Event - Admin</title>
+        <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=sentient@400,500,600,700&display=swap" rel="stylesheet">
+        <style>
+            body {{
+                font-family: 'Satoshi', sans-serif;
+                margin: 0;
+                padding: 20px;
+                background: #f5f5f5;
+                color: #2d2d2d;
+                line-height: 1.6;
+            }}
+            .container {{
+                max-width: 800px;
+                margin: 0 auto;
+                background: white;
+                border-radius: 16px;
+                box-shadow: 0 4px 24px rgba(0,0,0,0.1);
+                overflow: hidden;
+            }}
+            .header {{
+                background: linear-gradient(135deg, #8B5A5C, #7A4B4D);
+                color: white;
+                padding: 2rem;
+                text-align: center;
+            }}
+            .header h1 {{
+                font-family: 'Sentient', serif;
+                font-size: 2rem;
+                margin: 0 0 0.5rem 0;
+            }}
+            .content {{ padding: 2rem; }}
+            .form-group {{
+                margin-bottom: 1.5rem;
+            }}
+            .form-label {{
+                display: block;
+                margin-bottom: 0.5rem;
+                font-weight: 600;
+                color: #2d2d2d;
+            }}
+            .form-input, .form-textarea, .form-select {{
+                width: 100%;
+                padding: 12px;
+                border: 2px solid #ddd;
+                border-radius: 8px;
+                font-family: 'Satoshi', sans-serif;
+                font-size: 1rem;
+                box-sizing: border-box;
+            }}
+            .form-input:focus, .form-textarea:focus, .form-select:focus {{
+                outline: none;
+                border-color: #8B5A5C;
+            }}
+            .form-textarea {{
+                resize: vertical;
+                min-height: 100px;
+            }}
+            .form-row {{
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 1rem;
+            }}
+            .submit-button {{
+                background: #8B5A5C;
+                color: white;
+                border: none;
+                padding: 16px 32px;
+                border-radius: 8px;
+                font-family: 'Satoshi', sans-serif;
+                font-weight: 600;
+                font-size: 1rem;
+                cursor: pointer;
+                width: 100%;
+                margin-top: 1rem;
+            }}
+            .submit-button:hover {{ background: #7A4B4D; }}
+            .back-link {{
+                display: inline-block;
+                margin-bottom: 1rem;
+                color: #8B5A5C;
+                text-decoration: none;
+                font-weight: 600;
+            }}
+            .back-link:hover {{ color: #7A4B4D; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>Edit Event</h1>
+                <p>Update event details</p>
+            </div>
+
+            <div class="content">
+                <a href="/admin/events?password={admin_password}" class="back-link">← Back to Event Management</a>
+
+                <form method="POST" action="/admin/update-event">
+                    <input type="hidden" name="password" value="{admin_password}">
+                    <input type="hidden" name="event_id" value="{event_id}">
+
+                    <div class="form-group">
+                        <label class="form-label" for="title">Event Title</label>
+                        <input type="text" name="title" id="title" class="form-input"
+                               value="{event['title']}" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="description">Event Description</label>
+                        <textarea name="description" id="description" class="form-textarea">{event['description'] or ''}</textarea>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label" for="date">Event Date</label>
+                            <input type="date" name="date" id="date" class="form-input"
+                                   value="{event_date}" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="time">Event Time</label>
+                            <input type="time" name="time" id="time" class="form-input"
+                                   value="{event_time}" required>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="venue_name">Venue Name</label>
+                        <input type="text" name="venue_name" id="venue_name" class="form-input"
+                               value="{event['venue_name'] or ''}">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="venue_address">Venue Address</label>
+                        <textarea name="venue_address" id="venue_address" class="form-textarea">{event['venue_address'] or ''}</textarea>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label" for="capacity">Capacity (Max Attendees)</label>
+                            <input type="number" name="capacity" id="capacity" class="form-input"
+                                   value="{event['capacity']}" min="1" max="500" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="is_active">Status</label>
+                            <select name="is_active" id="is_active" class="form-select" required>
+                                <option value="true" {"selected" if event['is_active'] else ""}>Active (Users can register)</option>
+                                <option value="false" {"selected" if not event['is_active'] else ""}>Inactive (Hidden from users)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="submit-button">Update Event</button>
+                </form>
+            </div>
+        </div>
+    </body>
+    </html>
+    '''
+
+@app.route('/admin/update-event', methods=['POST'])
+def admin_update_event():
+    """Handle updating an existing event"""
+    admin_password = request.form.get('password')
+    if admin_password != os.environ.get('ADMIN_PASSWORD', 'admin123'):
+        return redirect('/admin/events')
+
+    event_id = request.form.get('event_id')
+    title = request.form.get('title')
+    description = request.form.get('description', '')
+    date = request.form.get('date')
+    time = request.form.get('time')
+    venue_name = request.form.get('venue_name', '')
+    venue_address = request.form.get('venue_address', '')
+    capacity = request.form.get('capacity')
+    is_active = request.form.get('is_active') == 'true'
+
+    if not all([event_id, title, date, time, capacity]):
+        return "Missing required fields", 400
+
+    # Combine date and time
+    from datetime import datetime
+    try:
+        date_time = datetime.strptime(f"{date} {time}", "%Y-%m-%d %H:%M")
+    except ValueError:
+        return "Invalid date/time format", 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute('''
+            UPDATE events
+            SET title = %s, description = %s, venue_name = %s, venue_address = %s,
+                date_time = %s, capacity = %s, is_active = %s
+            WHERE id = %s
+        ''', (title, description, venue_name, venue_address, date_time, capacity, is_active, event_id))
+
+        conn.commit()
+        return redirect(f'/admin/events?password={admin_password}')
+
+    except Exception as e:
+        conn.rollback()
+        return f"Error updating event: {e}", 500
+    finally:
+        conn.close()
+
+@app.route('/admin/delete-event/<int:event_id>')
+def admin_delete_event(event_id):
+    """Handle deleting an event"""
+    admin_password = request.args.get('password')
+    if admin_password != os.environ.get('ADMIN_PASSWORD', 'admin123'):
+        return redirect('/admin/events')
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        # Check if event has registrations
+        cursor.execute('SELECT COUNT(*) as count FROM event_registrations WHERE event_id = %s', (event_id,))
+        registration_count = cursor.fetchone()['count']
+
+        if registration_count > 0:
+            # Don't delete events with registrations, just deactivate them
+            cursor.execute('UPDATE events SET is_active = FALSE WHERE id = %s', (event_id,))
+            conn.commit()
+        else:
+            # Safe to delete events with no registrations
+            cursor.execute('DELETE FROM events WHERE id = %s', (event_id,))
+            conn.commit()
+
+        return redirect(f'/admin/events?password={admin_password}')
+
+    except Exception as e:
+        conn.rollback()
+        return f"Error deleting event: {e}", 500
+    finally:
+        conn.close()
 
 if __name__ == '__main__':
     # Initialize database
