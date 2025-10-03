@@ -7124,161 +7124,6 @@ def render_subscription_management_section(subscription_status: Dict, user_id: i
         </div>
         '''
     
-# ============================================================================
-# ROUTES - DASHBOARD & MATCHING
-# ============================================================================
-        return '''
-        <form method="GET">
-            <h2>Admin Access Required</h2>
-            <input type="password" name="password" placeholder="Admin Password" required>
-            <button type="submit">Access Admin Panel</button>
-        </form>
-        '''
-    
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Get pending verification requests
-        cursor.execute('''
-            SELECT 
-                ivr.id, ivr.user_id, ivr.verification_token, ivr.created_at, 
-                ivr.photo_received, ivr.verification_status, ivr.expires_at,
-                u.email_encrypted, u.first_name_encrypted, u.last_name_encrypted
-            FROM identity_verification_requests ivr
-            JOIN users u ON ivr.user_id = u.id
-            WHERE ivr.verification_status = 'pending' 
-            AND ivr.expires_at > CURRENT_TIMESTAMP
-            ORDER BY ivr.created_at ASC
-        ''')
-        
-        requests = cursor.fetchall()
-        conn.close()
-        
-        # Build admin interface
-        requests_html = ""
-        for req in requests:
-            # Decrypt user info
-            email = data_encryption.decrypt_sensitive_data(req['email_encrypted']) if req['email_encrypted'] else 'Unknown'
-            first_name = data_encryption.decrypt_sensitive_data(req['first_name_encrypted']) if req['first_name_encrypted'] else 'Unknown'
-            last_name = data_encryption.decrypt_sensitive_data(req['last_name_encrypted']) if req['last_name_encrypted'] else ''
-            
-            photo_status = "📸 Photos Received" if req['photo_received'] else "⏳ Awaiting Photos"
-            
-            requests_html += f'''
-            <div style="border: 1px solid #ddd; padding: 20px; margin: 10px 0; border-radius: 8px;">
-                <h4>{first_name} {last_name} ({email})</h4>
-                <p><strong>Status:</strong> {photo_status}</p>
-                <p><strong>Verification Code:</strong> {req['verification_token'][:8].upper()}</p>
-                <p><strong>Submitted:</strong> {req['created_at']}</p>
-                <p><strong>Expires:</strong> {req['expires_at']}</p>
-                
-                <div style="margin-top: 15px;">
-                    <form method="POST" action="/admin/approve-verification" style="display: inline-block; margin-right: 10px;">
-                        <input type="hidden" name="token" value="{req['verification_token']}">
-                        <input type="hidden" name="admin_email" value="admin@pont.world">
-                        <button type="submit" style="background: white; color: white; padding: 8px 16px; border: none; border-radius: 4px;">
-                            ✓ Approve
-                        </button>
-                    </form>
-                    
-                    <form method="POST" action="/admin/reject-verification" style="display: inline-block;">
-                        <input type="hidden" name="token" value="{req['verification_token']}">
-                        <input type="hidden" name="admin_email" value="admin@pont.world">
-                        <input type="text" name="reason" placeholder="Rejection reason" required style="margin-right: 5px;">
-                        <button type="submit" style="background: white; color: white; padding: 8px 16px; border: none; border-radius: 4px;">
-                            ✗ Reject
-                        </button>
-                    </form>
-                    
-                    <form method="POST" action="/admin/mark-photo-received" style="display: inline-block; margin-left: 10px;">
-                        <input type="hidden" name="token" value="{req['verification_token']}">
-                        <button type="submit" style="background: white; color: white; padding: 8px 16px; border: none; border-radius: 4px;">
-                            📸 Mark Photos Received
-                        </button>
-                    </form>
-                </div>
-            </div>
-            '''
-        
-        if not requests_html:
-            requests_html = "<p>No pending verification requests.</p>"
-        
-        return f'''
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Verification Admin Panel</title>
-            <style>
-                body {{ font-family: Arial, sans-serif; padding: 20px; }}
-                .header {{ background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px; }}
-            </style>
-        </head>
-        <body>
-            <div class="header">
-                <h1>Identity Verification Admin Panel</h1>
-                <p>Manage pending verification requests</p>
-            </div>
-            
-            <h2>Pending Requests ({len(requests)})</h2>
-            {requests_html}
-            
-            <div style="margin-top: 30px; padding: 20px; background: #e9ecef; border-radius: 8px;">
-                <h3>Instructions for Admins:</h3>
-                <ul>
-                    <li><strong>Mark Photos Received:</strong> Click when user emails photos</li>
-                    <li><strong>Approve:</strong> Verify ID matches selfie and verification code is visible</li>
-                    <li><strong>Reject:</strong> If photos are unclear, missing elements, or don't match</li>
-                </ul>
-                
-                <p><strong>Verification Email:</strong> verify@pont.world</p>
-                <p><strong>Look for:</strong> Government ID + matching selfie + verification code on paper</p>
-            </div>
-        </body>
-        </html>
-        '''
-        
-    except Exception as e:
-        return f"<h2>Error</h2><p>{e}</p>"
-
-@app.route('/admin/approve-verification', methods=['POST'])
-def admin_approve_verification():
-    """Admin route to approve verification"""
-    token = request.form.get('token')
-    admin_email = request.form.get('admin_email')
-    
-    result = verification_system.approve_verification(token, admin_email)
-    
-    if result['success']:
-        return f"<h2>Success</h2><p>Verification approved for user {result['user_id']}</p><a href='/admin/verification-queue?password={os.environ.get('ADMIN_PASSWORD', 'admin123')}'>Back to Queue</a>"
-    else:
-        return f"<h2>Error</h2><p>{result['error']}</p><a href='/admin/verification-queue?password={os.environ.get('ADMIN_PASSWORD', 'admin123')}'>Back to Queue</a>"
-
-@app.route('/admin/reject-verification', methods=['POST'])
-def admin_reject_verification():
-    """Admin route to reject verification"""
-    token = request.form.get('token')
-    admin_email = request.form.get('admin_email')
-    reason = request.form.get('reason')
-    
-    result = verification_system.reject_verification(token, admin_email, reason)
-    
-    if result['success']:
-        return f"<h2>Success</h2><p>Verification rejected for user {result['user_id']}</p><a href='/admin/verification-queue?password={os.environ.get('ADMIN_PASSWORD', 'admin123')}'>Back to Queue</a>"
-    else:
-        return f"<h2>Error</h2><p>{result['error']}</p><a href='/admin/verification-queue?password={os.environ.get('ADMIN_PASSWORD', 'admin123')}'>Back to Queue</a>"
-
-@app.route('/admin/mark-photo-received', methods=['POST'])
-def admin_mark_photo_received():
-    """Admin route to mark photos as received"""
-    token = request.form.get('token')
-    
-    result = verification_system.mark_photo_received(token)
-    
-    if result['success']:
-        return f"<h2>Success</h2><p>Photos marked as received for user {result['user_id']}</p><a href='/admin/verification-queue?password={os.environ.get('ADMIN_PASSWORD', 'admin123')}'>Back to Queue</a>"
-    else:
-        return f"<h2>Error</h2><p>{result['error']}</p><a href='/admin/verification-queue?password={os.environ.get('ADMIN_PASSWORD', 'admin123')}'>Back to Queue</a>"
 
 # ============================================================================
 # ROUTES - DASHBOARD & MATCHING
@@ -8736,6 +8581,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             sim_date = sim['created_at'].strftime('%b %d, %Y')
             simulations_html += f'''
             <div class="simulation-item" onclick="loadSimulation({sim['id']})">
+                <button class="delete-sim-btn" onclick="event.stopPropagation(); deleteSimulation({sim['id']})" title="Delete simulation">×</button>
                 <div class="simulation-title">{sim_preview}</div>
                 <div class="simulation-meta">{sim_date} • by {sim['created_by_name']}</div>
             </div>
@@ -8829,6 +8675,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             cursor: pointer;
             transition: all 0.2s ease;
             border: 1px solid rgba(0, 0, 0, 0.05);
+            position: relative;
         }}
 
         .simulation-item:hover {{
@@ -8837,16 +8684,44 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             border-color: rgba(0, 0, 0, 0.2);
         }}
 
+        .simulation-item:hover .delete-sim-btn {{
+            opacity: 1;
+        }}
+
         .simulation-title {{
             font-weight: 600;
             font-size: 0.875rem;
             color: black;
             margin-bottom: 0.5rem;
+            padding-right: 24px;
         }}
 
         .simulation-meta {{
             font-size: 0.75rem;
             color: #666;
+        }}
+
+        .delete-sim-btn {{
+            position: absolute;
+            top: 0.75rem;
+            right: 0.75rem;
+            background: #ef4444;
+            color: white;
+            border: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.75rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }}
+
+        .delete-sim-btn:hover {{
+            background: #dc2626;
         }}
 
         .no-simulations {{
@@ -8940,6 +8815,38 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             padding: 1.5rem;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
             border: 1px solid rgba(255, 255, 255, 0.2);
+        }}
+
+        .mode-toggle {{
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+            background: rgba(0, 0, 0, 0.05);
+            border-radius: 8px;
+            padding: 0.25rem;
+        }}
+
+        .mode-btn {{
+            flex: 1;
+            padding: 0.5rem 1rem;
+            border: none;
+            background: transparent;
+            border-radius: 6px;
+            cursor: pointer;
+            font-family: "Satoshi", sans-serif;
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: #666;
+            transition: all 0.2s ease;
+        }}
+
+        .mode-btn.active {{
+            background: black;
+            color: white;
+        }}
+
+        .mode-btn:hover:not(.active) {{
+            background: rgba(0, 0, 0, 0.1);
         }}
 
         .scenario-input {{
@@ -9067,10 +8974,27 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                 <canvas id="three-canvas"></canvas>
 
                 <div class="simulation-form">
+                    <div class="mode-toggle">
+                        <button class="mode-btn active" id="simulationModeBtn" onclick="switchMode('simulation')">
+                            Simulation Mode
+                        </button>
+                        <button class="mode-btn" id="partyModeBtn" onclick="switchMode('party')">
+                            Party Mode
+                        </button>
+                        <button class="mode-btn" id="networkingModeBtn" onclick="switchMode('networking')">
+                            Networking Mode
+                        </button>
+                    </div>
                     <textarea
                         class="scenario-input"
                         id="scenarioInput"
                         placeholder="Enter a scenario to simulate... (e.g., 'A major deadline is moved up by two weeks')"
+                    ></textarea>
+                    <textarea
+                        class="scenario-input"
+                        id="attendeeInput"
+                        placeholder="Paste attendee list (one per line, format: Name, LinkedIn URL)"
+                        style="display: none; margin-top: 1rem;"
                     ></textarea>
                     <button class="simulate-btn" id="simulateBtn" onclick="runSimulation()">
                         Simulate Responses
@@ -9096,23 +9020,16 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
         const members = {members_json_str};
         let currentSimulationId = null;
         let simulationResults = {{}};
+        let currentMode = 'simulation'; // 'simulation', 'party', or 'networking'
+        let partyResults = null;
+        let networkingResults = null;
+        let compatibilityLines = [];
+        let externalAttendees = [];
 
-        console.log('Setting up Three.js with', members.length, 'members');
-
-        // Three.js Setup with cleaner aesthetic
+        // Three.js Setup
         const canvas = document.getElementById('three-canvas');
-        if (!canvas) {{
-            console.error('Canvas element #three-canvas not found!');
-            alert('ERROR: Canvas element not found. Please refresh the page.');
-        }} else {{
-        console.log('Canvas element found:', canvas);
-
         const scene = new THREE.Scene();
-
-        // Clean single-color background - white
-        const bgColor = new THREE.Color(0xffffff);
-        scene.background = bgColor;
-        console.log('Scene background set to:', bgColor.getHexString());
+        scene.background = new THREE.Color(0xf8f9fa);
 
         // Camera setup
         const camera = new THREE.PerspectiveCamera(
@@ -9124,29 +9041,15 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
         camera.position.set(0, 5, 15);
         camera.lookAt(0, 0, 0);
 
-        // Renderer with better quality
+        // Renderer
         const renderer = new THREE.WebGLRenderer({{
             canvas: canvas,
-            antialias: true,
-            alpha: false
+            antialias: true
         }});
-
-        // Ensure canvas has proper dimensions
-        const containerWidth = canvas.parentElement.clientWidth;
-        const containerHeight = canvas.parentElement.clientHeight;
-        console.log('Canvas container size:', containerWidth, 'x', containerHeight);
-
-        renderer.setSize(containerWidth, containerHeight);
+        renderer.setSize(canvas.clientWidth, canvas.clientHeight);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-        renderer.setClearColor(0xffffff, 1);
 
-        // Update camera aspect ratio
-        camera.aspect = containerWidth / containerHeight;
-        camera.updateProjectionMatrix();
-
-        console.log('Renderer initialized. Size:', containerWidth, 'x', containerHeight);
-
-        // Enhanced lighting setup
+        // Lighting
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
         scene.add(ambientLight);
 
@@ -9157,13 +9060,6 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
         const fillLight = new THREE.DirectionalLight(0xffffff, 0.4);
         fillLight.position.set(-5, 5, -5);
         scene.add(fillLight);
-
-        // Add interactive grid plane (like voxel painter)
-        const gridSize = 20;
-        const gridDivisions = 20;
-        const gridHelper = new THREE.GridHelper(gridSize, gridDivisions, 0x888888, 0xdddddd);
-        gridHelper.position.y = -2;
-        scene.add(gridHelper);
 
         // Create cleaner spheres for members
         const spheres = [];
@@ -9179,14 +9075,13 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             const z = Math.sin(angle) * radius;
             const y = 0;
 
-            // Create sphere with visible color
+            // Create sphere
             const geometry = new THREE.SphereGeometry(0.6, 32, 32);
             const material = new THREE.MeshStandardMaterial({{
-                color: 0x4a5568,
-                metalness: 0.2,
-                roughness: 0.5,
-                emissive: 0x1a202c,
-                emissiveIntensity: 0.1
+                color: 0x2d3748,
+                metalness: 0.3,
+                roughness: 0.4,
+                emissive: 0x000000
             }});
 
             const sphere = new THREE.Mesh(geometry, material);
@@ -9267,10 +9162,17 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
         }});
 
         canvas.addEventListener('click', () => {{
-            if (INTERSECTED && currentSimulationId) {{
+            if (INTERSECTED) {{
                 const memberId = INTERSECTED.userData.memberId;
                 const memberName = INTERSECTED.userData.memberName;
-                showMemberResponse(memberId, memberName);
+
+                if (currentMode === 'party' && partyResults) {{
+                    showCompatibilityMatches(memberId, memberName);
+                }} else if (currentMode === 'networking' && networkingResults) {{
+                    showNetworkingRecommendations(memberId, memberName);
+                }} else if (currentSimulationId) {{
+                    showMemberResponse(memberId, memberName);
+                }}
             }}
         }});
 
@@ -9303,9 +9205,6 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                 sphere.scale.z += (targetScale - sphere.scale.z) * 0.1;
             }});
 
-            // Update particle effects
-            updateParticles();
-
             renderer.render(scene, camera);
         }}
 
@@ -9320,83 +9219,36 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         }});
 
-        // Particle system for spark effects
-        const particleSystems = [];
+        // Mode switching
+        function switchMode(mode) {{
+            currentMode = mode;
 
-        function createSparkEffect(position) {{
-            const particleCount = 30;
-            const particles = new THREE.BufferGeometry();
-            const positions = new Float32Array(particleCount * 3);
-            const velocities = [];
+            // Update button states
+            document.getElementById('simulationModeBtn').classList.toggle('active', mode === 'simulation');
+            document.getElementById('partyModeBtn').classList.toggle('active', mode === 'party');
+            document.getElementById('networkingModeBtn').classList.toggle('active', mode === 'networking');
 
-            for (let i = 0; i < particleCount; i++) {{
-                positions[i * 3] = position.x;
-                positions[i * 3 + 1] = position.y;
-                positions[i * 3 + 2] = position.z;
+            // Update placeholder and button text
+            const scenarioInput = document.getElementById('scenarioInput');
+            const attendeeInput = document.getElementById('attendeeInput');
+            const btn = document.getElementById('simulateBtn');
 
-                // Random velocities for spark effect
-                velocities.push({{
-                    x: (Math.random() - 0.5) * 0.1,
-                    y: Math.random() * 0.15,
-                    z: (Math.random() - 0.5) * 0.1
-                }});
+            if (mode === 'party') {{
+                scenarioInput.placeholder = 'Enter a social scenario... (e.g., "Business dinner at a fancy restaurant")';
+                attendeeInput.style.display = 'none';
+                btn.textContent = 'Analyze Compatibility';
+            }} else if (mode === 'networking') {{
+                scenarioInput.placeholder = 'Enter your networking goal... (e.g., "Find potential investors for my startup")';
+                attendeeInput.style.display = 'block';
+                btn.textContent = 'Analyze Networking Matches';
+            }} else {{
+                scenarioInput.placeholder = 'Enter a scenario to simulate... (e.g., "A major deadline is moved up by two weeks")';
+                attendeeInput.style.display = 'none';
+                btn.textContent = 'Simulate Responses';
             }}
 
-            particles.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-
-            const particleMaterial = new THREE.PointsMaterial({{
-                color: 0xffd700,
-                size: 0.1,
-                transparent: true,
-                opacity: 1.0,
-                blending: THREE.AdditiveBlending
-            }});
-
-            const particleSystem = new THREE.Points(particles, particleMaterial);
-            particleSystem.userData = {{
-                velocities: velocities,
-                age: 0,
-                maxAge: 60
-            }};
-
-            scene.add(particleSystem);
-            particleSystems.push(particleSystem);
-
-            return particleSystem;
-        }}
-
-        function updateParticles() {{
-            for (let i = particleSystems.length - 1; i >= 0; i--) {{
-                const system = particleSystems[i];
-                const positions = system.geometry.attributes.position.array;
-                const velocities = system.userData.velocities;
-
-                system.userData.age++;
-
-                // Update particle positions
-                for (let j = 0; j < velocities.length; j++) {{
-                    positions[j * 3] += velocities[j].x;
-                    positions[j * 3 + 1] += velocities[j].y;
-                    positions[j * 3 + 2] += velocities[j].z;
-
-                    // Apply gravity
-                    velocities[j].y -= 0.003;
-                }}
-
-                system.geometry.attributes.position.needsUpdate = true;
-
-                // Fade out
-                const ageRatio = system.userData.age / system.userData.maxAge;
-                system.material.opacity = 1.0 - ageRatio;
-
-                // Remove old particle systems
-                if (system.userData.age >= system.userData.maxAge) {{
-                    scene.remove(system);
-                    system.geometry.dispose();
-                    system.material.dispose();
-                    particleSystems.splice(i, 1);
-                }}
-            }}
+            // Clear results and reset view
+            clearSimulation();
         }}
 
         // Simulation functions
@@ -9405,6 +9257,12 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             if (!scenario) {{
                 alert('Please enter a scenario');
                 return;
+            }}
+
+            if (currentMode === 'party') {{
+                return runPartyMode(scenario);
+            }} else if (currentMode === 'networking') {{
+                return runNetworkingMode(scenario);
             }}
 
             const btn = document.getElementById('simulateBtn');
@@ -9428,19 +9286,31 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                     currentSimulationId = data.simulation_id;
                     simulationResults = data.responses;
 
-                    // Animate spheres with spark effects
+                    // Animate spheres with results - smooth color transition
                     spheres.forEach((sphere, index) => {{
                         if (simulationResults[sphere.userData.memberId]) {{
-                            // Stagger the animation and spark effects
+                            // Stagger the animation
                             setTimeout(() => {{
                                 const targetColor = new THREE.Color(0x6b9b99); // Teal accent
                                 animateColorTransition(sphere.material, targetColor, 1000);
-
-                                // Create spark effect around the sphere
-                                createSparkEffect(sphere.position);
-                            }}, index * 150);
+                            }}, index * 100);
                         }}
                     }});
+
+                    // Show right sidebar with instruction message
+                    setTimeout(() => {{
+                        const sidebar = document.getElementById('rightSidebar');
+                        const container = document.getElementById('responseContainer');
+
+                        container.innerHTML = `
+                            <div class="response-header">Simulation Complete!</div>
+                            <div class="response-content">
+                                Click on a sphere to see their reaction to the scenario.
+                            </div>
+                        `;
+
+                        sidebar.classList.add('visible');
+                    }}, spheres.length * 100);
                 }} else {{
                     // Check if subscription is required
                     if (data.requires_subscription) {{
@@ -9458,6 +9328,257 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                 btn.disabled = false;
                 btn.textContent = 'Simulate Responses';
             }}
+        }}
+
+        // Party Mode
+        async function runPartyMode(scenario) {{
+            const btn = document.getElementById('simulateBtn');
+            btn.disabled = true;
+            btn.textContent = 'Analyzing...';
+
+            // Clear existing lines
+            clearCompatibilityLines();
+
+            try {{
+                const response = await fetch('/api/run-party-mode', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{
+                        org_id: orgId,
+                        scenario: scenario
+                    }})
+                }});
+
+                const data = await response.json();
+
+                if (data.success) {{
+                    partyResults = data.compatibility;
+
+                    // Draw compatibility lines
+                    drawCompatibilityLines(data.compatibility);
+
+                    // Show success message in sidebar
+                    setTimeout(() => {{
+                        const sidebar = document.getElementById('rightSidebar');
+                        const container = document.getElementById('responseContainer');
+
+                        container.innerHTML = `
+                            <div class="response-header">Compatibility Analysis Complete!</div>
+                            <div class="response-content">
+                                Click on any sphere to see who they're most compatible with in this scenario.
+                            </div>
+                        `;
+
+                        sidebar.classList.add('visible');
+                    }}, 500);
+                }} else {{
+                    alert('Error: ' + data.error);
+                }}
+            }} catch (error) {{
+                console.error('Error:', error);
+                alert('Failed to run party mode analysis');
+            }} finally {{
+                btn.disabled = false;
+                btn.textContent = 'Analyze Compatibility';
+            }}
+        }}
+
+        function clearCompatibilityLines() {{
+            compatibilityLines.forEach(line => {{
+                scene.remove(line);
+                line.geometry.dispose();
+                line.material.dispose();
+            }});
+            compatibilityLines = [];
+        }}
+
+        function drawCompatibilityLines(compatibility) {{
+            clearCompatibilityLines();
+
+            // Create a map to track bidirectional matches
+            const bidirectional = new Map();
+
+            // First pass: identify bidirectional matches
+            Object.entries(compatibility).forEach(([userId1, data]) => {{
+                const user1Id = parseInt(userId1);
+                data.top_matches.forEach(match => {{
+                    const user2Id = match.user_id;
+                    const key = [Math.min(user1Id, user2Id), Math.max(user1Id, user2Id)].join('-');
+
+                    if (bidirectional.has(key)) {{
+                        bidirectional.get(key).bidirectional = true;
+                    }} else {{
+                        bidirectional.set(key, {{ userId1: user1Id, userId2: user2Id, bidirectional: false }});
+                    }}
+                }});
+            }});
+
+            // Second pass: draw lines
+            Object.entries(compatibility).forEach(([userId, data]) => {{
+                const user1Id = parseInt(userId);
+                const sphere1 = spheres.find(s => s.userData.memberId === user1Id);
+
+                if (!sphere1) return;
+
+                data.top_matches.forEach((match, index) => {{
+                    const sphere2 = spheres.find(s => s.userData.memberId === match.user_id);
+                    if (!sphere2) return;
+
+                    const key = [Math.min(user1Id, match.user_id), Math.max(user1Id, match.user_id)].join('-');
+                    const isBidirectional = bidirectional.get(key)?.bidirectional;
+
+                    // Only draw line if user1Id < user2Id to avoid duplicates
+                    if (user1Id < match.user_id) {{
+                        const lineColor = isBidirectional ? 0x4ade80 : 0x9ca3af;
+                        const lineWidth = isBidirectional ? 3 : 1.5;
+
+                        const points = [];
+                        points.push(sphere1.position.clone());
+                        points.push(sphere2.position.clone());
+
+                        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+                        const material = new THREE.LineBasicMaterial({{
+                            color: lineColor,
+                            linewidth: lineWidth,
+                            opacity: 0.6,
+                            transparent: true
+                        }});
+
+                        const line = new THREE.Line(geometry, material);
+                        scene.add(line);
+                        compatibilityLines.push(line);
+                    }}
+                }});
+            }});
+        }}
+
+        function showCompatibilityMatches(memberId, memberName) {{
+            const compatibility = partyResults[memberId];
+            if (!compatibility) {{
+                alert('No compatibility data for this member');
+                return;
+            }}
+
+            const sidebar = document.getElementById('rightSidebar');
+            const container = document.getElementById('responseContainer');
+
+            let matchesHtml = '';
+            compatibility.top_matches.forEach((match, index) => {{
+                matchesHtml += `
+                    <div style="margin-bottom: 1rem; padding: 1rem; background: #f8f9fa; border-radius: 8px;">
+                        <div style="font-weight: 600; margin-bottom: 0.5rem;">${{index + 1}}. ${{match.name}}</div>
+                        <div style="font-size: 0.875rem; color: #666; margin-bottom: 0.5rem;">
+                            Compatibility: ${{(match.score * 100).toFixed(0)}}%
+                        </div>
+                        <div style="font-size: 0.875rem; line-height: 1.5;">
+                            ${{match.analysis}}
+                        </div>
+                    </div>
+                `;
+            }});
+
+            container.innerHTML = `
+                <div class="response-header">${{memberName}}'s Best Matches</div>
+                <div class="response-content">
+                    ${{matchesHtml}}
+                </div>
+            `;
+
+            sidebar.classList.add('visible');
+        }}
+
+        // Networking Mode
+        async function runNetworkingMode(goal) {{
+            const attendeeList = document.getElementById('attendeeInput').value.trim();
+            if (!attendeeList) {{
+                alert('Please paste the attendee list');
+                return;
+            }}
+
+            const btn = document.getElementById('simulateBtn');
+            btn.disabled = true;
+            btn.textContent = 'Analyzing...';
+
+            clearCompatibilityLines();
+
+            try {{
+                const response = await fetch('/api/run-networking-mode', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{
+                        org_id: orgId,
+                        goal: goal,
+                        attendee_list: attendeeList
+                    }})
+                }});
+
+                const data = await response.json();
+
+                if (data.success) {{
+                    networkingResults = data.recommendations;
+
+                    // Show success message in sidebar
+                    setTimeout(() => {{
+                        const sidebar = document.getElementById('rightSidebar');
+                        const container = document.getElementById('responseContainer');
+
+                        container.innerHTML = `
+                            <div class="response-header">Networking Analysis Complete!</div>
+                            <div class="response-content">
+                                Click on any team member's sphere to see who they should connect with at this event.
+                            </div>
+                        `;
+
+                        sidebar.classList.add('visible');
+                    }}, 500);
+                }} else {{
+                    alert('Error: ' + data.error);
+                }}
+            }} catch (error) {{
+                console.error('Error:', error);
+                alert('Failed to run networking analysis');
+            }} finally {{
+                btn.disabled = false;
+                btn.textContent = 'Analyze Networking Matches';
+            }}
+        }}
+
+        function showNetworkingRecommendations(memberId, memberName) {{
+            const recommendations = networkingResults[memberId];
+            if (!recommendations) {{
+                alert('No networking recommendations for this member');
+                return;
+            }}
+
+            const sidebar = document.getElementById('rightSidebar');
+            const container = document.getElementById('responseContainer');
+
+            let recsHtml = '';
+            recommendations.top_matches.forEach((match, index) => {{
+                recsHtml += `
+                    <div style="margin-bottom: 1rem; padding: 1rem; background: #f8f9fa; border-radius: 8px;">
+                        <div style="font-weight: 600; margin-bottom: 0.5rem;">${{index + 1}}. ${{match.name}}</div>
+                        <div style="font-size: 0.875rem; color: #666; margin-bottom: 0.25rem;">
+                            ${{match.title || 'Attendee'}}
+                        </div>
+                        <div style="font-size: 0.875rem; color: #666; margin-bottom: 0.5rem;">
+                            Relevance: ${{(match.score * 100).toFixed(0)}}%
+                        </div>
+                        <div style="font-size: 0.875rem; line-height: 1.5;">
+                            ${{match.reason}}
+                        </div>
+                    </div>
+                `;
+            }});
+
+            container.innerHTML = `
+                <div class="response-header">${{memberName}}'s Networking Targets</div>
+                <div class="response-content">
+                    ${{recsHtml}}
+                </div>
+            `;
+
+            sidebar.classList.add('visible');
         }}
 
         function showMemberResponse(memberId, memberName) {{
@@ -9552,11 +9673,17 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
 
         function clearSimulation() {{
             document.getElementById('scenarioInput').value = '';
+            document.getElementById('attendeeInput').value = '';
             currentSimulationId = null;
             simulationResults = {{}};
+            partyResults = null;
+            networkingResults = null;
+
+            // Clear compatibility lines
+            clearCompatibilityLines();
 
             // Reset sphere colors with animation
-            const originalColor = new THREE.Color(0x4a5568);
+            const originalColor = new THREE.Color(0x2d3748);
             spheres.forEach((sphere, index) => {{
                 setTimeout(() => {{
                     animateColorTransition(sphere.material, originalColor, 800);
@@ -9604,8 +9731,20 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                         }}
                     }});
 
-                    // Close right sidebar if open
-                    document.getElementById('rightSidebar').classList.remove('visible');
+                    // Show right sidebar with instruction message
+                    setTimeout(() => {{
+                        const sidebar = document.getElementById('rightSidebar');
+                        const container = document.getElementById('responseContainer');
+
+                        container.innerHTML = `
+                            <div class="response-header">Simulation Loaded</div>
+                            <div class="response-content">
+                                Click on a sphere to see their reaction to the scenario.
+                            </div>
+                        `;
+
+                        sidebar.classList.add('visible');
+                    }}, spheres.length * 80);
 
                     console.log('Loaded simulation with', Object.keys(simulationResults).length, 'responses');
                 }} else {{
@@ -9616,7 +9755,30 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                 alert('Failed to load simulation');
             }}
         }}
-        }} // Close the else block for canvas check
+
+        async function deleteSimulation(simId) {{
+            if (!confirm('Are you sure you want to delete this simulation?')) {{
+                return;
+            }}
+
+            try {{
+                const response = await fetch(`/api/delete-simulation/${{simId}}`, {{
+                    method: 'DELETE'
+                }});
+
+                const data = await response.json();
+
+                if (data.success) {{
+                    // Reload the page to refresh the simulation list
+                    window.location.reload();
+                }} else {{
+                    alert('Error deleting simulation: ' + data.error);
+                }}
+            }} catch (error) {{
+                console.error('Error deleting simulation:', error);
+                alert('Failed to delete simulation');
+            }}
+        }}
     </script>
     '''
 
@@ -9805,6 +9967,335 @@ Return ONLY the JSON, no other text."""
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/run-party-mode', methods=['POST'])
+@login_required
+def run_party_mode():
+    """Run party mode compatibility analysis for all organization members"""
+    user_id = session['user_id']
+
+    try:
+        data = request.get_json()
+        org_id = data.get('org_id')
+        scenario = data.get('scenario', '').strip()
+
+        if not org_id or not scenario:
+            return jsonify({'success': False, 'error': 'Missing org_id or scenario'}), 400
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Verify user is member of organization
+        cursor.execute('''
+            SELECT id FROM organization_members
+            WHERE organization_id = %s AND user_id = %s AND is_active = TRUE
+        ''', (org_id, user_id))
+
+        if not cursor.fetchone():
+            conn.close()
+            return jsonify({'success': False, 'error': 'Not a member of this organization'}), 403
+
+        # Get all active members with their profiles
+        cursor.execute('''
+            SELECT
+                u.id, u.first_name, u.last_name,
+                up.profile_data
+            FROM organization_members om
+            INNER JOIN users u ON om.user_id = u.id
+            LEFT JOIN user_profiles up ON u.id = up.user_id
+            WHERE om.organization_id = %s AND om.is_active = TRUE
+        ''', (org_id,))
+
+        members = cursor.fetchall()
+        conn.close()
+
+        # Parse profile data JSON
+        parsed_members = []
+        for member in members:
+            member_dict = dict(member)
+            if member_dict.get('profile_data'):
+                try:
+                    member_dict['profile'] = json.loads(member_dict['profile_data'])
+                except:
+                    member_dict['profile'] = {}
+            else:
+                member_dict['profile'] = {}
+            parsed_members.append(member_dict)
+
+        members = parsed_members
+
+        if len(members) < 2:
+            return jsonify({'success': False, 'error': 'Need at least 2 members for compatibility analysis'}), 400
+
+        # Initialize OpenAI client
+        from openai import OpenAI
+        client = OpenAI(api_key=API_KEY)
+
+        # Analyze compatibility for each member
+        compatibility_results = {}
+
+        for member in members:
+            member_id = member['id']
+            member_name = f"{member['first_name']} {member['last_name']}"
+
+            # Analyze compatibility with all other members
+            matches = []
+
+            for other_member in members:
+                if other_member['id'] == member_id:
+                    continue
+
+                other_name = f"{other_member['first_name']} {other_member['last_name']}"
+
+                # Build compatibility analysis prompt
+                member_profile = build_profile_summary(member.get('profile', {}), member_name)
+                other_profile = build_profile_summary(other_member.get('profile', {}), other_name)
+
+                prompt = f"""You are analyzing compatibility between two people for a social scenario.
+
+Scenario: {scenario}
+
+Person 1: {member_profile}
+
+Person 2: {other_profile}
+
+Analyze how compatible these two people would be in this scenario. Consider:
+1. Personality compatibility
+2. Communication styles
+3. Shared interests/values
+4. How they might interact in this specific scenario
+
+Provide your analysis as JSON:
+{{
+    "score": 0.0-1.0,
+    "analysis": "2-3 sentence explanation of why they would or wouldn't work well together in this scenario"
+}}"""
+
+                try:
+                    completion = client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=[
+                            {"role": "system", "content": "You are an expert in social dynamics and personality compatibility."},
+                            {"role": "user", "content": prompt}
+                        ],
+                        temperature=0.7,
+                        max_tokens=200
+                    )
+
+                    response_text = completion.choices[0].message.content.strip()
+
+                    # Parse JSON
+                    if response_text.startswith('```'):
+                        response_text = response_text.split('```')[1]
+                        if response_text.startswith('json'):
+                            response_text = response_text[4:]
+                        response_text = response_text.strip()
+
+                    result = json.loads(response_text)
+
+                    matches.append({
+                        'user_id': other_member['id'],
+                        'name': other_name,
+                        'score': result.get('score', 0.5),
+                        'analysis': result.get('analysis', 'Analysis unavailable')
+                    })
+
+                except Exception as e:
+                    print(f"Error analyzing compatibility: {e}")
+                    matches.append({
+                        'user_id': other_member['id'],
+                        'name': other_name,
+                        'score': 0.5,
+                        'analysis': 'Unable to analyze compatibility'
+                    })
+
+            # Sort by score and keep top 3
+            matches.sort(key=lambda x: x['score'], reverse=True)
+            top_matches = matches[:min(3, len(matches))]
+
+            compatibility_results[member_id] = {
+                'top_matches': top_matches
+            }
+
+        return jsonify({
+            'success': True,
+            'compatibility': compatibility_results
+        })
+
+    except Exception as e:
+        print(f"Error running party mode: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/run-networking-mode', methods=['POST'])
+@login_required
+def run_networking_mode():
+    """Run networking mode to match org members with external attendees"""
+    user_id = session['user_id']
+
+    try:
+        data = request.get_json()
+        org_id = data.get('org_id')
+        goal = data.get('goal', '').strip()
+        attendee_list = data.get('attendee_list', '').strip()
+
+        if not org_id or not goal or not attendee_list:
+            return jsonify({'success': False, 'error': 'Missing required fields'}), 400
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Verify user is member of organization
+        cursor.execute('''
+            SELECT id FROM organization_members
+            WHERE organization_id = %s AND user_id = %s AND is_active = TRUE
+        ''', (org_id, user_id))
+
+        if not cursor.fetchone():
+            conn.close()
+            return jsonify({'success': False, 'error': 'Not a member of this organization'}), 403
+
+        # Get all active org members with profiles
+        cursor.execute('''
+            SELECT
+                u.id, u.first_name, u.last_name,
+                up.profile_data
+            FROM organization_members om
+            INNER JOIN users u ON om.user_id = u.id
+            LEFT JOIN user_profiles up ON u.id = up.user_id
+            WHERE om.organization_id = %s AND om.is_active = TRUE
+        ''', (org_id,))
+
+        members = cursor.fetchall()
+        conn.close()
+
+        # Parse profile data
+        parsed_members = []
+        for member in members:
+            member_dict = dict(member)
+            if member_dict.get('profile_data'):
+                try:
+                    member_dict['profile'] = json.loads(member_dict['profile_data'])
+                except:
+                    member_dict['profile'] = {}
+            else:
+                member_dict['profile'] = {}
+            parsed_members.append(member_dict)
+
+        members = parsed_members
+
+        # Parse attendee list (format: "Name, LinkedIn URL" per line)
+        attendees = []
+        for line in attendee_list.split('\n'):
+            line = line.strip()
+            if not line:
+                continue
+
+            parts = [p.strip() for p in line.split(',')]
+            if len(parts) >= 2:
+                name = parts[0]
+                linkedin = parts[1]
+                attendees.append({'name': name, 'linkedin': linkedin})
+            elif len(parts) == 1:
+                attendees.append({'name': parts[0], 'linkedin': None})
+
+        if not attendees:
+            return jsonify({'success': False, 'error': 'No valid attendees found in list'}), 400
+
+        # Initialize OpenAI client
+        from openai import OpenAI
+        client = OpenAI(api_key=API_KEY)
+
+        # Analyze matches for each org member
+        recommendations = {}
+
+        for member in members:
+            member_id = member['id']
+            member_name = f"{member['first_name']} {member['last_name']}"
+            member_profile = build_profile_summary(member.get('profile', {}), member_name)
+
+            matches = []
+
+            for attendee in attendees:
+                # Build networking analysis prompt
+                prompt = f"""You are analyzing networking opportunities for a professional.
+
+Goal: {goal}
+
+Team Member: {member_profile}
+
+External Attendee: {attendee['name']}
+{f"LinkedIn: {attendee['linkedin']}" if attendee.get('linkedin') else ""}
+
+Analyze whether this team member should connect with this attendee based on the networking goal.
+
+Provide your analysis as JSON:
+{{
+    "score": 0.0-1.0,
+    "reason": "2-3 sentences explaining why this connection would be valuable for achieving the goal"
+}}"""
+
+                try:
+                    completion = client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=[
+                            {"role": "system", "content": "You are an expert networking strategist."},
+                            {"role": "user", "content": prompt}
+                        ],
+                        temperature=0.7,
+                        max_tokens=150
+                    )
+
+                    response_text = completion.choices[0].message.content.strip()
+
+                    # Parse JSON
+                    if response_text.startswith('```'):
+                        response_text = response_text.split('```')[1]
+                        if response_text.startswith('json'):
+                            response_text = response_text[4:]
+                        response_text = response_text.strip()
+
+                    result = json.loads(response_text)
+
+                    matches.append({
+                        'name': attendee['name'],
+                        'title': None,  # Would come from Proxycurl
+                        'linkedin': attendee.get('linkedin'),
+                        'score': result.get('score', 0.5),
+                        'reason': result.get('reason', 'Connection recommended')
+                    })
+
+                except Exception as e:
+                    print(f"Error analyzing networking match: {e}")
+                    matches.append({
+                        'name': attendee['name'],
+                        'title': None,
+                        'linkedin': attendee.get('linkedin'),
+                        'score': 0.5,
+                        'reason': 'Unable to analyze connection'
+                    })
+
+            # Sort by score and keep top 5
+            matches.sort(key=lambda x: x['score'], reverse=True)
+            top_matches = matches[:min(5, len(matches))]
+
+            recommendations[member_id] = {
+                'top_matches': top_matches
+            }
+
+        return jsonify({
+            'success': True,
+            'recommendations': recommendations
+        })
+
+    except Exception as e:
+        print(f"Error running networking mode: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 def build_profile_summary(profile_data: dict, member_name: str) -> str:
     """Build a readable summary of a user's profile for the AI prompt"""
     if not profile_data:
@@ -9917,6 +10408,52 @@ def load_simulation(simulation_id):
 
     except Exception as e:
         print(f"Error loading simulation: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/delete-simulation/<int:simulation_id>', methods=['DELETE'])
+@login_required
+def delete_simulation(simulation_id):
+    """Delete a simulation and all its responses"""
+    user_id = session['user_id']
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Verify user has permission to delete this simulation
+        # User must be a member of the organization that owns the simulation
+        cursor.execute('''
+            SELECT s.id, s.organization_id, s.created_by
+            FROM simulations s
+            INNER JOIN organization_members om ON s.organization_id = om.organization_id
+            WHERE s.id = %s AND om.user_id = %s AND om.is_active = TRUE
+        ''', (simulation_id, user_id))
+
+        simulation = cursor.fetchone()
+
+        if not simulation:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Simulation not found or access denied'}), 404
+
+        # Delete simulation responses first (foreign key constraint)
+        cursor.execute('DELETE FROM simulation_responses WHERE simulation_id = %s', (simulation_id,))
+
+        # Delete the simulation
+        cursor.execute('DELETE FROM simulations WHERE id = %s', (simulation_id,))
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'message': 'Simulation deleted successfully'
+        })
+
+    except Exception as e:
+        print(f"Error deleting simulation: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
