@@ -71,6 +71,8 @@ EMAIL_USER = os.environ.get('EMAIL_USER')
 EMAIL_PASSWORD = os.environ.get('EMAIL_PASSWORD')
 EMAIL_FROM = os.environ.get('EMAIL_FROM', EMAIL_USER)
 
+FRESH_API_KEY = os.environ.get('FRESH_API_KEY')
+
 # Global processing status storage
 processing_status = {}
 
@@ -10128,6 +10130,59 @@ Provide your analysis as JSON:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+def scrape_linkedin_profile(linkedin_url: str) -> dict:
+    """Scrape LinkedIn profile using Fresh LinkedIn Profile Data API"""
+    if not FRESH_API_KEY:
+        print("Warning: FRESH_API_KEY not set, skipping LinkedIn scraping")
+        return None
+
+    try:
+        url = "https://fresh-linkedin-profile-data.p.rapidapi.com/get-linkedin-profile"
+        querystring = {"linkedin_url": linkedin_url, "include_skills": "true"}
+
+        headers = {
+            "x-rapidapi-key": FRESH_API_KEY,
+            "x-rapidapi-host": "fresh-linkedin-profile-data.p.rapidapi.com"
+        }
+
+        response = requests.get(url, headers=headers, params=querystring, timeout=15)
+
+        if response.status_code == 200:
+            data = response.json()
+
+            # Extract current position from experiences
+            current_company = None
+            current_title = None
+            if data.get('experiences') and len(data['experiences']) > 0:
+                current_exp = data['experiences'][0]
+                current_title = current_exp.get('title')
+                current_company = current_exp.get('company')
+
+            # Extract skills
+            skills = []
+            if data.get('skills'):
+                skills = [skill if isinstance(skill, str) else skill.get('name') for skill in data['skills'][:10]]
+                skills = [s for s in skills if s]  # Filter out None values
+
+            return {
+                'name': data.get('full_name') or data.get('name'),
+                'headline': data.get('headline'),
+                'summary': data.get('summary') or data.get('about'),
+                'current_company': current_company,
+                'current_title': current_title,
+                'location': data.get('location') or data.get('city'),
+                'skills': skills,
+                'industry': data.get('industry')
+            }
+        else:
+            print(f"Fresh API error: {response.status_code} - {response.text}")
+            return None
+
+    except Exception as e:
+        print(f"Error scraping LinkedIn profile {linkedin_url}: {e}")
+        return None
+
+
 @app.route('/api/run-networking-mode', methods=['POST'])
 @login_required
 def run_networking_mode():
@@ -10196,9 +10251,19 @@ def run_networking_mode():
             if len(parts) >= 2:
                 name = parts[0]
                 linkedin = parts[1]
-                attendees.append({'name': name, 'linkedin': linkedin})
+                # Scrape LinkedIn profile if URL provided
+                linkedin_data = scrape_linkedin_profile(linkedin) if linkedin else None
+                attendees.append({
+                    'name': linkedin_data.get('name') if linkedin_data else name,
+                    'linkedin': linkedin,
+                    'linkedin_data': linkedin_data
+                })
             elif len(parts) == 1:
-                attendees.append({'name': parts[0], 'linkedin': None})
+                attendees.append({
+                    'name': parts[0],
+                    'linkedin': None,
+                    'linkedin_data': None
+                })
 
         if not attendees:
             return jsonify({'success': False, 'error': 'No valid attendees found in list'}), 400
@@ -10218,6 +10283,26 @@ def run_networking_mode():
             matches = []
 
             for attendee in attendees:
+                # Build attendee profile from LinkedIn data
+                attendee_info = f"External Attendee: {attendee['name']}"
+
+                if attendee.get('linkedin_data'):
+                    ld = attendee['linkedin_data']
+                    attendee_info += f"\n- Current Role: {ld.get('current_title', 'Unknown')} at {ld.get('current_company', 'Unknown')}"
+                    if ld.get('headline'):
+                        attendee_info += f"\n- Headline: {ld['headline']}"
+                    if ld.get('location'):
+                        attendee_info += f"\n- Location: {ld['location']}"
+                    if ld.get('industry'):
+                        attendee_info += f"\n- Industry: {ld['industry']}"
+                    if ld.get('skills'):
+                        attendee_info += f"\n- Key Skills: {', '.join(ld['skills'][:5])}"
+                    if ld.get('summary'):
+                        summary_preview = ld['summary'][:200] + "..." if len(ld['summary']) > 200 else ld['summary']
+                        attendee_info += f"\n- Summary: {summary_preview}"
+                elif attendee.get('linkedin'):
+                    attendee_info += f"\nLinkedIn: {attendee['linkedin']}"
+
                 # Build networking analysis prompt
                 prompt = f"""You are analyzing networking opportunities for a professional.
 
@@ -10225,10 +10310,10 @@ Goal: {goal}
 
 Team Member: {member_profile}
 
-External Attendee: {attendee['name']}
-{f"LinkedIn: {attendee['linkedin']}" if attendee.get('linkedin') else ""}
+{attendee_info}
 
 Analyze whether this team member should connect with this attendee based on the networking goal.
+Consider their backgrounds, skills, industries, and how they could mutually benefit each other.
 
 Provide your analysis as JSON:
 {{
@@ -10258,9 +10343,14 @@ Provide your analysis as JSON:
 
                     result = json.loads(response_text)
 
+                    # Get title from LinkedIn data if available
+                    title = None
+                    if attendee.get('linkedin_data'):
+                        title = attendee['linkedin_data'].get('current_title')
+
                     matches.append({
                         'name': attendee['name'],
-                        'title': None,  # Would come from Proxycurl
+                        'title': title,
                         'linkedin': attendee.get('linkedin'),
                         'score': result.get('score', 0.5),
                         'reason': result.get('reason', 'Connection recommended')
@@ -10268,9 +10358,14 @@ Provide your analysis as JSON:
 
                 except Exception as e:
                     print(f"Error analyzing networking match: {e}")
+                    # Get title from LinkedIn data if available
+                    title = None
+                    if attendee.get('linkedin_data'):
+                        title = attendee['linkedin_data'].get('current_title')
+
                     matches.append({
                         'name': attendee['name'],
-                        'title': None,
+                        'title': title,
                         'linkedin': attendee.get('linkedin'),
                         'score': 0.5,
                         'reason': 'Unable to analyze connection'
