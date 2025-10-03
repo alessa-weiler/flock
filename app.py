@@ -4661,25 +4661,25 @@ def home():
 
             <div class="features-grid">
                 <div class="feature-card">
-                    <h3 class="feature-title"> Dinner Simulation</h3>
-                    <p class="feature-description"> Agents simulate dinner conversations to test real compatibility</p>
+                    <h3 class="feature-title"> Simulation Mode</h3>
+                    <p class="feature-description"> Simulates how your organisation responds to a given scenario. Can help you anticipate changes and accommodate accordingly. Example: how would my investors react if we pivoted?  </p>
                 </div>
                 
                 <div class="feature-card">
                     
-                    <h3 class="feature-title">Deep Matching</h3>
-                    <p class="feature-description">Beyond interests - we match personalities, values, and communication styles</p>
+                    <h3 class="feature-title">Party Mode</h3>
+                    <p class="feature-description">Beyond change - this uses Agent Based Modelling coupled with LLMs to run a virtual 'mingling' of your organisation - agents communicate with each other within a pre-specified context, and form collaborations. Great for team building.  </p>
                 </div>
                 
                 <div class="feature-card">
                     
-                    <h3 class="feature-title">Skip Small Talk</h3>
-                    <p class="feature-description">Meet knowing you're already compatible for meaningful conversation</p>
+                    <h3 class="feature-title">Networking Mode</h3>
+                    <p class="feature-description">For networking events when you're planning with your team. You input a shared goal, and a list of the attendees of the event. We enrich this data, and outline who everyone in your team should focus on meeting at the event. </p>
                 </div>
             </div>
 
             <div class="testimonial">
-                Finally, a way to find people I can have real conversations with from day one. No more awkward first meetups wondering if we'll click.
+                Honestly wasn't expecting to enjoy this as much as I did. The matches felt surprisingly accurate and I actually had fun chatting with them!
             </div>
 
             <div class="cta-buttons">
