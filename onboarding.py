@@ -1,6 +1,15 @@
 from typing import Dict, List, Optional, Tuple, Any
 from flask import request, session, redirect, flash
 import threading
+import os
+
+# Import our new modules
+try:
+    from .linkedin_scraper import LinkedInScraper
+    from .onboarding_agent import OnboardingAgent
+except ImportError:
+    from linkedin_scraper import LinkedInScraper
+    from onboarding_agent import OnboardingAgent
 
 
 
@@ -460,91 +469,53 @@ def render_onboarding_template(step, total_steps, step_title, step_description, 
 
 
 def render_onboarding_step_content(step: int, profile: Dict) -> str:
-    """Render content for specific onboarding step"""
+    """Render content for specific onboarding step - Compressed Protocol"""
     if step == 1:
-        return render_step_1_content(profile)
+        return render_step_1_basic_info(profile)
     elif step == 2:
-        return render_step_2_content(profile)
+        return render_step_2_defining_moment(profile)
     elif step == 3:
-        return render_step_3_content(profile)
+        return render_step_3_resource_allocation(profile)
     elif step == 4:
-        return render_step_4_content(profile)
+        return render_step_4_conflict_response(profile)
     elif step == 5:
-        return render_step_5_content(profile)
+        return render_step_5_trade_off(profile)
     elif step == 6:
-        return render_step_6_content(profile)
+        return render_step_6_social_identity(profile)
     elif step == 7:
-        return render_step_7_content(profile)
+        return render_step_7_moral_dilemma(profile)
     elif step == 8:
-        return render_step_8_content(profile)
+        return render_step_8_system_trust(profile)
     elif step == 9:
-        return render_step_9_content(profile)
+        return render_step_9_stress_response(profile)
     elif step == 10:
-        return render_step_10_content(profile)
+        return render_step_10_future_values(profile)
     else:
         return '<div>Invalid step</div>'
 
-def render_step_1_content(profile: Dict) -> str:
+def render_step_1_basic_info(profile: Dict) -> str:
     """Basic Information step - styled to match dashboard"""
-    current_mode = profile.get('matching_mode', 'individual')
     return f'''
-    <!--
-    <div class="form-group">
-        <label class="form-label">How would you like to use Connect?</label>
-        <div class="choice-container">
-            <div class="choice-item">
-                <input type="radio" name="matching_mode" value="individual" {'checked' if current_mode == 'individual' else ''} id="mode_individual">
-                <label class="choice-label" for="mode_individual">
-                    <strong> Individual Mode</strong>
-                    <span style="display: block; font-size: 12px; color: #666; margin-top: 4px;">Find individual friends based on compatibility</span>
-                </label>
-            </div>
-            <div class="choice-item">
-                <input type="radio" name="matching_mode" value="network" {'checked' if current_mode == 'network' else ''} id="mode_network">
-                <label class="choice-label" for="mode_network">
-                    <strong> Network Mode</strong>
-                    <span style="display: block; font-size: 12px; color: #666; margin-top: 4px;">Build and manage social networks for groups</span>
-                </label>
-            </div>
-        </div>
-    </div>
-    --> 
     <div class="form-group">
         <label class="form-label">Age</label>
         <input type="number" name="age" required min="18" max="100"
                value="{profile.get('age', '')}" placeholder="Enter your age"
                class="form-input">
     </div>
-    
-    <div class="form-row">
-        <div class="form-group">
-            <label class="form-label">Minimum Age for Matches</label>
-            <input type="number" name="min_age" class="form-input" 
-                   value="{profile.get('min_age', 22)}" min="18" max="100" required>
-        </div>
-        <div class="form-group">
-            <label class="form-label">Maximum Age for Matches</label>
-            <input type="number" name="max_age" class="form-input" 
-                   value="{profile.get('max_age', 35)}" min="18" max="100" required>
-        </div>
-    </div>
-    <div style="font-size: 12px; color: #6b9b99; margin-bottom: 16px; text-align: center;">
-        You'll only see matches within this age range, and they must also accept your age
-    </div>
 
     <div class="form-group">
-        <label class="form-label">LinkedIn Profile URL (Optional)</label>
-        <input type="url" name="linkedin_url" 
+        <label class="form-label">LinkedIn Profile URL (Required for enrichment)</label>
+        <input type="url" name="linkedin_url" required
             value="{profile.get('linkedin_url', '')}"
             placeholder="https://www.linkedin.com/in/your-profile"
-            pattern=r"https://(www\.)?linkedin\.com/in/[\w\-]+"
+            pattern="https://(www\.)?linkedin\.com/in/[\w\-]+"
             title="Please enter a valid LinkedIn profile URL (e.g., https://linkedin.com/in/yourname)"
             class="form-input" id="linkedin-url-input">
         <div style="font-size: 12px; color: #6b9b99; margin-top: 5px; line-height: 1.4;">
-            We'll use this to enhance your profile with professional insights and improve matching accuracy
+            We'll scrape your profile to enrich your data with educational background, work experience, and professional insights
         </div>
     </div>
-    
+
     <div class="form-group">
         <label class="form-label">Gender</label>
         <select name="gender" required class="form-select">
@@ -555,30 +526,19 @@ def render_step_1_content(profile: Dict) -> str:
             <option value="prefer_not_to_say" {"selected" if profile.get('gender') == 'prefer_not_to_say' else ""}>Prefer not to say</option>
         </select>
     </div>
-    
-    <div class="form-group">
-        <label class="form-label">Looking to connect with</label>
-        <select name="gender_preference" required class="form-select">
-            <option value="">Select preference</option>
-            <option value="women" {"selected" if profile.get('gender_preference') == 'women' else ""}>Women</option>
-            <option value="men" {"selected" if profile.get('gender_preference') == 'men' else ""}>Men</option>
-            <option value="non_binary" {"selected" if profile.get('gender_preference') == 'non_binary' else ""}>Non-binary people</option>
-            <option value="all" {"selected" if profile.get('gender_preference') == 'all' else ""}>All genders</option>
-        </select>
-    </div>
-    
+
     <div class="form-group">
         <label class="form-label">Location (City/Area)</label>
         <select name="location" required class="form-select">
             <option value="London" {"selected" if profile.get('location', 'London') == 'London' else ""}>London</option>
         </select>
         <p style="font-size: 0.9em; color: #666; margin-top: 5px;">
-            We're starting with London, feel free to drop us a message to 
-            <a href="mailto:admin@pont.world">admin@pont.world</a> 
+            We're starting with London, feel free to drop us a message to
+            <a href="mailto:admin@pont.world">admin@pont.world</a>
             if you want us to expand to your city!
         </p>
     </div>
-    
+
     <div class="form-group">
         <label class="form-label">Postcode</label>
         <input type="text" name="postcode" required
@@ -613,56 +573,32 @@ def render_slider_component(label: str, name: str, left_label: str, right_label:
     </script>
     '''
 
-def render_step_2_content(profile: Dict) -> str:
-    """Core Personality step - clean content only"""
-    content = ''
-    
-    sliders = [
-        ('Decision-making style', 'decision_making', 'Logic-driven', 'Emotion-driven'),
-        ('Social energy preference', 'social_energy', 'Intimate connections', 'Wide social circles'),
-        ('Communication depth', 'communication_depth', 'Surface-level fun', 'Deep conversations'),
-        ('Conflict approach', 'conflict_approach', 'Direct confrontation', 'Gentle discussion'),
-        ('Life pace preference', 'life_pace', 'Structured routine', 'Spontaneous flow')
-    ]
-    
-    for label, name, left, right in sliders:
-        value = profile.get(name, 5)
-        content += render_slider_component(label, name, left, right, value)
-    
-    return content
-
-def render_step_3_content(profile: Dict) -> str:
-    """Social Exchange step - clean content only"""
+def render_step_2_defining_moment(profile: Dict) -> str:
+    """Defining Moment - Reveals values, risk tolerance, locus of control"""
     return f'''
     <div class="form-group">
-        <label class="form-label">Your friendship superpower (Choose one)</label>
-        <div class="choice-group">
-            {render_radio_options("friendship_superpower", [
-                ("making_people_laugh", "Making people laugh"),
-                ("giving_thoughtful_advice", "Giving thoughtful advice"),
-                ("planning_amazing_experiences", "Planning amazing experiences"),
-                ("being_reliable_listener", "Being a reliable listener"),
-                ("bringing_diverse_perspectives", "Bringing diverse perspectives"),
-                ("creating_safe_emotional_space", "Creating safe emotional space")
-            ], profile.get('friendship_superpower', ''))}
+        <label class="form-label">Tell me about a decision you made that significantly changed the direction of your life. What did you choose and why?</label>
+        <textarea name="defining_moment" required
+                  placeholder="Describe a pivotal life decision and your reasoning..."
+                  class="form-textarea" style="height: 150px;">{profile.get('defining_moment', '')}</textarea>
+        <div style="font-size: 12px; color: #6b9b99; margin-top: 5px;">
+            ~2 minutes. This reveals your values, risk tolerance, and self-narrative style.
         </div>
     </div>
-    
+    '''
+
+def render_step_3_resource_allocation(profile: Dict) -> str:
+    """Resource Allocation - Reveals financial priorities, risk orientation, altruism"""
+    return f'''
     <div class="form-group">
-        <label class="form-label">When friends are struggling, you typically:</label>
-        <div class="choice-group">
-            {render_radio_options("friend_support_style", [
-                ("offer_practical_solutions", "Offer practical solutions"),
-                ("provide_emotional_support", "Provide emotional support"),
-                ("give_space_to_process", "Give them space to process"),
-                ("distract_with_fun", "Distract them with fun activities"),
-                ("share_similar_experiences", "Share similar experiences"),
-                ("connect_with_resources", "Connect them with resources")
-            ], profile.get('friend_support_style', ''))}
+        <label class="form-label">Imagine you unexpectedly received £10,000. How would you use it?</label>
+        <textarea name="resource_allocation" required
+                  placeholder="Describe how you would allocate this windfall and why..."
+                  class="form-textarea" style="height: 120px;">{profile.get('resource_allocation', '')}</textarea>
+        <div style="font-size: 12px; color: #6b9b99; margin-top: 5px;">
+            ~1 minute. This reveals your financial priorities and time preference.
         </div>
     </div>
-    
-    {render_slider_component("Friend maintenance energy", "friend_maintenance", "High-touch regular contact", "Low-key periodic connection", profile.get('friend_maintenance', 5))}
     '''
 
 def render_radio_options(name: str, options: List[Tuple[str, str]], selected: str = '') -> str:
@@ -678,92 +614,68 @@ def render_radio_options(name: str, options: List[Tuple[str, str]], selected: st
         '''
     return html
 
-def render_step_4_content(profile: Dict) -> str:
-    """Values & Worldview step - clean content only"""
-    content = ''
-    
-    sliders = [
-        ('Personal growth priority', 'personal_growth', 'Self-improvement', 'Self-acceptance'),
-        ('Success definition', 'success_definition', 'External achievements', 'Internal fulfillment'),
-        ('Community involvement', 'community_involvement', 'Individualism', 'Collectivism'),
-        ('Work-life philosophy', 'work_life_philosophy', 'Career-focused', 'Life-balance focused'),
-        ('Future orientation', 'future_orientation', 'Detailed planning', 'Present-moment living')
-    ]
-    
-    for label, name, left, right in sliders:
-        value = profile.get(name, 5)
-        content += render_slider_component(label, name, left, right, value)
-    
-    return content
-
-def render_step_5_content(profile: Dict) -> str:
-    """Lifestyle & Activities step - clean content only"""
-    content = ''
-    
-    sliders = [
-        ('Energy patterns', 'energy_patterns', 'Early morning active', 'Night owl active'),
-        ('Social setting preference', 'social_setting', 'Home-based hangouts', 'Out-and-about adventures'),
-        ('Activity investment', 'activity_investment', 'Few deep interests', 'Many varied interests'),
-        ('Physical activity level', 'physical_activity', 'Low/sedentary', 'High/athletic'),
-        ('Cultural consumption', 'cultural_consumption', 'Mainstream popular', 'Niche alternative')
-    ]
-    
-    for label, name, left, right in sliders:
-        value = profile.get(name, 5)
-        content += render_slider_component(label, name, left, right, value)
-    
-    return content
-
-def render_step_6_content(profile: Dict) -> str:
-    """Emotional Intelligence step - clean content only"""
+def render_step_4_conflict_response(profile: Dict) -> str:
+    """Conflict Response - Reveals conflict style, emotional regulation, communication patterns"""
     return f'''
     <div class="form-group">
-        <label class="form-label">When you're stressed, you prefer friends who:</label>
-        <div class="choice-group">
-            {render_radio_options("stress_preference", [
-                ("give_space_until_ready", "Give you space until you're ready"),
-                ("check_in_regularly_gently", "Check in regularly but gently"),
-                ("actively_help_problem_solve", "Actively help problem-solve"),
-                ("provide_distraction_lightness", "Provide distraction and lightness"),
-                ("match_emotional_energy", "Match your emotional energy"),
-                ("stay_calm_grounding", "Stay calm and grounding")
-            ], profile.get('stress_preference', ''))}
+        <label class="form-label">Describe a time when you strongly disagreed with someone important to you. How did you handle it?</label>
+        <textarea name="conflict_response" required
+                  placeholder="Share a specific disagreement and how you navigated it..."
+                  class="form-textarea" style="height: 150px;">{profile.get('conflict_response', '')}</textarea>
+        <div style="font-size: 12px; color: #6b9b99; margin-top: 5px;">
+            ~2 minutes. This reveals your conflict style and relationship priorities.
         </div>
     </div>
-    
-    <div class="form-group">
-        <label class="form-label">Your emotional processing style:</label>
-        <div class="choice-group">
-            {render_radio_options("processing_style", [
-                ("think_internally_then_share", "Think through internally first, then share"),
-                ("talk_through_as_they_come", "Talk through feelings as they come up"),
-                ("need_time_alone_before_discussing", "Need time alone before discussing"),
-                ("process_through_activities_together", "Process best through activities together"),
-                ("prefer_written_text_communication", "Prefer written/text communication"),
-                ("work_through_via_shared_experiences", "Work through emotions via shared experiences")
-            ], profile.get('processing_style', ''))}
-        </div>
-    </div>
-    
-    {render_slider_component("Celebration preference", "celebration_preference", "Quiet acknowledgment", "Big enthusiastic celebrations", profile.get('celebration_preference', 5))}
     '''
 
-def render_step_7_content(profile: Dict) -> str:
-    """Social Boundaries step - clean content only"""
-    content = ''
-    
-    sliders = [
-        ('Personal sharing comfort', 'personal_sharing', 'Private person', 'Open book'),
-        ('Social overlap tolerance', 'social_overlap', 'Separate friend groups', 'Integrated social circles'),
-        ('Advice-giving style', 'advice_giving', 'Direct honest feedback', 'Supportive validation'),
-        ('Social commitment level', 'social_commitment', 'Flexible casual plans', 'Firm scheduled commitments')
-    ]
-    
-    for label, name, left, right in sliders:
-        value = profile.get(name, 5)
-        content += render_slider_component(label, name, left, right, value)
-    
-    return content
+def render_step_5_trade_off(profile: Dict) -> str:
+    """Trade-off Scenario - Reveals materialism vs. meaning-seeking, risk tolerance, work values"""
+    return f'''
+    <div class="form-group">
+        <label class="form-label">If you had to choose between a job that pays well but bores you, versus one that excites you but pays barely enough to live on, which would you choose and why?</label>
+        <textarea name="trade_off_scenario" required
+                  placeholder="Explain your choice and the reasoning behind it..."
+                  class="form-textarea" style="height: 120px;">{profile.get('trade_off_scenario', '')}</textarea>
+        <div style="font-size: 12px; color: #6b9b99; margin-top: 5px;">
+            ~1 minute. This reveals your materialism vs. meaning-seeking balance.
+        </div>
+    </div>
+    '''
+
+def render_step_6_social_identity(profile: Dict) -> str:
+    """Social Identity - Reveals identity dimensions, in-group/out-group dynamics, value systems"""
+    return f'''
+    <div class="form-group">
+        <label class="form-label">What groups or communities do you feel you belong to?</label>
+        <textarea name="social_identity_groups" required
+                  placeholder="List the communities you identify with (professional, cultural, hobby-based, etc.)..."
+                  class="form-textarea" style="height: 120px;">{profile.get('social_identity_groups', '')}</textarea>
+    </div>
+
+    <div class="form-group">
+        <label class="form-label">Which of these is most important to your sense of who you are?</label>
+        <textarea name="social_identity_central" required
+                  placeholder="Which community or identity is most central to you and why?..."
+                  class="form-textarea" style="height: 100px;">{profile.get('social_identity_central', '')}</textarea>
+        <div style="font-size: 12px; color: #6b9b99; margin-top: 5px;">
+            ~2 minutes total. This reveals your social identity dimensions and value systems.
+        </div>
+    </div>
+    '''
+
+def render_step_7_moral_dilemma(profile: Dict) -> str:
+    """Moral Dilemma - Reveals moral framework, loyalty vs. honesty, relationship boundaries"""
+    return f'''
+    <div class="form-group">
+        <label class="form-label">A close friend asks you to lie to protect them from serious consequences they deserve. What do you do?</label>
+        <textarea name="moral_dilemma" required
+                  placeholder="Describe what you would do and your reasoning..."
+                  class="form-textarea" style="height: 150px;">{profile.get('moral_dilemma', '')}</textarea>
+        <div style="font-size: 12px; color: #6b9b99; margin-top: 5px;">
+            ~2 minutes. This reveals your moral framework and relationship boundaries.
+        </div>
+    </div>
+    '''
 
 def render_checkbox_options_with_limit(name: str, options: List[Tuple[str, str]], 
                                        selected: List[str] = [], max_selections: int = 3) -> str:
@@ -781,159 +693,18 @@ def render_checkbox_options_with_limit(name: str, options: List[Tuple[str, str]]
         '''
     return html
 
-def render_step_8_content(profile: Dict) -> str:
-    """Compatibility Preferences step - clean content with interactive JavaScript"""
+def render_step_8_system_trust(profile: Dict) -> str:
+    """System Trust - Reveals trust in institutions, perceived agency, political orientation"""
     return f'''
     <div class="form-group">
-        <label class="form-label">Most important friendship foundation (Rank 1-5, with 1 being most important)</label>
-        <div style="margin: 20px 0;">
-            {render_ranking_items([
-                ("rank_shared_values", "Shared core values"),
-                ("rank_lifestyle_rhythms", "Similar lifestyle rhythms"),
-                ("rank_complementary_strengths", "Complementary strengths"),
-                ("rank_emotional_compatibility", "Emotional compatibility"),
-                ("rank_activity_overlap", "Activity/interest overlap")
-            ], profile)}
+        <label class="form-label">When you think about institutions like government, healthcare, or the economy, do you generally feel they work for people like you, against you, or neither? Why?</label>
+        <textarea name="system_trust" required
+                  placeholder="Share your perspective on institutional trust and why you feel this way..."
+                  class="form-textarea" style="height: 120px;">{profile.get('system_trust', '')}</textarea>
+        <div style="font-size: 12px; color: #6b9b99; margin-top: 5px;">
+            ~1 minute. This reveals your trust in institutions and perceived agency.
         </div>
     </div>
-    
-    <div class="form-group">
-        <label class="form-label">
-            Friendship red flags <span style="color: #6b9b99; font-weight: 600;">(Select up to 3)</span>
-        </label>
-        <div id="red-flags-container" class="choice-group">
-            {render_checkbox_options_with_limit("red_flags", [
-                ("consistently_self_centered", "Consistently self-centered conversations"),
-                ("frequent_plan_cancellations", "Frequent plan cancellations"),
-                ("gossiping_about_friends", "Gossiping about other friends"),
-                ("pressuring_uncomfortable_things", "Pressuring to try things you're uncomfortable with"),
-                ("making_feel_judged", "Making you feel judged for your choices"),
-                ("competing_rather_celebrating", "Competing rather than celebrating your successes"),
-                ("emotional_volatility_without_awareness", "Emotional volatility without self-awareness"),
-                ("pushing_political_religious_views", "Pushing political/religious views")
-            ], profile.get('red_flags', []), max_selections=3)}
-        </div>
-        <div id="red-flags-counter" style="margin-top: 10px; font-size: 12px; color: #6b9b99; font-family: 'Satoshi', sans-serif;">
-            <span id="selected-count">0</span> of 3 selected
-        </div>
-    </div>
-    
-    <script>
-    function limitCheckboxSelections(changedCheckbox, groupName, maxSelections) {{
-        const checkboxes = document.querySelectorAll('input[name="' + groupName + '"]');
-        const checkedBoxes = document.querySelectorAll('input[name="' + groupName + '"]:checked');
-        const counter = document.getElementById('selected-count');
-        
-        // Update counter
-        if (counter) {{
-            counter.textContent = checkedBoxes.length;
-        }}
-        
-        // If we've exceeded the limit, uncheck the most recent one
-        if (checkedBoxes.length > maxSelections) {{
-            changedCheckbox.checked = false;
-            
-            // Update counter again
-            const newCheckedBoxes = document.querySelectorAll('input[name="' + groupName + '"]:checked');
-            if (counter) {{
-                counter.textContent = newCheckedBoxes.length;
-            }}
-            
-            // Show warning message
-            showSelectionLimitWarning(maxSelections);
-            return;
-        }}
-        
-        // Enable/disable unchecked boxes based on limit
-        checkboxes.forEach(checkbox => {{
-            if (!checkbox.checked) {{
-                checkbox.disabled = checkedBoxes.length >= maxSelections;
-                // Visual feedback for disabled checkboxes
-                const choiceItem = checkbox.closest('.choice-item');
-                if (checkbox.disabled) {{
-                    choiceItem.style.opacity = '0.6';
-                    choiceItem.style.pointerEvents = 'none';
-                }} else {{
-                    choiceItem.style.opacity = '1';
-                    choiceItem.style.pointerEvents = 'auto';
-                }}
-            }}
-        }});
-        
-        // Update counter color
-        const counterElement = document.getElementById('red-flags-counter');
-        if (counterElement) {{
-            if (checkedBoxes.length >= maxSelections) {{
-                counterElement.style.color = '#6b9b99';
-                counterElement.style.fontWeight = '600';
-            }} else {{
-                counterElement.style.color = '#6b9b99';
-                counterElement.style.fontWeight = 'normal';
-            }}
-        }}
-    }}
-    
-    function showSelectionLimitWarning(maxSelections) {{
-        // Create or update warning message
-        let warning = document.getElementById('selection-warning');
-        if (!warning) {{
-            warning = document.createElement('div');
-            warning.id = 'selection-warning';
-            warning.style.cssText = `
-                background: rgba(255, 255, 255, 0.9);
-                backdrop-filter: blur(20px);
-                border: 1px solid rgba(255, 255, 255, 0.2);
-                color: #2d2d2d;
-                padding: 15px 20px;
-                border-radius: 16px;
-                margin-top: 15px;
-                font-size: 14px;
-                font-family: 'Satoshi', sans-serif;
-                animation: fadeInOut 3s ease-in-out;
-                box-shadow: 0 4px 12px rgba(107, 155, 153, 0.2);
-            `;
-            document.getElementById('red-flags-container').parentNode.appendChild(warning);
-            
-            // Add CSS animation
-            if (!document.getElementById('warning-animation-style')) {{
-                const style = document.createElement('style');
-                style.id = 'warning-animation-style';
-                style.textContent = `
-                    @keyframes fadeInOut {{
-                        0% {{ opacity: 0; transform: translateY(-10px); }}
-                        20% {{ opacity: 1; transform: translateY(0); }}
-                        80% {{ opacity: 1; transform: translateY(0); }}
-                        100% {{ opacity: 0; transform: translateY(-10px); }}
-                    }}
-                `;
-                document.head.appendChild(style);
-            }}
-        }}
-        
-        warning.textContent = `You can only select up to ${{maxSelections}} red flags. Please uncheck one first.`;
-        
-        // Remove warning after animation
-        setTimeout(() => {{
-            if (warning && warning.parentNode) {{
-                warning.parentNode.removeChild(warning);
-            }}
-        }}, 3000);
-    }}
-    
-    // Initialize counters on page load
-    document.addEventListener('DOMContentLoaded', function() {{
-        const redFlagsChecked = document.querySelectorAll('input[name="red_flags"]:checked');
-        const counter = document.getElementById('selected-count');
-        if (counter) {{
-            counter.textContent = redFlagsChecked.length;
-        }}
-        
-        // Initialize disabled state for any pre-selected items
-        if (redFlagsChecked.length > 0) {{
-            limitCheckboxSelections(redFlagsChecked[0], 'red_flags', 3);
-        }}
-    }});
-    </script>
     '''
 
 def render_ranking_items(items: List[Tuple[str, str]], profile: Dict) -> str:
@@ -970,86 +741,157 @@ def render_checkbox_options(name: str, options: List[Tuple[str, str]], selected:
         '''
     return html
 
-def render_step_9_content(profile: Dict) -> str:
-    """Social Context step - clean content only"""
-    content = ''
-    
-    content += render_slider_component("Current social satisfaction", "social_satisfaction", "Very lonely", "Socially fulfilled", profile.get('social_satisfaction', 5))
-    
-    content += f'''
+def render_step_9_stress_response(profile: Dict) -> str:
+    """Stress Response - Reveals stress triggers, coping mechanisms, support network"""
+    return f'''
     <div class="form-group">
-        <label class="form-label">New friend motivation (Choose primary reason)</label>
-        <div class="choice-group">
-            {render_radio_options("friend_motivation", [
-                ("recently_moved", "Recently moved to new area"),
-                ("life_transition", "Life transition changed social needs"),
-                ("activity_companions", "Want activity-specific companions"),
-                ("deeper_connections", "Seeking deeper emotional connections"),
-                ("friends_unavailable", "Current friends unavailable/busy"),
-                ("diverse_perspectives", "Want more diverse perspectives"),
-                ("outgrew_social_circle", "Outgrew current social circle")
-            ], profile.get('friend_motivation', ''))}
+        <label class="form-label">Tell me about the last time you felt really overwhelmed or stressed. What caused it and how did you cope?</label>
+        <textarea name="stress_response" required
+                  placeholder="Describe a stressful situation and how you managed it..."
+                  class="form-textarea" style="height: 150px;">{profile.get('stress_response', '')}</textarea>
+        <div style="font-size: 12px; color: #6b9b99; margin-top: 5px;">
+            ~2 minutes. This reveals your stress triggers and coping mechanisms.
         </div>
     </div>
     '''
-    
-    content += render_slider_component("Ideal friendship development", "friendship_development", "Fast deep connection", "Gradual trust building", profile.get('friendship_development', 5))
-    content += render_slider_component("Social risk tolerance", "social_risk_tolerance", "Prefer safe known experiences", "Love trying new things together", profile.get('social_risk_tolerance', 5))
-    
-    return content
 
-def render_step_10_content(profile: Dict) -> str:
-    """Final Details step - clean content only"""
+def process_onboarding_with_ai(user_id: int, profile_data: Dict[str, Any], user_auth) -> None:
+    """
+    Background task to process onboarding with AI agent and LinkedIn scraping
+
+    Args:
+        user_id: User ID
+        profile_data: User's onboarding responses
+        user_auth: UserAuth instance for saving data
+    """
+    try:
+        print(f"[AI Processing] Starting onboarding processing for user {user_id}")
+
+        # 1. Scrape LinkedIn if URL provided
+        linkedin_data = None
+        linkedin_url = profile_data.get('linkedin_url')
+
+        if linkedin_url:
+            print(f"[LinkedIn] Scraping profile: {linkedin_url}")
+
+            # Initialize scraper with Fresh API
+            fresh_key = os.environ.get('FRESH_API_KEY')
+            scraper = LinkedInScraper(fresh_api_key=fresh_key)
+
+            linkedin_data = scraper.scrape_profile(linkedin_url)
+
+            if linkedin_data.get('error'):
+                print(f"[LinkedIn] Scraping failed: {linkedin_data.get('error')}")
+            else:
+                print(f"[LinkedIn] Successfully scraped profile for {linkedin_data.get('full_name', 'Unknown')}")
+
+        # 2. Process with AI agent
+        print(f"[AI Agent] Analyzing onboarding responses...")
+
+        # Initialize AI agent with OpenAI
+        api_key = os.environ.get('OPENAI_API_KEY')
+        agent = OnboardingAgent(api_key=api_key)
+
+        # Process onboarding
+        enriched_profile = agent.process_onboarding(profile_data, linkedin_data)
+
+        # 3. Generate the final onboarding script
+        print(f"[AI Agent] Generating personality profile script...")
+        onboarding_script = agent.create_agent_onboarding_script(enriched_profile)
+
+        # 4. Save enriched data back to profile
+        profile_data['ai_enriched'] = True
+        profile_data['linkedin_scraped_data'] = linkedin_data
+        profile_data['psychological_insights'] = enriched_profile.get('psychological_insights', {})
+        profile_data['agent_onboarding_script'] = onboarding_script
+        profile_data['processed_at'] = enriched_profile.get('agent_metadata', {}).get('processed_at')
+
+        user_auth.save_user_profile(user_id, profile_data)
+
+        print(f"[AI Processing] Completed onboarding processing for user {user_id}")
+        print(f"[AI Processing] Generated {len(onboarding_script)} character personality profile")
+
+    except Exception as e:
+        print(f"[AI Processing] Error processing onboarding for user {user_id}: {e}")
+        import traceback
+        traceback.print_exc()
+
+        # Save error to profile for debugging
+        profile_data['ai_processing_error'] = str(e)
+        try:
+            user_auth.save_user_profile(user_id, profile_data)
+        except:
+            pass
+
+
+def render_step_10_future_values(profile: Dict) -> str:
+    """Future Orientation & Rapid-Fire Values - Reveals goals, optimism, value hierarchy"""
     return f'''
     <div class="form-group">
-        <label class="form-label">Weekly social availability</label>
-        <select name="weekly_availability" required class="form-select">
-            <option value="">Select your availability</option>
-            <option value="1-2 hours" {"selected" if profile.get('weekly_availability') == '1-2 hours' else ""}>1-2 hours</option>
-            <option value="3-5 hours" {"selected" if profile.get('weekly_availability') == '3-5 hours' else ""}>3-5 hours</option>
-            <option value="6-10 hours" {"selected" if profile.get('weekly_availability') == '6-10 hours' else ""}>6-10 hours</option>
-            <option value="10+ hours" {"selected" if profile.get('weekly_availability') == '10+ hours' else ""}>10+ hours</option>
-        </select>
-    </div>
-    
-    <div class="form-group">
-        <label class="form-label">Transportation (Select all that apply)</label>
-        <div class="choice-group">
-            {render_checkbox_options("transportation", [
-                ("walk_bike", "Walk/bike"),
-                ("car", "Car"),
-                ("public_transit", "Public transit"),
-                ("flexible", "Flexible")
-            ], profile.get('transportation', []))}
+        <label class="form-label">In 5 years, what do you hope will be different about your life?</label>
+        <textarea name="future_orientation" required
+                  placeholder="Describe your hopes and aspirations for the future..."
+                  class="form-textarea" style="height: 120px;">{profile.get('future_orientation', '')}</textarea>
+        <div style="font-size: 12px; color: #6b9b99; margin-top: 5px;">
+            ~1 minute. This reveals your goal orientation and life priorities.
         </div>
     </div>
-    
+
     <div class="form-group">
-        <label class="form-label">Describe your ideal friendship in one sentence:</label>
-        <textarea name="ideal_friendship_description" required
-                  placeholder="What would your perfect friendship look like?"
-                  class="form-textarea" style="height: 80px;">{profile.get('ideal_friendship_description', '')}</textarea>
-    </div>
-    
-    <div class="form-group">
-        <label class="form-label">What's a unique interest or hobby you'd love to share with someone?</label>
-        <textarea name="unique_interest" required
-                  placeholder="Something special you're passionate about..."
-                  class="form-textarea" style="height: 80px;">{profile.get('unique_interest', '')}</textarea>
-    </div>
-    
-    <div class="form-group">
-        <label class="form-label">What life experience has most shaped how you approach friendships?</label>
-        <textarea name="life_experience_impact" required
-                  placeholder="A moment or period that changed your perspective..."
-                  class="form-textarea" style="height: 80px;">{profile.get('life_experience_impact', '')}</textarea>
-    </div>
-    
-    <div class="form-group">
-        <label class="form-label">Complete this: 'I feel most energized around people who...'</label>
-        <textarea name="energized_by" required
-                  placeholder="Finish this sentence..."
-                  class="form-textarea" style="height: 80px;">{profile.get('energized_by', '')}</textarea>
+        <label class="form-label">Rapid-Fire Values: Which matters more to you?</label>
+        <div style="font-size: 12px; color: #6b9b99; margin-bottom: 15px;">
+            Answer quickly - first instinct is best. (~1 minute total)
+        </div>
+
+        <div style="margin-bottom: 1rem;">
+            <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Stability or Excitement?</label>
+            <div class="choice-group">
+                {render_radio_options("value_stability_excitement", [
+                    ("stability", "Stability"),
+                    ("excitement", "Excitement")
+                ], profile.get('value_stability_excitement', ''))}
+            </div>
+        </div>
+
+        <div style="margin-bottom: 1rem;">
+            <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Being liked or Being respected?</label>
+            <div class="choice-group">
+                {render_radio_options("value_liked_respected", [
+                    ("liked", "Being liked"),
+                    ("respected", "Being respected")
+                ], profile.get('value_liked_respected', ''))}
+            </div>
+        </div>
+
+        <div style="margin-bottom: 1rem;">
+            <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Tradition or Innovation?</label>
+            <div class="choice-group">
+                {render_radio_options("value_tradition_innovation", [
+                    ("tradition", "Tradition"),
+                    ("innovation", "Innovation")
+                ], profile.get('value_tradition_innovation', ''))}
+            </div>
+        </div>
+
+        <div style="margin-bottom: 1rem;">
+            <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Community or Independence?</label>
+            <div class="choice-group">
+                {render_radio_options("value_community_independence", [
+                    ("community", "Community"),
+                    ("independence", "Independence")
+                ], profile.get('value_community_independence', ''))}
+            </div>
+        </div>
+
+        <div style="margin-bottom: 1rem;">
+            <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Fairness or Loyalty?</label>
+            <div class="choice-group">
+                {render_radio_options("value_fairness_loyalty", [
+                    ("fairness", "Fairness"),
+                    ("loyalty", "Loyalty")
+                ], profile.get('value_fairness_loyalty', ''))}
+            </div>
+        </div>
     </div>
     '''
 
@@ -1072,18 +914,18 @@ def add_onboarding_routes(app, login_required, user_auth, render_template_with_h
         existing_profile = user_auth.get_user_profile(user_id) or {}
         session['onboarding_step'] = step
         
-        # Define step configuration
+        # Define step configuration - Compressed Protocol
         steps_config = {
-            1: {'title': 'Mode & Basic Info', 'description': 'Choose your mode and tell us about yourself'},
-            2: {'title': 'Core Personality', 'description': 'How you approach life and relationships'},
-            3: {'title': 'Social Exchange', 'description': 'How you give and receive in friendships'},
-            4: {'title': 'Values & Worldview', 'description': 'What matters most to you'},
-            5: {'title': 'Lifestyle & Activities', 'description': 'Your daily rhythms and interests'},
-            6: {'title': 'Emotional Intelligence', 'description': 'How you process emotions and stress'},
-            7: {'title': 'Social Boundaries', 'description': 'Your interaction style preferences'},
-            8: {'title': 'Compatibility Preferences', 'description': 'What you value in friendships'},
-            9: {'title': 'Social Context', 'description': 'Your current social situation'},
-            10: {'title': 'Final Details', 'description': 'Logistics and personal touches'}
+            1: {'title': 'Basic Information', 'description': 'Your foundational details and LinkedIn profile'},
+            2: {'title': 'Defining Moment', 'description': 'A life-changing decision that shaped who you are'},
+            3: {'title': 'Resource Allocation', 'description': 'How you would handle an unexpected windfall'},
+            4: {'title': 'Conflict Response', 'description': 'How you navigate disagreements with others'},
+            5: {'title': 'Trade-off Scenario', 'description': 'What you prioritize: money or meaning'},
+            6: {'title': 'Social Identity', 'description': 'The communities and groups that define you'},
+            7: {'title': 'Moral Dilemma', 'description': 'Your approach to difficult ethical choices'},
+            8: {'title': 'System Trust', 'description': 'How you view institutions and authority'},
+            9: {'title': 'Stress Response', 'description': 'How you cope with overwhelming situations'},
+            10: {'title': 'Future & Values', 'description': 'Your aspirations and core value preferences'}
         }
         
         if step not in steps_config:
@@ -1950,36 +1792,41 @@ def add_onboarding_routes(app, login_required, user_auth, render_template_with_h
     @app.route('/onboarding/complete', methods=['GET', 'POST'])
     @login_required
     def complete_onboarding_enhanced():
-        """Enhanced onboarding completion"""
+        """Enhanced onboarding completion with AI processing and LinkedIn enrichment"""
         user_id = session['user_id']
-        
+
         if request.method == 'POST':
             # Process final submission and blocked users (same as before)
             blocked_emails = request.form.get('blocked_emails', '')
-            blocked_names = request.form.get('blocked_names', '')  
+            blocked_names = request.form.get('blocked_names', '')
             blocked_phones = request.form.get('blocked_phones', '')
-            
+
             # Clear existing blocked users
             user_auth.clear_blocked_users(user_id)
-            
+
             # Add new blocked users and track blocking interactions
             if blocked_emails:
                 for email in [e.strip() for e in blocked_emails.split(',') if e.strip()]:
                     user_auth.add_blocked_user(user_id, blocked_email=email)
                     # Note: We can't get user_id from email easily, so this tracking is limited
-            
+
             if blocked_names:
                 for name in [n.strip() for n in blocked_names.split(',') if n.strip()]:
                     user_auth.add_blocked_user(user_id, blocked_name=name)
-            
+
             if blocked_phones:
                 for phone in [p.strip() for p in blocked_phones.split(',') if p.strip()]:
                     user_auth.add_blocked_user(user_id, blocked_phone=phone)
-            
-            # Don't start matching yet - wait for event selection
-            # thread = threading.Thread(target=process_matching_background, args=(user_id,))
-            # thread.daemon = True
-            # thread.start()
+
+            # Process onboarding with AI agent in background
+            profile_data = user_auth.get_user_profile(user_id)
+            if profile_data:
+                thread = threading.Thread(
+                    target=process_onboarding_with_ai,
+                    args=(user_id, profile_data, user_auth)
+                )
+                thread.daemon = True
+                thread.start()
 
             # Clear onboarding session data
             session.pop('onboarding_step', None)
