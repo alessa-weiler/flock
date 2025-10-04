@@ -573,6 +573,7 @@ class UserAuthSystem:
                 embed_token TEXT UNIQUE NOT NULL,
                 mode TEXT NOT NULL CHECK (mode IN ('party', 'simulation')),
                 person_specification TEXT,
+                use_linkedin BOOLEAN DEFAULT FALSE,
                 created_by INTEGER NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 is_active BOOLEAN DEFAULT TRUE,
@@ -580,6 +581,20 @@ class UserAuthSystem:
                 FOREIGN KEY (created_by) REFERENCES users (id),
                 UNIQUE(organization_id)
             )
+        ''')
+
+        # Migration: Add use_linkedin column if it doesn't exist
+        cursor.execute('''
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'embed_configurations'
+                    AND column_name = 'use_linkedin'
+                ) THEN
+                    ALTER TABLE embed_configurations ADD COLUMN use_linkedin BOOLEAN DEFAULT FALSE;
+                END IF;
+            END $$;
         ''')
 
         # Embed sessions - tracks anonymous widget usage
@@ -4431,108 +4446,155 @@ def home():
     content = '''
     <style>
         .landing-container {
-            max-width: 900px;
+            max-width: 1200px;
             margin: 0 auto;
-            padding: 2rem;
+            padding: 3rem 2rem;
             min-height: 80vh;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            text-align: center;
         }
 
         .hero-section {
-            background: var(--color-white);
-            border-radius: 24px;
-            padding: 4rem 3rem;
-            box-shadow: 
-                0 1px 3px rgba(0,0,0,0.04),
-                0 8px 24px rgba(0,0,0,0.08),
-                0 24px 48px rgba(0,0,0,0.04);
-            position: relative;
-            overflow: hidden;
-            backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-        }
-
-        .hero-section::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 1px;
-            background: linear-gradient(90deg, transparent, var(--color-sage), transparent);
+            text-align: center;
+            margin-bottom: 4rem;
         }
 
         .hero-title {
             font-family: 'Sentient', 'Satoshi', sans-serif;
-            font-size: clamp(2.5rem, 6vw, 4rem);
+            font-size: clamp(2.5rem, 6vw, 3.5rem);
             font-weight: 600;
-            margin-bottom: 1.5rem;
+            margin-bottom: 1rem;
             color: var(--color-charcoal);
             letter-spacing: -0.02em;
             line-height: 1.1;
         }
 
         .hero-subtitle {
-            font-size: clamp(1.125rem, 3vw, 1.375rem);
+            font-size: clamp(1.125rem, 3vw, 1.25rem);
             line-height: 1.6;
-            color: var(--color-emerald);
-            margin-bottom: 2rem;
-            font-weight: 500;
-        }
-
-        .hero-description {
-            font-size: clamp(1rem, 2.5vw, 1.125rem);
-            line-height: 1.7;
             color: var(--color-gray-600);
-            margin-bottom: 3rem;
-            max-width: 600px;
+            margin-bottom: 1rem;
+            font-weight: 400;
+            max-width: 800px;
             margin-left: auto;
             margin-right: auto;
         }
 
-        .features-grid {
+        .use-cases-title {
+            font-family: 'Sentient', 'Satoshi', sans-serif;
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--color-charcoal);
+            text-align: center;
+            margin: 3rem 0 2rem;
+        }
+
+        .use-cases-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
             gap: 2rem;
-            margin: 3rem 0;
-            max-width: 700px;
+            margin-bottom: 3rem;
         }
 
-        .feature-card {
-            background: var(--color-gray-50);
-            padding: 2rem 1.5rem;
-            border-radius: 16px;
-            border-left: 4px solid var(--color-sage);
+        .use-case-card {
+            background: var(--color-white);
+            border-radius: 20px;
+            padding: 2.5rem 2rem;
+            box-shadow:
+                0 1px 3px rgba(0,0,0,0.04),
+                0 8px 24px rgba(0,0,0,0.08);
+            border: 1px solid rgba(0, 0, 0, 0.05);
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+            text-decoration: none;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            overflow: hidden;
         }
 
-        .feature-card:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 8px 32px rgba(0,0,0,0.08);
+        .use-case-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: var(--color-sage);
+            transform: scaleX(0);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
-        .feature-icon {
+        .use-case-card:hover {
+            transform: translateY(-8px);
+            box-shadow:
+                0 4px 8px rgba(0,0,0,0.06),
+                0 16px 48px rgba(0,0,0,0.12);
+        }
+
+        .use-case-card:hover::before {
+            transform: scaleX(1);
+        }
+
+        .use-case-icon {
             font-size: 2.5rem;
             margin-bottom: 1rem;
             display: block;
         }
 
-        .feature-title {
+        .use-case-title {
             font-family: 'Sentient', 'Satoshi', sans-serif;
-            font-size: 1.125rem;
+            font-size: 1.375rem;
             font-weight: 600;
             color: var(--color-charcoal);
             margin-bottom: 0.75rem;
         }
 
-        .feature-description {
-            font-size: 0.875rem;
-            line-height: 1.5;
+        .use-case-description {
+            font-size: 0.9375rem;
+            line-height: 1.6;
             color: var(--color-gray-600);
+            margin-bottom: 1.5rem;
+            flex-grow: 1;
+        }
+
+        .use-case-link {
+            color: var(--color-emerald);
+            font-weight: 600;
+            font-size: 0.9375rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .use-case-link::after {
+            content: '→';
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .use-case-card:hover .use-case-link::after {
+            transform: translateX(4px);
+        }
+
+        .cta-section {
+            text-align: center;
+            margin-top: 4rem;
+            padding: 3rem 2rem;
+            background: rgba(255, 255, 255, 0.7);
+            border-radius: 24px;
+            border: 1px solid rgba(0, 0, 0, 0.05);
+        }
+
+        .cta-title {
+            font-family: 'Sentient', 'Satoshi', sans-serif;
+            font-size: 1.75rem;
+            font-weight: 600;
+            color: var(--color-charcoal);
+            margin-bottom: 1rem;
+        }
+
+        .cta-subtitle {
+            font-size: 1rem;
+            color: var(--color-gray-600);
+            margin-bottom: 2rem;
         }
 
         .cta-buttons {
@@ -4540,7 +4602,6 @@ def home():
             gap: 1.5rem;
             justify-content: center;
             flex-wrap: wrap;
-            margin-top: 2rem;
         }
 
         .btn {
@@ -4588,40 +4649,13 @@ def home():
             box-shadow: 0 4px 16px rgba(0,0,0,0.08);
         }
 
-        .testimonial {
-            background: white;
-            padding: 2rem;
-            border-radius: 16px;
-            margin: 3rem 0;
-            color: black;
-            font-style: italic;
-            font-size: 1.125rem;
-            line-height: 1.6;
-            position: relative;
-        }
-
-        .testimonial::before {
-            content: '"';
-            font-size: 4rem;
-            font-family: 'Sentient', serif;
-            position: absolute;
-            top: -0.5rem;
-            left: 1rem;
-            color: var(--color-charcoal);
-            opacity: 0.3;
-        }
-
         /* Mobile Responsive */
         @media (max-width: 768px) {
             .landing-container {
-                padding: 1rem;
+                padding: 2rem 1rem;
             }
 
-            .hero-section {
-                padding: 2.5rem 2rem;
-            }
-
-            .features-grid {
+            .use-cases-grid {
                 grid-template-columns: 1fr;
                 gap: 1.5rem;
             }
@@ -4629,42 +4663,27 @@ def home():
             .cta-buttons {
                 flex-direction: column;
                 align-items: center;
-                gap: 1rem;
             }
 
             .btn {
                 width: 100%;
                 max-width: 280px;
             }
-
-            .testimonial {
-                padding: 1.5rem;
-                font-size: 1rem;
-            }
         }
 
-        @media (max-width: 480px) {
-            .hero-section {
-                padding: 2rem 1.5rem;
-            }
-
-            .feature-card {
-                padding: 1.5rem 1rem;
-            }
-        }
-
-        /* Animation for elements */
+        /* Animations */
         .hero-section {
             animation: fadeInUp 0.8s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
-        .feature-card {
+        .use-case-card {
             animation: fadeInUp 0.8s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
-        .feature-card:nth-child(1) { animation-delay: 0.1s; }
-        .feature-card:nth-child(2) { animation-delay: 0.2s; }
-        .feature-card:nth-child(3) { animation-delay: 0.3s; }
+        .use-case-card:nth-child(1) { animation-delay: 0.1s; }
+        .use-case-card:nth-child(2) { animation-delay: 0.2s; }
+        .use-case-card:nth-child(3) { animation-delay: 0.3s; }
+        .use-case-card:nth-child(4) { animation-delay: 0.4s; }
 
         @keyframes fadeInUp {
             from {
@@ -4680,1035 +4699,237 @@ def home():
 
     <div class="landing-container">
         <div class="hero-section">
-            <h1 class="hero-title">Simulating Social Dynamics</h1>
-            <p class="hero-subtitle">Understand how your team will respond before it happens.</p>
-
-            <p class="hero-description">
-                Pont uses AI agents to simulate how your team members will react to scenarios, engage with new people,
-                and collaborate with each other. Make better decisions with predictive insights into team dynamics.
+            <h1 class="hero-title">AI That Predicts How People Will Work Together</h1>
+            <p class="hero-subtitle">
+                Stop guessing. Start knowing. Pont creates AI simulations of real people to predict compatibility,
+                reactions, and team dynamics before they happen.
             </p>
+        </div>
 
-            <div class="features-grid">
-                <div class="feature-card">
-                    
-                    <h3 class="feature-title">Simulation Mode</h3>
-                    <p class="feature-description">Model how each team member responds to scenarios. Test changes before implementing them. Perfect for anticipating reactions to pivots, policy changes, or organizational shifts.</p>
-                </div>
+        <h2 class="use-cases-title">Choose Your Use Case</h2>
 
-                <div class="feature-card">
-                    
-                    <h3 class="feature-title">Party Mode</h3>
-                    <p class="feature-description">AI agents representing your team members interact and collaborate in virtual scenarios. Discover hidden synergies and optimize team composition for specific projects.</p>
-                </div>
+        <div class="use-cases-grid">
+            <a href="/therapy" class="use-case-card">
+                <div class="use-case-icon">🏥</div>
+                <h3 class="use-case-title">Run a Therapy Practice</h3>
+                <p class="use-case-description">
+                    Match patients with the right therapist instantly using our intelligent matching widget.
+                    Improve patient satisfaction from the first session.
+                </p>
+                <span class="use-case-link">Learn More</span>
+            </a>
 
-                <div class="feature-card">
-                    
-                    <h3 class="feature-title">Networking Mode</h3>
-                    <p class="feature-description">Upload event attendee lists and your team's goals. We analyze everyone and recommend who each team member should prioritize meeting to maximize networking ROI.</p>
-                </div>
-            </div>
+            <a href="/teams" class="use-case-card">
+                <div class="use-case-icon">👥</div>
+                <h3 class="use-case-title">Lead a Team</h3>
+                <p class="use-case-description">
+                    Predict how your team will respond to changes before you announce them.
+                    Test scenarios and walk into meetings prepared.
+                </p>
+                <span class="use-case-link">Learn More</span>
+            </a>
 
-            <div style="background: rgba(255, 255, 255, 0.7); padding: 2.5rem; border-radius: 20px; margin: 3rem 0; border: 1px solid rgba(0, 0, 0, 0.05);">
-                <h3 style="font-family: 'Sentient', 'Satoshi', sans-serif; font-size: 1.5rem; font-weight: 600; margin-bottom: 1.5rem; color: var(--color-charcoal);">Use Cases</h3>
-                <div style="display: grid; gap: 1.5rem; text-align: left;">
-                    <div>
-                        <strong style="color: var(--color-emerald); font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.1em;">Clinical Teams</strong>
-                        <p style="margin-top: 0.5rem; color: var(--color-gray-600); line-height: 1.6;">Embed our widget on your website. Potential patients fill out a questionnaire, and instantly see how each therapist on your team would approach their specific needs. Match patients with the right clinician from the start.</p>
-                    </div>
-                    <div>
-                        <strong style="color: var(--color-emerald); font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.1em;">Startup Teams</strong>
-                        <p style="margin-top: 0.5rem; color: var(--color-gray-600); line-height: 1.6;">Simulate how your team, investors, or board will react to a major pivot before the meeting. Test different messaging approaches and anticipate objections.</p>
-                    </div>
-                    <div>
-                        <strong style="color: var(--color-emerald); font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.1em;">Recruiting</strong>
-                        <p style="margin-top: 0.5rem; color: var(--color-gray-600); line-height: 1.6;">Embed on your careers page. Candidates see their compatibility with your existing team and culture. Hire people who will genuinely thrive in your environment.</p>
-                    </div>
-                    <div>
-                        <strong style="color: var(--color-emerald); font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.1em;">Networking Events</strong>
-                        <p style="margin-top: 0.5rem; color: var(--color-gray-600); line-height: 1.6;">Going to a conference with your team? Upload the attendee list. We'll analyze everyone and tell each team member who they should prioritize meeting based on your shared goals.</p>
-                    </div>
-                </div>
-            </div>
+            <a href="/recruiting" class="use-case-card">
+                <div class="use-case-icon">💼</div>
+                <h3 class="use-case-title">Hire Better</h3>
+                <p class="use-case-description">
+                    Assess culture fit before making offers. Let candidates see if they'd thrive
+                    on your team before they apply.
+                </p>
+                <span class="use-case-link">Learn More</span>
+            </a>
 
-            <div class="testimonial">
-                We used Pont to predict how our clinical team would respond to different patient profiles.
-                It's helped us match patients with the right therapist from day one, improving outcomes and satisfaction.
-            </div>
+            <a href="/networking" class="use-case-card">
+                <div class="use-case-icon">🤝</div>
+                <h3 class="use-case-title">Maximize Networking</h3>
+                <p class="use-case-description">
+                    Know exactly who to meet at your next event. We analyze attendees and
+                    recommend the highest-value connections.
+                </p>
+                <span class="use-case-link">Learn More</span>
+            </a>
+        </div>
 
+        <div class="cta-section">
+            <h2 class="cta-title">Ready To Stop Guessing?</h2>
+            <p class="cta-subtitle">Join teams using AI to make better people decisions.</p>
             <div class="cta-buttons">
-                <a href="/register" class="btn btn-primary">
-                    Create Your Team
-                </a>
-                <a href="/login" class="btn btn-secondary">
-                    Sign In
-                </a>
+                <a href="/register" class="btn btn-primary">Start Free Trial</a>
+                <a href="/login" class="btn btn-secondary">Sign In</a>
             </div>
+            <p style="margin-top: 1rem; color: var(--color-gray-600); font-size: 0.875rem;">
+                20 free simulations. No credit card required.
+            </p>
         </div>
     </div>
     '''
     
     return render_template_with_header("home", content)
 
-@app.route('/choose-agent')
-@login_required
-def choose_agent():
-    """Landing page with 3D animated spheres - Mobile Responsive (FIXED)"""
-    user_id = session['user_id']
-    status = subscription_manager.get_user_subscription_status(user_id)
-    
-    if not status['can_run_matching']:
-        flash('You have used your free match for this month. Upgrade to Premium for unlimited matching!', 'error')
-        return redirect('/subscription/plans')
-    
-    # Record the usage if it's a free run
-    if not status['is_subscribed']:
-        subscription_manager.record_matching_usage(user_id, is_free=True)
-    
+
+@app.route('/therapy')
+def therapy_landing():
+    """Therapy practice landing page"""
+    if 'user_id' in session:
+        return redirect('/dashboard')
+
     content = '''
     <style>
-        @import url("https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=sentient@400,500,600,700&display=swap");
-
-        /* Override any existing styles for full page layout */
-        html, body {
-            overflow-x: hidden;
-            margin: 0;
-            padding: 0;
-            touch-action: manipulation;
-            user-select: none;
-            -webkit-user-select: none;
-            -webkit-touch-callout: none;
-        }
-
-        .page-content {
-            position: relative;
-            min-height: 100vh;
-            background: transparent;
-        }
-        
-        /* Override any existing container backgrounds */
-        body, .container, .main-content, .content {
-            background: transparent !important;
-        }
-
-        canvas {
-            position: fixed;
-            top: 0;
-            left: 0;
-            z-index: -1;
-            touch-action: none;
-            pointer-events: auto;
-        }
-
-        .mouse-effect {
-            opacity: 0;
-            position: fixed;
-            top: 0px;
-            left: 0px;
-            z-index: 1000;
-            pointer-events: none;
-            display: none; /* Hide on all devices initially */
-        }
-
-        /* Show mouse effects only on non-touch devices */
-        @media (hover: hover) and (pointer: fine) {
-            .mouse-effect {
-                display: block;
-            }
-        }
-
-        .typewriter {
-            overflow: hidden;
-            white-space: nowrap;
-            border-right: 2px solid var(--color-emerald, #10b981);
-            animation: blink-caret 1s step-end infinite;
-        }
-
-        .typewriter-line {
-            opacity: 0;
-            transition: opacity 0.3s ease;
-        }
-
-        .typewriter-line.active {
-            opacity: 1;
-        }
-
-        @keyframes blink-caret {
-            from, to { 
-                border-color: transparent; 
-            }
-            50% { 
-                border-color: var(--color-emerald, #10b981); 
-            }
-        }
-
-        .circle {
-            position: absolute;
-            background-color: black;
-            width: 10px;
-            height: 10px;
-            left: 0px;
-            top: 0px;
-            border-radius: 100%;
-            z-index: 111111;
-            user-select: none;
-            pointer-events: none;
-            transition: all 0.05s;
-            display: none;
-        }
-
-        .circle-follow {
-            position: absolute;
-            border: 1px solid var(--color-emerald);
-            width: 40px;
-            height: 40px;
-            left: 0px;
-            top: 0px;
-            border-radius: 100%;
-            z-index: 111111;
-            user-select: none;
-            pointer-events: none;
-            transition: all 0.1s;
-            display: none;
-        }
-
-        /* Show only on hover-capable devices */
-        @media (hover: hover) and (pointer: fine) {
-            .circle, .circle-follow {
-                display: block;
-            }
-        }
-
-        .main-txt {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            font-family: "Sentient", sans-serif;
-            font-size: clamp(60px, 15vw, 160px);
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: -2px;
-            z-index: -1;
-            transition: opacity 0.5s ease-in-out;
-            background: white;
-            background-size: 200% 200%;
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            animation: gradientShift 4s ease-in-out infinite;
-        }
-
-        @keyframes gradientShift {
-            0%, 100% { background-position: 0% 50%; }
-            50% { background-position: 100% 50%; }
-        }
-
-        .hide-text {
-            opacity: 0;
-            transition: opacity 0.5s ease-in-out;
-        }
-
-        .welcome-text {
-            position: fixed;
-            top: 15%;
-            left: 50%;
-            transform: translateX(-50%);
-            text-align: center;
-            z-index: 10;
-            color: var(--color-charcoal);
-            font-family: "Satoshi", sans-serif;
-            font-size: clamp(1rem, 3vw, 1.2rem);
-            font-weight: 500;
-            padding: 0 1rem;
-        }
-
-        .welcome-text .login-link {
-            margin-top: 1rem;
-            font-size: clamp(0.9rem, 2.5vw, 1rem);
-        }
-
-        .welcome-text .login-link a {
-            color: var(--color-emerald);
-            text-decoration: none;
-            font-weight: 600;
-            transition: color 0.3s ease;
-            padding: 0.5rem 1rem;
-            border-radius: 8px;
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(10px);
-        }
-
-        .welcome-text .login-link a:hover,
-        .welcome-text .login-link a:active {
-            color: var(--color-sage);
-            background: rgba(255, 255, 255, 0.2);
-        }
-
-        .instruction-text {
-            position: fixed;
-            bottom: 1rem;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            padding: 1.5rem 2rem;
-            border-radius: 20px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
-            font-size: clamp(0.875rem, 2.5vw, 1rem);
-            color: var(--color-gray-600);
-            max-width: calc(100vw - 2rem);
-            text-align: center;
-            animation: pulse 3s ease-in-out infinite;
-            z-index: 5;
-            font-weight: 500;
-        }
-
-        @keyframes pulse {
-            0%, 100% { transform: translateX(-50%) scale(1); }
-            50% { transform: translateX(-50%) scale(1.02); }
-        }
-
-        .instruction-text::before {
-            content: '✨';
-            display: block;
-            font-size: 2rem;
-            margin-bottom: 0.75rem;
-        }
-
-        /* Mobile-specific styles */
-        @media (max-width: 768px) {
-            .main-txt {
-                font-size: clamp(48px, 12vw, 80px);
-                letter-spacing: -1px;
-            }
-
-            .welcome-text {
-                top: 12%;
-                font-size: clamp(1.1rem, 4vw, 1.3rem);
-                padding: 0 1.5rem;
-            }
-
-            .welcome-text .login-link {
-                margin-top: 1.25rem;
-            }
-
-            .welcome-text .login-link a {
-                padding: 0.75rem 1.5rem;
-                font-size: clamp(1rem, 3vw, 1.1rem);
-                border-radius: 12px;
-            }
-
-            .instruction-text {
-                position: fixed;
-                bottom: 1rem;
-                left: 1rem;
-                right: 1rem;
-                transform: none;
-                max-width: none;
-                padding: 1.25rem 1.5rem;
-                font-size: 1rem;
-            }
-
-            .instruction-text::before {
-                font-size: 1.75rem;
-                margin-bottom: 0.5rem;
-            }
-        }
-
-        @media (max-width: 480px) {
-            .welcome-text {
-                top: 10%;
-                font-size: clamp(1.2rem, 5vw, 1.4rem);
-            }
-            
-            .main-txt {
-                font-size: clamp(40px, 14vw, 70px);
-            }
-
-            .instruction-text {
-                bottom: 0.5rem;
-                left: 0.5rem;
-                right: 0.5rem;
-                padding: 1rem 1.25rem;
-                border-radius: 16px;
-            }
-        }
-
-        /* High DPI displays */
-        @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
-            .main-txt {
-                -webkit-font-smoothing: antialiased;
-                -moz-osx-font-smoothing: grayscale;
-            }
-        }
-
-        /* Landscape mobile orientation */
-        @media (max-width: 768px) and (orientation: landscape) {
-            .welcome-text {
-                top: 8%;
-                font-size: clamp(0.9rem, 3vw, 1.1rem);
-            }
-            
-            .instruction-text {
-                bottom: 0.5rem;
-                padding: 1rem 1.25rem;
-                font-size: 0.875rem;
-            }
-            
-            .main-txt {
-                font-size: clamp(36px, 10vw, 60px);
-            }
-        }
-
-        /* Visual feedback for touch */
-        .sphere-touch-feedback {
-            position: absolute;
-            border-radius: 50%;
-            background: radial-gradient(circle, rgba(255, 255, 255, 0.8), transparent);
-            pointer-events: none;
-            z-index: 1000;
-            opacity: 0;
-            transform: scale(0);
-            transition: all 0.3s ease-out;
-        }
-
-        .sphere-touch-feedback.active {
-            opacity: 1;
-            transform: scale(1);
-        }
+        .therapy-container { max-width: 900px; margin: 0 auto; padding: 3rem 2rem; }
+        .hero { text-align: center; margin-bottom: 4rem; }
+        .hero-title { font-family: 'Sentient', 'Satoshi', sans-serif; font-size: clamp(2.5rem, 5vw, 3.5rem); font-weight: 600; margin-bottom: 1rem; color: var(--color-charcoal); line-height: 1.1; }
+        .hero-subtitle { font-size: clamp(1.125rem, 2.5vw, 1.375rem); color: var(--color-gray-600); margin-bottom: 2rem; line-height: 1.5; }
+        .hero-badges { display: flex; gap: 1.5rem; justify-content: center; flex-wrap: wrap; margin-bottom: 2rem; font-size: 0.875rem; color: var(--color-emerald); }
+        .section { margin: 4rem 0; }
+        .section-title { font-family: 'Sentient', 'Satoshi', sans-serif; font-size: 2rem; font-weight: 600; color: var(--color-charcoal); margin-bottom: 1.5rem; }
+        .section-subtitle { font-size: 1.125rem; color: var(--color-gray-600); margin-bottom: 2rem; line-height: 1.6; }
+        .btn { display: inline-flex; align-items: center; gap: 0.75rem; padding: 1rem 2rem; border-radius: 50px; font-weight: 600; font-size: 1rem; text-decoration: none; transition: all 0.3s; border: none; cursor: pointer; font-family: 'Satoshi', sans-serif; min-width: 180px; justify-content: center; }
+        .btn-primary { background: black; color: white; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3); }
+        .btn-primary:hover { background: #333; transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); }
+        .btn-secondary { background: var(--color-white); color: var(--color-gray-600); border: 1px solid var(--color-gray-600); }
+        .btn-secondary:hover { background: var(--color-gray-50); border-color: var(--color-emerald); color: var(--color-emerald); transform: translateY(-2px); }
+        .cta-buttons { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
     </style>
-    
-    <!-- Include required libraries -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
-
-    <div class="page-content">
-        <div class="mouse-effect">
-            <div class="circle"></div>
-            <div class="circle-follow"></div>
+    <div class="therapy-container">
+        <div class="hero">
+            <h1 class="hero-title">Match Patients With The Right Therapist—Instantly</h1>
+            <p class="hero-subtitle">Embed our intelligent matching widget on your website. Patients complete a questionnaire and instantly see which therapists align with their needs.</p>
+            <div class="hero-badges"><span>✓ HIPAA-compliant</span><span>✓ Setup in 10 minutes</span><span>✓ 20 free matches</span></div>
+            <div class="cta-buttons"><a href="/register" class="btn btn-primary">Start Free Trial</a><a href="/" class="btn btn-secondary">Back to Home</a></div>
         </div>
-        
-        <h1 class="main-txt">Connect</h1>
-        
-        <div class="welcome-text hide-text">
-            <div class="typewriter-line">choose your agent to begin</div>
+        <div class="section">
+            <h2 class="section-title">Simple, Transparent Pricing</h2>
+            <p style="font-size: 3rem; font-weight: 600; color: var(--color-charcoal);">£10<span style="font-size: 1.5rem; font-weight: 400;">/month</span></p>
+            <p class="section-subtitle">Unlimited patient matches • Unlimited therapist profiles • All features included</p>
+            <a href="/register" class="btn btn-primary">Start Free Trial</a>
         </div>
-        
-        <div class="instruction-text hide-text">
-            <strong>Tap any floating sphere</strong><br>
-            to begin shaping your agent
-        </div>
-        
-        <canvas class="webgl" id="webgl"></canvas>
     </div>
-
-    <script>
-        // Detect device capabilities
-        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-        const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-        const supportsHover = window.matchMedia('(hover: hover)').matches;
-        
-        console.log('Device detection:', { isMobile, isTouch, supportsHover });
-        
-        // Scene setup
-        const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(
-            25,
-            window.innerWidth / window.innerHeight,
-            0.1,
-            1000
-        );
-        camera.position.z = isMobile ? 28 : 24;
-
-        const renderer = new THREE.WebGLRenderer({
-            canvas: document.querySelector("#webgl"),
-            antialias: true,
-            alpha: true,
-            powerPreference: isMobile ? "low-power" : "high-performance"
-        });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-        renderer.shadowMap.enabled = !isMobile;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-
-        // Materials
-        const defaultMaterial = new THREE.MeshPhongMaterial({ 
-            color: "#ffb3ba",
-            shininess: isMobile ? 10 : 30,
-            transparent: false
-        });
-
-        const hoverMaterial = new THREE.MeshPhongMaterial({ 
-            color: "#ff9aa2",
-            shininess: isMobile ? 20 : 50,
-            transparent: false
-        });
-
-        const clickMaterial = new THREE.MeshPhongMaterial({ 
-            color: "#ff6b7d",
-            shininess: isMobile ? 30 : 100,
-            transparent: false
-        });
-
-        // Sphere data (same as original)
-        const radii = [
-            1, 0.6, 0.8, 0.4, 0.9, 0.7, 0.9, 0.3, 0.2, 0.5, 0.6, 0.4, 0.5, 0.6, 0.7, 0.3, 0.4, 0.8, 0.7, 0.5,
-            0.4, 0.6, 0.35, 0.38, 0.9, 0.3, 0.6, 0.4, 0.2, 0.35, 0.5, 0.15, 0.2, 0.25, 0.4, 0.8, 0.76, 0.8, 1, 0.8,
-            0.7, 0.8, 0.3, 0.5, 0.6, 0.55, 0.42, 0.75, 0.66, 0.6, 0.7, 0.5, 0.6, 0.35, 0.35, 0.35, 0.8, 0.6, 0.7, 0.8,
-            0.4, 0.89, 0.3, 0.3, 0.6, 0.4, 0.2, 0.52, 0.5, 0.15, 0.2, 0.25, 0.4, 0.8, 0.76, 0.8, 1, 0.8, 0.7, 0.8,
-            0.3, 0.5, 0.6, 0.8, 0.7, 0.75, 0.66, 0.6, 0.7, 0.5, 0.6, 0.35, 0.35, 0.35, 0.8, 0.6, 0.7, 0.8, 0.4, 0.89, 0.3
-        ];
-
-        const positions = [
-            { x: 0, y: 0, z: 0 }, { x: 1.2, y: 0.9, z: -0.5 }, { x: 1.8, y: -0.3, z: 0 }, { x: -1, y: -1, z: 0 },
-            { x: -1, y: 1.62, z: 0 }, { x: -1.65, y: 0, z: -0.4 }, { x: -2.13, y: -1.54, z: -0.4 }, { x: 0.8, y: 0.94, z: 0.3 },
-            { x: 0.5, y: -1, z: 1.2 }, { x: -0.16, y: -1.2, z: 0.9 }, { x: 1.5, y: 1.2, z: 0.8 }, { x: 0.5, y: -1.58, z: 1.4 },
-            { x: -1.5, y: 1, z: 1.15 }, { x: -1.5, y: -1.5, z: 0.99 }, { x: -1.5, y: -1.5, z: -1.9 }, { x: 1.85, y: 0.8, z: 0.05 },
-            { x: 1.5, y: -1.2, z: -0.75 }, { x: 0.9, y: -1.62, z: 0.22 }, { x: 0.45, y: 2, z: 0.65 }, { x: 2.5, y: 1.22, z: -0.2 },
-            { x: 2.35, y: 0.7, z: 0.55 }, { x: -1.8, y: -0.35, z: 0.85 }, { x: -1.02, y: 0.2, z: 0.9 }, { x: 0.2, y: 1, z: 1 },
-            { x: -2.88, y: 0.7, z: 1 }, { x: -2, y: -0.95, z: 1.5 }, { x: -2.3, y: 2.4, z: -0.1 }, { x: -2.5, y: 1.9, z: 1.2 },
-            { x: -1.8, y: 0.37, z: 1.2 }, { x: -2.4, y: 1.42, z: 0.05 }, { x: -2.72, y: -0.9, z: 1.1 }, { x: -1.8, y: -1.34, z: 1.67 },
-            { x: -1.6, y: 1.66, z: 0.91 }, { x: -2.8, y: 1.58, z: 1.69 }, { x: -2.97, y: 2.3, z: 0.65 }, { x: 1.1, y: -0.2, z: -1.45 },
-            { x: -4, y: 1.78, z: 0.38 }, { x: 0.12, y: 1.4, z: -1.29 }, { x: -1.64, y: 1.4, z: -1.79 }, { x: -3.5, y: -0.58, z: 0.1 },
-            { x: -0.1, y: -1, z: -2 }, { x: -4.5, y: 0.55, z: -0.5 }, { x: -3.87, y: 0, z: 1 }, { x: -4.6, y: -0.1, z: 0.65 },
-            { x: -3, y: 1.5, z: -0.7 }, { x: -0.5, y: 0.2, z: -1.5 }, { x: -1.3, y: -0.45, z: -1.5 }, { x: -3.35, y: 0.25, z: -1.5 },
-            { x: -4.76, y: -1.26, z: 0.4 }, { x: -4.32, y: 0.85, z: 1.4 }, { x: -3.5, y: -1.82, z: 0.9 }, { x: -3.6, y: -0.6, z: 1.46 },
-            { x: -4.55, y: -1.5, z: 1.63 }, { x: -3.8, y: -1.15, z: 2.1 }, { x: -2.9, y: -0.25, z: 1.86 }, { x: -2.2, y: -0.4, z: 1.86 },
-            { x: -5.1, y: -0.24, z: 1.86 }, { x: -5.27, y: 1.24, z: 0.76 }, { x: -5.27, y: 2, z: -0.4 }, { x: -6.4, y: 0.4, z: 1 },
-            { x: -5.15, y: 0.95, z: 2 }, { x: -6.2, y: 0.5, z: -0.8 }, { x: -4, y: 0.08, z: 1.8 }, { x: 2, y: -0.95, z: 1.5 },
-            { x: 2.3, y: 2.4, z: -0.1 }, { x: 2.5, y: 1.9, z: 1.2 }, { x: 1.8, y: 0.37, z: 1.2 }, { x: 3.24, y: 0.6, z: 1.05 },
-            { x: 2.72, y: -0.9, z: 1.1 }, { x: 1.8, y: -1.34, z: 1.67 }, { x: 1.6, y: 1.99, z: 0.91 }, { x: 2.8, y: 1.58, z: 1.69 },
-            { x: 2.97, y: 2.3, z: 0.65 }, { x: -1.3, y: -0.2, z: -2.5 }, { x: 4, y: 1.78, z: 0.38 }, { x: 1.72, y: 1.4, z: -1.29 },
-            { x: 2.5, y: -1.2, z: -2 }, { x: 3.5, y: -0.58, z: 0.1 }, { x: 0.1, y: 0.4, z: -2.42 }, { x: 4.5, y: 0.55, z: -0.5 },
-            { x: 3.87, y: 0, z: 1 }, { x: 4.6, y: -0.1, z: 0.65 }, { x: 3, y: 1.5, z: -0.7 }, { x: 2.3, y: 0.6, z: -2.6 },
-            { x: 4, y: 1.5, z: -1.6 }, { x: 3.35, y: 0.25, z: -1.5 }, { x: 4.76, y: -1.26, z: 0.4 }, { x: 4.32, y: 0.85, z: 1.4 },
-            { x: 3.5, y: -1.82, z: 0.9 }, { x: 3.6, y: -0.6, z: 1.46 }, { x: 4.55, y: -1.5, z: 1.63 }, { x: 3.8, y: -1.15, z: 2.1 },
-            { x: 2.9, y: -0.25, z: 1.86 }, { x: 2.2, y: -0.4, z: 1.86 }, { x: 5.1, y: -0.24, z: 1.86 }, { x: 5.27, y: 1.24, z: 0.76 },
-            { x: 5.27, y: 2, z: -0.4 }, { x: 6.4, y: 0.4, z: 1 }, { x: 5.15, y: 0.95, z: 2 }, { x: 6.2, y: 0.5, z: -0.8 }, { x: 4, y: 0.08, z: 1.8 }
-        ];
-
-        const group = new THREE.Group();
-        const spheres = [];
-        let hoveredSphere = null;
-
-        positions.forEach((pos, index) => {
-            const radius = radii[index] * (isMobile ? 1.3 : 1);
-            const geometry = new THREE.SphereGeometry(radius, isMobile ? 16 : 32, isMobile ? 16 : 32);
-            const sphere = new THREE.Mesh(geometry, defaultMaterial.clone());
-            sphere.position.set(pos.x, pos.y, pos.z);
-            sphere.userData = { 
-                originalPosition: { ...pos }, 
-                radius,
-                isHovered: false,
-                isClicked: false 
-            };
-            if (!isMobile) {
-                sphere.castShadow = true;
-                sphere.receiveShadow = true;
-            }
-            spheres.push(sphere);
-            group.add(sphere);
-        });
-
-        scene.add(group);
-
-        // Lighting
-        const ambientLight = new THREE.AmbientLight(0xffffff, isMobile ? 1.2 : 1);
-        scene.add(ambientLight);
-
-        if (!isMobile) {
-            const spotLight = new THREE.SpotLight(0xffffff, 0.52);
-            spotLight.position.set(14, 24, 30);
-            spotLight.castShadow = true;
-            scene.add(spotLight);
-
-            const directionalLight1 = new THREE.DirectionalLight(0xffffff, 0.2);
-            directionalLight1.position.set(0, -4, 0);
-            scene.add(directionalLight1);
-        } else {
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
-            directionalLight.position.set(10, 10, 5);
-            scene.add(directionalLight);
-        }
-
-        // Fixed interaction system
-        const raycaster = new THREE.Raycaster();
-        const mouse = new THREE.Vector2();
-        const tempVector = new THREE.Vector3();
-        const forces = new Map();
-
-        const initY = -25;
-        const revolutionRadius = 4;
-        const revolutionDuration = 2;
-        const breathingAmplitude = isMobile ? 0.05 : 0.1;
-        const breathingSpeed = 0.002;
-
-        // Initialize spheres below screen
-        spheres.forEach((sphere, i) => {
-            sphere.position.y = initY;
-        });
-
-        // Typewriter function
-        function typeWriter(element, text, speed = 100) {
-            return new Promise((resolve) => {
-                element.innerHTML = '';
-                element.classList.add('active', 'typewriter');
-                
-                let i = 0;
-                function type() {
-                    if (i < text.length) {
-                        element.innerHTML += text.charAt(i);
-                        i++;
-                        setTimeout(type, speed);
-                    } else {
-                        element.classList.remove('typewriter');
-                        resolve();
-                    }
-                }
-                type();
-            });
-        }
-
-        function initLoadingAnimation() {
-            spheres.forEach((sphere, i) => {
-                const delay = i * (isMobile ? 0.015 : 0.02);
-                
-                if (typeof gsap !== 'undefined') {
-                    gsap.timeline()
-                        .to(sphere.position, {
-                            duration: revolutionDuration / 2,
-                            y: revolutionRadius,
-                            ease: "power1.out",
-                            onUpdate: function () {
-                                const progress = this.progress();
-                                sphere.position.z = sphere.userData.originalPosition.z + Math.sin(progress * Math.PI) * revolutionRadius;
-                            },
-                            delay: delay
-                        })
-                        .to(sphere.position, {
-                            duration: revolutionDuration / 2,
-                            y: initY / 5,
-                            ease: "power1.out",
-                            onUpdate: function () {
-                                const progress = this.progress();
-                                sphere.position.z = sphere.userData.originalPosition.z - Math.sin(progress * Math.PI) * revolutionRadius;
-                            }
-                        })
-                        .to(sphere.position, {
-                            duration: 0.6,
-                            x: sphere.userData.originalPosition.x,
-                            y: sphere.userData.originalPosition.y,
-                            z: sphere.userData.originalPosition.z,
-                            ease: "power1.out"
-                        });
-                }
-            });
-        }
-
-        const hiddenElements = document.querySelectorAll(".hide-text");
-        const main_txt = document.querySelector(".main-txt");
-        const mouse_effect = document.querySelector(".mouse-effect");
-
-        // Initially ensure elements are hidden
-        hiddenElements.forEach((el) => {
-            el.style.opacity = "0";
-        });
-
-        let loadingComplete = false;
-        
-        // Start typewriter after animation completes
-        async function startTypewriter() {
-            await new Promise(resolve => setTimeout(resolve, (revolutionDuration + 1) * 1000));
-            
-            loadingComplete = true;
-            
-            hiddenElements.forEach((el) => {
-                el.style.opacity = "1";
-            });
-            main_txt.style.opacity = "0";
-            
-            const welcomeText = document.querySelector('.welcome-text');
-            const typewriterLine = welcomeText.querySelector('.typewriter-line');
-            
-            welcomeText.classList.remove('hide-text');
-            await typeWriter(typewriterLine, typewriterLine.textContent, 80);
-        }
-
-        // Mouse following (desktop only)
-        if (typeof gsap !== 'undefined' && supportsHover && !isMobile) {
-            gsap.set(".circle", { xPercent: -50, yPercent: -50 });
-            gsap.set(".circle-follow", { xPercent: -50, yPercent: -50 });
-
-            let xTo = gsap.quickTo(".circle", "x", { duration: 0.6, ease: "power3" }),
-                yTo = gsap.quickTo(".circle", "y", { duration: 0.6, ease: "power3" });
-
-            let xFollow = gsap.quickTo(".circle-follow", "x", { duration: 0.6, ease: "power3" }),
-                yFollow = gsap.quickTo(".circle-follow", "y", { duration: 0.6, ease: "power3" });
-
-            function onMouseMove(event) {
-                if (!loadingComplete) return;
-
-                xTo(event.clientX);
-                yTo(event.clientY);
-                xFollow(event.clientX);
-                yFollow(event.clientY);
-
-                mouse_effect.style.opacity = "1";
-
-                handleInteraction(event.clientX, event.clientY, false);
-            }
-
-            window.addEventListener("mousemove", onMouseMove);
-        }
-
-        // FIXED: Universal interaction handler for both mouse and touch
-        function handleInteraction(clientX, clientY, isClick) {
-            if (!loadingComplete) return;
-
-            // Calculate mouse position for raycaster
-            mouse.x = (clientX / window.innerWidth) * 2 - 1;
-            mouse.y = -(clientY / window.innerHeight) * 2 + 1;
-
-            // Update raycaster
-            raycaster.setFromCamera(mouse, camera);
-            const intersects = raycaster.intersectObjects(spheres);
-
-            if (!isClick) {
-                // Hover logic for desktop only
-                if (hoveredSphere && !intersects.find(intersect => intersect.object === hoveredSphere)) {
-                    hoveredSphere.material = defaultMaterial.clone();
-                    hoveredSphere.userData.isHovered = false;
-                    hoveredSphere = null;
-                }
-
-                if (intersects.length > 0 && supportsHover && !isMobile) {
-                    const newHoveredSphere = intersects[0].object;
-                    
-                    if (!newHoveredSphere.userData.isClicked && newHoveredSphere !== hoveredSphere) {
-                        if (hoveredSphere) {
-                            hoveredSphere.material = defaultMaterial.clone();
-                            hoveredSphere.userData.isHovered = false;
-                        }
-                        
-                        newHoveredSphere.material = hoverMaterial.clone();
-                        newHoveredSphere.userData.isHovered = true;
-                        hoveredSphere = newHoveredSphere;
-                    }
-
-                    // Apply force for movement (reduced on mobile)
-                    const force = new THREE.Vector3();
-                    force.subVectors(intersects[0].point, newHoveredSphere.position)
-                         .normalize()
-                         .multiplyScalar(isMobile ? 0.1 : 0.2);
-                    forces.set(newHoveredSphere.uuid, force);
-                }
-            } else {
-                // FIXED: Click/tap logic with proper intersection testing
-                console.log('Interaction at:', clientX, clientY, 'Intersects:', intersects.length);
-                
-                if (intersects.length > 0) {
-                    const clickedSphere = intersects[0].object;
-                    console.log('Clicked sphere:', clickedSphere);
-                    
-                    clickedSphere.material = clickMaterial.clone();
-                    clickedSphere.userData.isClicked = true;
-                    
-                    // Show visual feedback on touch
-                    if (isTouch) {
-                        showTouchFeedback(clientX, clientY);
-                        
-                        // Haptic feedback
-                        if (navigator.vibrate) {
-                            navigator.vibrate(50);
-                        }
-                    }
-                    
-                    // Enhanced click animation
-                    if (typeof gsap !== 'undefined') {
-                        gsap.to(clickedSphere.scale, {
-                            duration: 0.1,
-                            x: 0.8, y: 0.8, z: 0.8,
-                            ease: "power2.out",
-                            onComplete: () => {
-                                gsap.to(clickedSphere.scale, {
-                                    duration: 0.2,
-                                    x: 1.3, y: 1.3, z: 1.3,
-                                    ease: "power2.out",
-                                    onComplete: () => {
-                                        // Add delay for mobile to show animation
-                                        setTimeout(() => {
-                                            console.log('Navigating to /profile-setup');
-                                            window.location.href = '/profile-setup';
-                                        }, isMobile ? 300 : 100);
-                                    }
-                                });
-                            }
-                        });
-                    } else {
-                        setTimeout(() => {
-                            window.location.href = '/profile-setup';
-                        }, 400);
-                    }
-                } else {
-                    console.log('No intersections found at', clientX, clientY);
-                }
-            }
-        }
-
-        // FIXED: Touch feedback visual
-        function showTouchFeedback(x, y) {
-            const feedback = document.createElement('div');
-            feedback.className = 'sphere-touch-feedback';
-            feedback.style.left = (x - 25) + 'px';
-            feedback.style.top = (y - 25) + 'px';
-            feedback.style.width = '50px';
-            feedback.style.height = '50px';
-            
-            document.body.appendChild(feedback);
-            
-            // Trigger animation
-            setTimeout(() => feedback.classList.add('active'), 10);
-            
-            // Remove after animation
-            setTimeout(() => {
-                if (feedback.parentNode) {
-                    feedback.parentNode.removeChild(feedback);
-                }
-            }, 500);
-        }
-
-        // FIXED: Touch event handlers with proper coordinate calculation
-        if (isTouch) {
-            let touchStartTime = 0;
-            let touchStartX = 0;
-            let touchStartY = 0;
-            let hasMoved = false;
-
-            function onTouchStart(event) {
-                if (!loadingComplete) return;
-                
-                console.log('Touch start');
-                event.preventDefault();
-                
-                touchStartTime = Date.now();
-                const touch = event.touches[0];
-                touchStartX = touch.clientX;
-                touchStartY = touch.clientY;
-                hasMoved = false;
-                
-                // Show immediate visual feedback
-                showTouchFeedback(touchStartX, touchStartY);
-            }
-
-            function onTouchMove(event) {
-                if (!loadingComplete) return;
-                event.preventDefault();
-                
-                const touch = event.touches[0];
-                const deltaX = Math.abs(touch.clientX - touchStartX);
-                const deltaY = Math.abs(touch.clientY - touchStartY);
-                
-                // Mark as moved if significant movement
-                if (deltaX > 10 || deltaY > 10) {
-                    hasMoved = true;
-                }
-                
-                // Handle continuous movement interaction
-                handleInteraction(touch.clientX, touch.clientY, false);
-            }
-
-            function onTouchEnd(event) {
-                if (!loadingComplete) return;
-                event.preventDefault();
-                
-                console.log('Touch end, hasMoved:', hasMoved);
-                
-                const touchDuration = Date.now() - touchStartTime;
-                
-                // Only register as tap if it's a short touch without movement
-                if (!hasMoved && touchDuration < 500) {
-                    console.log('Processing tap at:', touchStartX, touchStartY);
-                    handleInteraction(touchStartX, touchStartY, true);
-                }
-            }
-
-            // FIXED: Add touch event listeners with proper options
-            const canvas = renderer.domElement;
-            canvas.addEventListener('touchstart', onTouchStart, { passive: false });
-            canvas.addEventListener('touchmove', onTouchMove, { passive: false });
-            canvas.addEventListener('touchend', onTouchEnd, { passive: false });
-            
-            // Also add to document for better coverage
-            document.addEventListener('touchstart', onTouchStart, { passive: false });
-            document.addEventListener('touchmove', onTouchMove, { passive: false });  
-            document.addEventListener('touchend', onTouchEnd, { passive: false });
-            
-            console.log('Touch events added');
-        }
-
-        // Mouse event handlers for desktop
-        if (!isMobile && supportsHover) {
-            function onMouseClick(event) {
-                if (!loadingComplete) return;
-                console.log('Mouse click at:', event.clientX, event.clientY);
-                handleInteraction(event.clientX, event.clientY, true);
-            }
-
-            window.addEventListener("click", onMouseClick);
-        }
-
-        // Collision detection with performance optimization
-        function handleCollisions() {
-            const collisionPrecision = isMobile ? 0.6 : 1.0;
-            
-            for (let i = 0; i < spheres.length; i++) {
-                const sphereA = spheres[i];
-                const radiusA = sphereA.userData.radius;
-
-                for (let j = i + 1; j < spheres.length; j++) {
-                    const sphereB = spheres[j];
-                    const radiusB = sphereB.userData.radius;
-
-                    const distance = sphereA.position.distanceTo(sphereB.position);
-                    const minDistance = (radiusA + radiusB) * 1.2 * collisionPrecision;
-
-                    if (distance < minDistance) {
-                        tempVector.subVectors(sphereB.position, sphereA.position);
-                        tempVector.normalize();
-
-                        const pushStrength = (minDistance - distance) * (isMobile ? 0.2 : 0.4);
-                        sphereA.position.sub(tempVector.multiplyScalar(pushStrength));
-                        sphereB.position.add(tempVector.multiplyScalar(pushStrength));
-                    }
-                }
-            }
-        }
-
-        // FIXED: Animation loop with better performance
-        let lastFrameTime = 0;
-        const targetFPS = isMobile ? 30 : 60;
-        const frameInterval = 1000 / targetFPS;
-
-        function animate(currentTime) {
-            requestAnimationFrame(animate);
-
-            // Frame rate limiting for mobile
-            if (currentTime - lastFrameTime < frameInterval) {
-                return;
-            }
-            lastFrameTime = currentTime;
-
-            if (loadingComplete) {
-                // Breathing animation
-                const time = Date.now() * breathingSpeed;
-                spheres.forEach((sphere, i) => {
-                    const offset = i * 0.2;
-                    const breathingY = Math.sin(time + offset) * breathingAmplitude;
-                    const breathingZ = Math.cos(time + offset) * breathingAmplitude * 0.5;
-
-                    // Apply forces
-                    const force = forces.get(sphere.uuid);
-                    if (force) {
-                        sphere.position.add(force);
-                        force.multiplyScalar(isMobile ? 0.98 : 0.95);
-
-                        if (force.length() < 0.01) {
-                            forces.delete(sphere.uuid);
-                        }
-                    }
-
-                    // Return to original position with breathing
-                    const originalPos = sphere.userData.originalPosition;
-                    tempVector.set(
-                        originalPos.x,
-                        originalPos.y + breathingY,
-                        originalPos.z + breathingZ
-                    );
-                    sphere.position.lerp(tempVector, isMobile ? 0.015 : 0.018);
-                });
-
-                // Collision detection
-                if (!isMobile || Math.random() < 0.5) {
-                    handleCollisions();
-                }
-            }
-
-            renderer.render(scene, camera);
-        }
-
-        animate();
-
-        // Call loading animation and typewriter when page loads
-        window.addEventListener("load", () => {
-            console.log('Page loaded, starting animation');
-            initLoadingAnimation();
-            startTypewriter();
-        });
-
-        // Enhanced resize handler
-        function onWindowResize() {
-            const newWidth = window.innerWidth;
-            const newHeight = window.innerHeight;
-            
-            camera.aspect = newWidth / newHeight;
-            camera.updateProjectionMatrix();
-            
-            renderer.setSize(newWidth, newHeight);
-            
-            // Adjust camera position based on screen size
-            if (newWidth < 768) {
-                camera.position.z = 30;
-            } else if (newWidth < 1024) {
-                camera.position.z = 26;
-            } else {
-                camera.position.z = 24;
-            }
-        }
-
-        window.addEventListener("resize", onWindowResize);
-
-        // Mobile optimizations
-        if (isMobile) {
-            // Reduce quality on low-end devices
-            if (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2) {
-                renderer.setPixelRatio(1);
-            }
-            
-            // Handle orientation changes
-            window.addEventListener("orientationchange", () => {
-                setTimeout(() => {
-                    onWindowResize();
-                }, 100);
-            });
-            
-            // Pause animation when page is hidden
-            document.addEventListener('visibilitychange', () => {
-                if (document.hidden) {
-                    renderer.setAnimationLoop(null);
-                } else {
-                    renderer.setAnimationLoop(animate);
-                }
-            });
-        }
-
-        // Debug logging for mobile
-        console.log('Initialization complete. Device:', {
-            isMobile,
-            isTouch, 
-            supportsHover,
-            sphereCount: spheres.length,
-            loadingComplete
-        });
-
-        // Preload next page
-        const linkPreloader = document.createElement('link');
-        linkPreloader.rel = 'prefetch';
-        linkPreloader.href = '/profile-setup';
-        document.head.appendChild(linkPreloader);
-    </script>
     '''
-    
-    return content
+    return render_template_with_header("Therapy Practice Matching - Pont", content)
+
+
+@app.route('/teams')
+def teams_landing():
+    """Team leaders landing page"""
+    if 'user_id' in session:
+        return redirect('/dashboard')
+
+    content = '''
+    <style>
+        .teams-container { max-width: 900px; margin: 0 auto; padding: 3rem 2rem; }
+        .hero { text-align: center; margin-bottom: 4rem; }
+        .hero-title { font-family: 'Sentient', 'Satoshi', sans-serif; font-size: clamp(2.5rem, 5vw, 3.5rem); font-weight: 600; margin-bottom: 1rem; color: var(--color-charcoal); line-height: 1.1; }
+        .hero-subtitle { font-size: clamp(1.125rem, 2.5vw, 1.375rem); color: var(--color-gray-600); margin-bottom: 2rem; line-height: 1.5; }
+        .hero-badges { display: flex; gap: 1.5rem; justify-content: center; flex-wrap: wrap; margin-bottom: 2rem; font-size: 0.875rem; color: var(--color-emerald); }
+        .section { margin: 4rem 0; }
+        .section-title { font-family: 'Sentient', 'Satoshi', sans-serif; font-size: 2rem; font-weight: 600; color: var(--color-charcoal); margin-bottom: 1.5rem; }
+        .section-subtitle { font-size: 1.125rem; color: var(--color-gray-600); margin-bottom: 2rem; line-height: 1.6; }
+        .btn { display: inline-flex; align-items: center; gap: 0.75rem; padding: 1rem 2rem; border-radius: 50px; font-weight: 600; font-size: 1rem; text-decoration: none; transition: all 0.3s; border: none; cursor: pointer; font-family: 'Satoshi', sans-serif; min-width: 180px; justify-content: center; }
+        .btn-primary { background: black; color: white; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3); }
+        .btn-primary:hover { background: #333; transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); }
+        .btn-secondary { background: var(--color-white); color: var(--color-gray-600); border: 1px solid var(--color-gray-600); }
+        .btn-secondary:hover { background: var(--color-gray-50); border-color: var(--color-emerald); color: var(--color-emerald); transform: translateY(-2px); }
+        .cta-buttons { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+    </style>
+    <div class="teams-container">
+        <div class="hero">
+            <h1 class="hero-title">Know How Your Team Will Respond Before You Ask</h1>
+            <p class="hero-subtitle">Test organizational changes, predict reactions to pivots, and understand team dynamics before making decisions. Walk into important conversations prepared.</p>
+            <div class="hero-badges"><span>✓ 20 free simulations</span><span>✓ Results in minutes</span><span>✓ £10/month</span></div>
+            <div class="cta-buttons"><a href="/register" class="btn btn-primary">Start Free Trial</a><a href="/" class="btn btn-secondary">Back to Home</a></div>
+        </div>
+        <div class="section">
+            <h2 class="section-title">Simple Pricing</h2>
+            <p style="font-size: 3rem; font-weight: 600; color: var(--color-charcoal);">£10<span style="font-size: 1.5rem; font-weight: 400;">/month</span></p>
+            <p class="section-subtitle">20 free simulations • Unlimited after that • All three modes • Unlimited team members</p>
+            <a href="/register" class="btn btn-primary">Start Free Trial</a>
+        </div>
+    </div>
+    '''
+    return render_template_with_header("Team Simulation - Pont", content)
+
+
+@app.route('/recruiting')
+def recruiting_landing():
+    """Recruiting/hiring landing page"""
+    if 'user_id' in session:
+        return redirect('/dashboard')
+
+    content = '''
+    <style>
+        .recruiting-container { max-width: 900px; margin: 0 auto; padding: 3rem 2rem; }
+        .hero { text-align: center; margin-bottom: 4rem; }
+        .hero-title { font-family: 'Sentient', 'Satoshi', sans-serif; font-size: clamp(2.5rem, 5vw, 3.5rem); font-weight: 600; margin-bottom: 1rem; color: var(--color-charcoal); line-height: 1.1; }
+        .hero-subtitle { font-size: clamp(1.125rem, 2.5vw, 1.375rem); color: var(--color-gray-600); margin-bottom: 2rem; line-height: 1.5; }
+        .hero-badges { display: flex; gap: 1.5rem; justify-content: center; flex-wrap: wrap; margin-bottom: 2rem; font-size: 0.875rem; color: var(--color-emerald); }
+        .section { margin: 4rem 0; }
+        .section-title { font-family: 'Sentient', 'Satoshi', sans-serif; font-size: 2rem; font-weight: 600; color: var(--color-charcoal); margin-bottom: 1.5rem; }
+        .section-subtitle { font-size: 1.125rem; color: var(--color-gray-600); margin-bottom: 2rem; line-height: 1.6; }
+        .btn { display: inline-flex; align-items: center; gap: 0.75rem; padding: 1rem 2rem; border-radius: 50px; font-weight: 600; font-size: 1rem; text-decoration: none; transition: all 0.3s; border: none; cursor: pointer; font-family: 'Satoshi', sans-serif; min-width: 180px; justify-content: center; }
+        .btn-primary { background: black; color: white; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3); }
+        .btn-primary:hover { background: #333; transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); }
+        .btn-secondary { background: var(--color-white); color: var(--color-gray-600); border: 1px solid var(--color-gray-600); }
+        .btn-secondary:hover { background: var(--color-gray-50); border-color: var(--color-emerald); color: var(--color-emerald); transform: translateY(-2px); }
+        .cta-buttons { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+    </style>
+    <div class="recruiting-container">
+        <div class="hero">
+            <h1 class="hero-title">Let Candidates Assess Their Own Culture Fit</h1>
+            <p class="hero-subtitle">Embed our compatibility widget on your careers page. Candidates see how they'd fit with your team before applying. Attract people who will actually thrive in your culture.</p>
+            <div class="hero-badges"><span>✓ 20 free uses</span><span>✓ Setup in 10 minutes</span><span>✓ £10/month</span></div>
+            <div class="cta-buttons"><a href="/register" class="btn btn-primary">Start Free Trial</a><a href="/" class="btn btn-secondary">Back to Home</a></div>
+        </div>
+        <div class="section">
+            <h2 class="section-title">Simple Pricing</h2>
+            <p style="font-size: 3rem; font-weight: 600; color: var(--color-charcoal);">£10<span style="font-size: 1.5rem; font-weight: 400;">/month</span></p>
+            <p class="section-subtitle">Unlimited candidate uses • Full team profiling • 20 free simulations for internal use</p>
+            <a href="/register" class="btn btn-primary">Start Free Trial</a>
+        </div>
+    </div>
+    '''
+    return render_template_with_header("Recruiting & Culture Fit - Pont", content)
+
+
+@app.route('/networking')
+def networking_landing():
+    """Networking events landing page"""
+    if 'user_id' in session:
+        return redirect('/dashboard')
+
+    content = '''
+    <style>
+        .networking-container { max-width: 900px; margin: 0 auto; padding: 3rem 2rem; }
+        .hero { text-align: center; margin-bottom: 4rem; }
+        .hero-title { font-family: 'Sentient', 'Satoshi', sans-serif; font-size: clamp(2.5rem, 5vw, 3.5rem); font-weight: 600; margin-bottom: 1rem; color: var(--color-charcoal); line-height: 1.1; }
+        .hero-subtitle { font-size: clamp(1.125rem, 2.5vw, 1.375rem); color: var(--color-gray-600); margin-bottom: 2rem; line-height: 1.5; }
+        .hero-badges { display: flex; gap: 1.5rem; justify-content: center; flex-wrap: wrap; margin-bottom: 2rem; font-size: 0.875rem; color: var(--color-emerald); }
+        .section { margin: 4rem 0; }
+        .section-title { font-family: 'Sentient', 'Satoshi', sans-serif; font-size: 2rem; font-weight: 600; color: var(--color-charcoal); margin-bottom: 1.5rem; }
+        .section-subtitle { font-size: 1.125rem; color: var(--color-gray-600); margin-bottom: 2rem; line-height: 1.6; }
+        .btn { display: inline-flex; align-items: center; gap: 0.75rem; padding: 1rem 2rem; border-radius: 50px; font-weight: 600; font-size: 1rem; text-decoration: none; transition: all 0.3s; border: none; cursor: pointer; font-family: 'Satoshi', sans-serif; min-width: 180px; justify-content: center; }
+        .btn-primary { background: black; color: white; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3); }
+        .btn-primary:hover { background: #333; transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); }
+        .btn-secondary { background: var(--color-white); color: var(--color-gray-600); border: 1px solid var(--color-gray-600); }
+        .btn-secondary:hover { background: var(--color-gray-50); border-color: var(--color-emerald); color: var(--color-emerald); transform: translateY(-2px); }
+        .cta-buttons { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+    </style>
+    <div class="networking-container">
+        <div class="hero">
+            <h1 class="hero-title">Know Exactly Who To Meet At Your Next Event</h1>
+            <p class="hero-subtitle">Upload the attendee list. Tell us your goals. We'll analyze everyone and recommend who each person on your team should prioritize meeting. Make networking strategic, not random.</p>
+            <div class="hero-badges"><span>✓ 20 free analyses</span><span>✓ Results in 5 minutes</span><span>✓ £10/month</span></div>
+            <div class="cta-buttons"><a href="/register" class="btn btn-primary">Start Free Trial</a><a href="/" class="btn btn-secondary">Back to Home</a></div>
+        </div>
+        <div class="section">
+            <h2 class="section-title">Simple Pricing</h2>
+            <p style="font-size: 3rem; font-weight: 600; color: var(--color-charcoal);">£10<span style="font-size: 1.5rem; font-weight: 400;">/month</span></p>
+            <p class="section-subtitle">20 free analyses • Unlimited after that • Analyze unlimited attendees per event</p>
+            <a href="/register" class="btn btn-primary">Start Free Trial</a>
+        </div>
+    </div>
+    '''
+    return render_template_with_header("Networking Events - Pont", content)
+
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -8565,6 +7786,7 @@ def organization_embed_settings(org_id):
         if request.method == 'POST':
             mode = request.form.get('mode')
             person_specification = request.form.get('person_specification', '').strip()
+            use_linkedin = request.form.get('use_linkedin') == 'on'
 
             if mode not in ['party', 'simulation']:
                 flash('Invalid mode selected', 'error')
@@ -8582,18 +7804,18 @@ def organization_embed_settings(org_id):
                 # Update existing config
                 cursor.execute('''
                     UPDATE embed_configurations
-                    SET mode = %s, person_specification = %s, is_active = TRUE
+                    SET mode = %s, person_specification = %s, use_linkedin = %s, is_active = TRUE
                     WHERE id = %s
-                ''', (mode, person_specification if mode == 'simulation' else None, existing_config['id']))
+                ''', (mode, person_specification if mode == 'simulation' else None, use_linkedin, existing_config['id']))
                 embed_token = existing_config['embed_token']
             else:
                 # Create new config
                 embed_token = secrets.token_urlsafe(32)
                 cursor.execute('''
                     INSERT INTO embed_configurations
-                    (organization_id, embed_token, mode, person_specification, created_by)
-                    VALUES (%s, %s, %s, %s, %s)
-                ''', (org_id, embed_token, mode, person_specification if mode == 'simulation' else None, user_id))
+                    (organization_id, embed_token, mode, person_specification, use_linkedin, created_by)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                ''', (org_id, embed_token, mode, person_specification if mode == 'simulation' else None, use_linkedin, user_id))
 
             conn.commit()
             flash('Embed settings saved successfully', 'success')
@@ -8714,6 +7936,8 @@ def render_embed_settings_page(org: Dict, embed_config: Optional[Dict], user_inf
     party_checked = 'checked' if current_mode == 'party' else ''
     simulation_checked = 'checked' if current_mode == 'simulation' else ''
     person_spec_display = 'block' if current_mode == 'simulation' else 'none'
+    use_linkedin = embed_config.get('use_linkedin', False) if embed_config else False
+    linkedin_checked = 'checked' if use_linkedin else ''
 
     content = f'''
     <div style="max-width: 800px; margin: 0 auto; padding: 2rem;">
@@ -12822,670 +12046,6 @@ def network_visualization(network_id):
     return render_template_with_header(f"Network Visualization", content, user_info)
 
 # ============================================================================
-# ROUTES - PROCESSING & RESULTS
-# ============================================================================
-
-@app.route('/processing')
-@login_required
-def processing():
-    """Start matching and redirect to live visualization"""
-    user_id = session['user_id']
-    status = subscription_manager.get_user_subscription_status(user_id)
-    
-    if not status['can_run_matching'] and not status['is_subscribed']:
-        flash('Subscription required for additional matches', 'error')
-        return redirect('/subscription/plans')
-    
-    # Record usage if subscribed
-    if status['is_subscribed']:
-        subscription_manager.record_matching_usage(user_id, is_free=False)
-    
-
-    user_id = session.get('user_id')
-    if not user_id:
-        return redirect('/login')
-    
-    # Check user's matching mode to determine redirect
-    user_info = user_auth.get_user_info(user_id)
-    matching_mode = user_info.get('matching_mode', 'individual') if user_info else 'individual'
-
-    if matching_mode == 'network':
-        return redirect('/network-mode')
-    else:
-        # Start background matching with real-time updates for individual mode
-        thread = threading.Thread(target=process_matching_background, args=(user_id,))
-        thread.daemon = True
-        thread.start()
-
-        return redirect(f'/live-matching/{user_id}')
-
-@app.route('/live-matching/<int:user_id>')
-@login_required
-def live_matching(user_id):
-    """3D neural network matching visualization"""
-    if session.get('user_id') != user_id:
-        return redirect('/login')
-    
-    # Get user info for any needed data
-    user_info = user_auth.get_user_info(user_id)
-    
-    # The 3D matching HTML - replace the old live_matching_html variable
-    live_matching_html = f'''
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Dinner Party Simulation</title>
-        <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=sentient@400,500,600,700&display=swap" rel="stylesheet">
-        <style>
-            * {{
-                margin: 0;
-                padding: 0;
-                box-sizing: border-box;
-            }}
-            
-            :root {{
-                --color-cream: #f8f9fa;
-                --color-emerald: #000000;
-                --color-sage: #ffffff;
-                --color-lavender: #c2b7ef;
-                --color-charcoal: #000000;
-                --color-white: #ffffff;
-            }}
-            
-            body {{
-                font-family: 'Satoshi', -apple-system, BlinkMacSystemFont, sans-serif;
-                background: white;
-                color: var(--color-charcoal);
-                min-height: 100vh;
-                overflow: hidden;
-                cursor: move;
-            }}
-            
-            #threejs-container {{
-                width: 100vw;
-                height: 100vh;
-                position: relative;
-                overflow: hidden;
-            }}
-            
-            /* Status */
-            .status {{
-                position: absolute;
-                top: 2rem;
-                left: 50%;
-                transform: translateX(-50%);
-                z-index: 1000;
-                color: var(--color-charcoal);
-                font-size: 0.875rem;
-                font-weight: 500;
-                background: rgba(255, 255, 255, 0.9);
-                padding: 0.75rem 1.25rem;
-                border-radius: 8px;
-                backdrop-filter: blur(10px);
-                border: 1px solid rgba(0,0,0,0.1);
-                box-shadow: 0 4px 16px rgba(0,0,0,0.1);
-            }}
-            
-            /* Results Modal */
-            .results-modal {{
-                position: absolute;
-                top: 50%;
-                left: 50%;
-                transform: translate(-50%, -50%);
-                background: rgba(255, 255, 255, 0.95);
-                backdrop-filter: blur(20px);
-                border-radius: 16px;
-                padding: 2rem;
-                max-width: 400px;
-                width: 90vw;
-                border: 1px solid rgba(0,0,0,0.1);
-                box-shadow: 0 24px 48px rgba(0,0,0,0.2);
-                display: none;
-                color: var(--color-charcoal);
-            }}
-            
-            .results-modal.visible {{
-                display: block;
-                animation: modalSlideIn 0.6s cubic-bezier(0.4, 0, 0.2, 1);
-            }}
-            
-            @keyframes modalSlideIn {{
-                from {{ opacity: 0; transform: translate(-50%, -40%); }}
-                to {{ opacity: 1; transform: translate(-50%, -50%); }}
-            }}
-            
-            .complete-message {{
-                text-align: center;
-                padding: 2rem 1rem;
-                color: var(--color-charcoal);
-            }}
-            
-            .complete-message h3 {{
-                font-size: 1.25rem;
-                font-weight: 600;
-                margin-bottom: 1rem;
-            }}
-            
-            .complete-message p {{
-                margin-bottom: 1.5rem;
-                opacity: 0.8;
-            }}
-            
-            .dashboard-link {{
-                display: inline-block;
-                background: white;
-                color: white;
-                padding: 0.75rem 1.5rem;
-                border-radius: 8px;
-                text-decoration: none;
-                font-weight: 500;
-                transition: all 0.3s ease;
-            }}
-            
-            .dashboard-link:hover {{
-                background: white;
-                transform: translateY(-1px);
-            }}
-            
-            /* Loading */
-            .loading {{
-                position: absolute;
-                top: 50%;
-                left: 50%;
-                transform: translate(-50%, -50%);
-                color: var(--color-charcoal);
-                font-size: 0.875rem;
-                opacity: 0.8;
-                z-index: 10;
-                text-align: center;
-            }}
-            
-            .loading-spinner {{
-                width: 32px;
-                height: 32px;
-                border: 2px solid rgba(0,0,0,0.1);
-                border-radius: 50%;
-                border-top-color: var(--color-emerald);
-                animation: spin 1s ease-in-out infinite;
-                margin: 0 auto 1rem;
-            }}
-            
-            @keyframes spin {{
-                to {{ transform: rotate(360deg); }}
-            }}
-            
-            /* Responsive */
-            @media (max-width: 768px) {{
-                .status {{
-                    top: 1rem;
-                    font-size: 0.8rem;
-                    padding: 0.5rem 1rem;
-                }}
-                
-                .results-modal {{
-                    padding: 1.5rem;
-                    max-width: 350px;
-                }}
-            }}
-        </style>
-    </head>
-    <body>
-        <!-- Status -->
-        <div class="status" id="status">
-            Your agent (big circle) is mingling...
-        </div>
-        
-        <!-- 3D Canvas -->
-        <div id="threejs-container">
-            <div class="loading" id="loading">
-                <div class="loading-spinner"></div>
-                Initializing 3D space...
-            </div>
-        </div>
-        
-        <!-- Results Modal -->
-        <div class="results-modal" id="resultsModal">
-            <div class="complete-message">
-                <h3>Dinner Party Complete</h3>
-                <p>Your matches have been calculated and are ready for review.</p>
-                <a href="/dashboard" class="dashboard-link">Go to Dashboard</a>
-            </div>
-        </div>
-
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-        <script>
-            let scene, camera, renderer, controls;
-            let agents = new Map();
-            let connections = [];
-            let boxHelper;
-            let agentsMetadata = {{}};
-            let simulationCompleted = false;
-            let updateInterval;
-            
-            const BOX_SIZE = 400;
-            const USER_ID = {user_id}; // Your actual user ID
-            
-            // Colors from your palette
-            const COLORS = {{
-                user: 0x167a60,      // emerald - your agent
-                other: 0x2d2d2d,     // charcoal - other agents  
-                line: 0x2d2d2d,      // charcoal - connection lines (stronger)
-                box: 0x757575        // gray - container box
-            }};
-            
-            function initThreeJS() {{
-                const container = document.getElementById('threejs-container');
-                
-                // Scene
-                scene = new THREE.Scene();
-                scene.background = new THREE.Color(0xffffff); // white background
-                
-                // Camera
-                camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
-                camera.position.set(600, 400, 600);
-                
-                // Renderer
-                renderer = new THREE.WebGLRenderer({{ antialias: true }});
-                renderer.setSize(window.innerWidth, window.innerHeight);
-                renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-                container.appendChild(renderer.domElement);
-                
-                // Lighting
-                const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-                scene.add(ambientLight);
-                
-                const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-                directionalLight.position.set(100, 100, 50);
-                scene.add(directionalLight);
-                
-                // Create container box (wireframe)
-                createContainerBox();
-                
-                // Mouse controls
-                setupControls();
-                
-                // Hide loading
-                document.getElementById('loading').style.display = 'none';
-                
-                // Start animation
-                animate();
-            }}
-            
-            function createContainerBox() {{
-                const boxGeometry = new THREE.BoxGeometry(BOX_SIZE, BOX_SIZE, BOX_SIZE);
-                const boxMaterial = new THREE.MeshBasicMaterial({{ 
-                    color: COLORS.box,
-                    wireframe: true,
-                    transparent: true,
-                    opacity: 0.2
-                }});
-                
-                const box = new THREE.Mesh(boxGeometry, boxMaterial);
-                scene.add(box);
-                
-                // Add wireframe helper for cleaner lines
-                boxHelper = new THREE.BoxHelper(box, COLORS.box);
-                boxHelper.material.transparent = true;
-                boxHelper.material.opacity = 0.3;
-                scene.add(boxHelper);
-            }}
-            
-            function setupControls() {{
-                let isMouseDown = false;
-                let mouseX = 0, mouseY = 0;
-                let targetRotationX = 0, targetRotationY = 0;
-                let currentRotationX = 0, currentRotationY = 0;
-                
-                renderer.domElement.addEventListener('mousedown', onMouseDown);
-                renderer.domElement.addEventListener('mousemove', onMouseMove);
-                renderer.domElement.addEventListener('mouseup', onMouseUp);
-                renderer.domElement.addEventListener('wheel', onMouseWheel);
-                
-                function onMouseDown(event) {{
-                    isMouseDown = true;
-                    mouseX = event.clientX;
-                    mouseY = event.clientY;
-                }}
-                
-                function onMouseMove(event) {{
-                    if (!isMouseDown) return;
-                    
-                    const deltaX = event.clientX - mouseX;
-                    const deltaY = event.clientY - mouseY;
-                    
-                    targetRotationY += deltaX * 0.01;
-                    targetRotationX += deltaY * 0.01;
-                    
-                    mouseX = event.clientX;
-                    mouseY = event.clientY;
-                }}
-                
-                function onMouseUp() {{
-                    isMouseDown = false;
-                }}
-                
-                function onMouseWheel(event) {{
-                    const zoomSpeed = 10;
-                    camera.position.multiplyScalar(1 + event.deltaY * 0.001 * zoomSpeed);
-                    camera.position.clampLength(200, 1500);
-                }}
-                
-                // Smooth camera rotation in animate loop
-                function updateCamera() {{
-                    currentRotationX += (targetRotationX - currentRotationX) * 0.1;
-                    currentRotationY += (targetRotationY - currentRotationY) * 0.1;
-                    
-                    const distance = camera.position.length();
-                    camera.position.x = Math.cos(currentRotationY) * Math.cos(currentRotationX) * distance;
-                    camera.position.y = Math.sin(currentRotationX) * distance;
-                    camera.position.z = Math.sin(currentRotationY) * Math.cos(currentRotationX) * distance;
-                    
-                    camera.lookAt(0, 0, 0);
-                }}
-                
-                // Store update function for animate loop
-                this.updateCamera = updateCamera;
-            }}
-            
-            function createAgent(agentId, metadata) {{
-                const isUser = metadata.type === 'user';
-                
-                // Create sphere geometry - bigger dots
-                const geometry = new THREE.SphereGeometry(isUser ? 12 : 8, 16, 16);
-                
-                // Create material
-                let color = isUser ? COLORS.user : COLORS.other;
-                const material = new THREE.MeshLambertMaterial({{
-                    color: color,
-                    transparent: true,
-                    opacity: 0.9
-                }});
-                
-                const sphere = new THREE.Mesh(geometry, material);
-                
-                // Random position within the box
-                sphere.position.set(
-                    (Math.random() - 0.5) * BOX_SIZE * 0.8,
-                    (Math.random() - 0.5) * BOX_SIZE * 0.8,
-                    (Math.random() - 0.5) * BOX_SIZE * 0.8
-                );
-                
-                // Store metadata
-                sphere.userData = {{ 
-                    agentId, 
-                    metadata, 
-                    isUser,
-                    targetPosition: sphere.position.clone(),
-                    velocity: new THREE.Vector3(
-                        (Math.random() - 0.5) * 2,
-                        (Math.random() - 0.5) * 2,
-                        (Math.random() - 0.5) * 2
-                    )
-                }};
-                
-                scene.add(sphere);
-                agents.set(agentId, sphere);
-                
-                return sphere;
-            }}
-            
-            function createConnection(agent1, agent2) {{
-                const points = [];
-                points.push(agent1.position.clone());
-                points.push(agent2.position.clone());
-                
-                const geometry = new THREE.BufferGeometry().setFromPoints(points);
-                const material = new THREE.LineBasicMaterial({{
-                    color: COLORS.line,
-                    transparent: true,
-                    opacity: 0.8,
-                    linewidth: 4
-                }});
-                
-                const line = new THREE.Line(geometry, material);
-                scene.add(line);
-                
-                const connection = {{
-                    line: line,
-                    agent1: agent1,
-                    agent2: agent2,
-                    createdTime: Date.now()
-                }};
-                
-                connections.push(connection);
-                
-                // Fade out connection after some time
-                setTimeout(() => {{
-                    connection.fadeOut = true;
-                }}, 4000);
-                
-                return line;
-            }}
-            
-            function updateConnections() {{
-                connections = connections.filter(connection => {{
-                    const {{ line, agent1, agent2, fadeOut, createdTime }} = connection;
-                    
-                    if (fadeOut) {{
-                        const age = Date.now() - createdTime;
-                        const maxAge = 6000;
-                        const opacity = Math.max(0, 1 - (age - 4000) / 2000);
-                        
-                        if (opacity <= 0) {{
-                            scene.remove(line);
-                            return false;
-                        }}
-                        
-                        line.material.opacity = opacity * 0.8;
-                    }}
-                    
-                    // Update line positions
-                    const positions = line.geometry.attributes.position.array;
-                    positions[0] = agent1.position.x;
-                    positions[1] = agent1.position.y;
-                    positions[2] = agent1.position.z;
-                    positions[3] = agent2.position.x;
-                    positions[4] = agent2.position.y;
-                    positions[5] = agent2.position.z;
-                    line.geometry.attributes.position.needsUpdate = true;
-                    
-                    return true;
-                }});
-            }}
-            
-            function updateAgentMovement() {{
-                agents.forEach(agent => {{
-                    // Move towards target position
-                    agent.position.lerp(agent.userData.targetPosition, 0.02);
-                    
-                    // Add continuous movement within the box
-                    const velocity = agent.userData.velocity;
-                    agent.position.add(velocity);
-                    
-                    // Bounce off walls
-                    const halfBox = BOX_SIZE * 0.4;
-                    if (Math.abs(agent.position.x) > halfBox) {{
-                        velocity.x *= -1;
-                        agent.position.x = Math.sign(agent.position.x) * halfBox;
-                    }}
-                    if (Math.abs(agent.position.y) > halfBox) {{
-                        velocity.y *= -1;
-                        agent.position.y = Math.sign(agent.position.y) * halfBox;
-                    }}
-                    if (Math.abs(agent.position.z) > halfBox) {{
-                        velocity.z *= -1;
-                        agent.position.z = Math.sign(agent.position.z) * halfBox;
-                    }}
-                    
-                    // Update target position for natural movement
-                    agent.userData.targetPosition.copy(agent.position);
-                    
-                    // Check for interactions with other agents
-                    agents.forEach(otherAgent => {{
-                        if (agent !== otherAgent) {{
-                            const distance = agent.position.distanceTo(otherAgent.position);
-                            if (distance < 50 && Math.random() < 0.01) {{ // Random interaction
-                                createConnection(agent, otherAgent);
-                            }}
-                        }}
-                    }});
-                }});
-            }}
-            
-            function animate() {{
-                requestAnimationFrame(animate);
-                
-                // Update camera rotation
-                if (this.updateCamera) {{
-                    this.updateCamera();
-                }}
-                
-                // Update agent movement
-                updateAgentMovement();
-                
-                // Update connections
-                updateConnections();
-                
-                renderer.render(scene, camera);
-            }}
-            
-            // Real simulation logic - replace with your actual API calls
-            function startRealTimeUpdates() {{
-                updateInterval = setInterval(fetchLiveStatus, 1000);
-                fetchLiveStatus();
-            }}
-            
-            function fetchLiveStatus() {{
-                // Replace this with your actual API endpoint
-                fetch(`/api/processing-status/${{USER_ID}}`)
-                    .then(response => response.json())
-                    .then(data => {{
-                        updateVisualization(data);
-                    }})
-                    .catch(error => {{
-                        console.error('Real simulation error:', error);
-                        // Fallback to demo mode after some time
-                        setTimeout(() => {{
-                            const demoData = {{
-                                status: 'completed',
-                                agents_metadata: generateDemoAgents()
-                            }};
-                            updateVisualization(demoData);
-                        }}, 10000);
-                    }});
-            }}
-            
-            function generateDemoAgents() {{
-                if (Object.keys(agentsMetadata).length > 0) return agentsMetadata;
-                
-                const dummy = {{
-                    [USER_ID]: {{ type: 'user', name: 'You' }}
-                }};
-                
-                for (let i = 1; i <= 15; i++) {{
-                    if (i !== USER_ID) {{
-                        dummy[i] = {{ 
-                            type: 'other', 
-                            name: `Agent ${{i}}` 
-                        }};
-                    }}
-                }}
-                
-                return dummy;
-            }}
-            
-            function updateVisualization(data) {{
-                // Update status
-                document.getElementById('status').textContent = 
-                    data.status === 'completed' ? 'Analysis complete' : 'Your agent (big circle) is mingling...';
-                
-                // Initialize agents
-                if (data.agents_metadata && Object.keys(agentsMetadata).length === 0) {{
-                    agentsMetadata = data.agents_metadata;
-                    Object.entries(agentsMetadata).forEach(([agentId, metadata]) => {{
-                        createAgent(parseInt(agentId), metadata);
-                    }});
-                }}
-                
-                // Handle completion
-                if (data.status === 'completed' && !simulationCompleted) {{
-                    simulationCompleted = true;
-                    clearInterval(updateInterval); // Stop updates when complete
-                    setTimeout(showResults, 2000);
-                }}
-            }}
-            
-            function showResults() {{
-                // Just show the completion modal
-                document.getElementById('resultsModal').classList.add('visible');
-            }}
-            
-            // Handle window resize
-            function onWindowResize() {{
-                camera.aspect = window.innerWidth / window.innerHeight;
-                camera.updateProjectionMatrix();
-                renderer.setSize(window.innerWidth, window.innerHeight);
-            }}
-            
-            window.addEventListener('resize', onWindowResize);
-            
-            // Initialize
-            document.addEventListener('DOMContentLoaded', () => {{
-                initThreeJS();
-                startRealTimeUpdates();
-            }});
-            
-            // Cleanup
-            window.addEventListener('beforeunload', () => {{
-                if (updateInterval) clearInterval(updateInterval);
-                if (renderer) renderer.dispose();
-            }});
-            
-            // Close modal
-            document.getElementById('resultsModal').addEventListener('click', (e) => {{
-                if (e.target.id === 'resultsModal') {{
-                    e.target.classList.remove('visible');
-                }}
-            }});
-        </script>
-    </body>
-    </html>
-    '''
-    
-    return live_matching_html
-
-@app.route('/api/processing-status/<int:user_id>')
-def processing_status_api(user_id):
-    """Enhanced API endpoint for real processing status"""
-    # Verify this is the logged-in user
-    if session.get('user_id') != user_id:
-        return jsonify({'error': 'Unauthorized'}), 401
-    
-    # Check both local and enhanced matching system status
-    local_status = processing_status.get(user_id, {})
-    enhanced_status = enhanced_matching_system.processing_status.get(user_id, {})
-    
-    # Merge statuses (enhanced takes priority)
-    final_status = {**local_status, **enhanced_status}
-    
-    if not final_status:
-        final_status = {'status': 'processing', 'progress': 0}
-    
-    # Ensure we always have the required fields for the frontend
-    final_status.setdefault('phase', 'initializing')
-    final_status.setdefault('simulation_step', 0)
-    final_status.setdefault('agents_moved', 0)
-    final_status.setdefault('avg_satisfaction', 0)
-    final_status.setdefault('agents_positions', {})
-    
-    # FIX: Generate agents_metadata with real user data
-    if 'agents_metadata' not in final_status or not final_status['agents_metadata']:
-        final_status['agents_metadata'] = generate_agents_metadata_for_user(user_id)
-    
-    return jsonify(final_status)
-# ============================================================================
 # ROUTES - PROFILE UPDATES
 # ============================================================================
 
@@ -13603,740 +12163,8 @@ def update_profile():
     
     return render_template_with_header("Update Profile", content, user_info)
 
-@app.route('/send-contact-request/<int:requested_id>', methods=['GET', 'POST'])
-@login_required
-def send_contact_request_with_tracking(requested_id):
-    """Enhanced contact request with interaction tracking"""
-    user_id = session['user_id']
-    user_info = user_auth.get_user_info(user_id)
-    requested_user_info = user_auth.get_user_info(requested_id)
-    
-    if not requested_user_info:
-        flash('User not found', 'error')
-        return redirect('/dashboard')
-    
-    if request.method == 'POST':
-        message = request.form.get('message', '').strip()
-        
-        # Get compatibility score for tracking
-        user_matches = user_auth.get_user_matches(user_id)
-        compatibility_score = 0
-        for match in user_matches:
-            if match['matched_user_id'] == requested_id:
-                compatibility_score = match['overall_score']
-                break
-        
-        try:
-            # Add detailed error logging
-            print(f"Attempting to send contact request from user {user_id} to user {requested_id}")
-            result = user_auth.send_contact_request(user_id, requested_id, message)
-            print(f"Contact request result: {result}")
-            
-            if result['success']:
-                # Track successful contact request
-                try:
-                    interaction_tracker.track_contact_request(user_id, requested_id, compatibility_score)
-                except Exception as track_error:
-                    print(f"Warning: Failed to track interaction: {track_error}")
-                    # Don't let tracking errors break the main flow
-                
-                flash(f'Contact request sent to {requested_user_info["first_name"]}!', 'success')
-                return redirect('/dashboard')
-            else:
-                flash(result['error'], 'error')
-                print(f"Contact request failed with error: {result['error']}")
-                
-        except Exception as e:
-            print(f"Exception in contact request route: {e}")
-            import traceback
-            traceback.print_exc()
-            flash('An error occurred while sending the request. Please try again.', 'error')
-    
-    # Show contact request form
-    content = f'''
-    <div class="container" style="max-width: 600px;">
-        <h1 style="font-size: 28px; text-align: center; margin-bottom: 32px;">Request Contact Information</h1>
-        
-        <div style="background: #f8f9fa; border-radius: 8px; padding: 20px; margin-bottom: 30px; text-align: center;">
-            <div style="font-size: 20px; font-weight: bold; margin-bottom: 10px;">{requested_user_info.get('first_name', 'User')} {requested_user_info.get('last_name', '')}</div>
-            <div style="font-size: 14px; color: #666;">You'd like to connect with this person</div>
-        </div>
-        
-        <form method="POST">
-            <div style="margin-bottom: 20px;">
-                <label style="display: block; margin-bottom: 8px; font-weight: 500;">Optional message:</label>
-                <textarea name="message" 
-                          placeholder="Hi! I saw we're a great match and would love to chat!"
-                          style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; height: 100px;"></textarea>
-            </div>
-            
-            <div style="display: flex; gap: 15px; justify-content: center; margin-top: 30px;">
-                <a href="/dashboard" class="btn btn-secondary">Cancel</a>
-                <button type="submit" class="btn btn-primary">Send Request</button>
-            </div>
-        </form>
-    </div>
-    '''
-    
-    return render_template_with_header("Send Contact Request", content, user_info)
-
-@app.route('/contact-requests')
-@login_required 
-def contact_requests_route():
-    """View and manage contact requests with beautiful design"""
-    user_id = session['user_id']
-    user_info = user_auth.get_user_info(user_id)
-    
-    received_requests = user_auth.get_contact_requests(user_id, 'received')
-    sent_requests = user_auth.get_contact_requests(user_id, 'sent')
-    
-    # Build received requests HTML with new design
-    received_html = ""
-    pending_received = [r for r in received_requests if r['status'] == 'pending']
-    
-    if pending_received:
-        for req in pending_received:
-            # Get initials for avatar
-            name_parts = req['other_user_name'].split()
-            initials = name_parts[0][0] + (name_parts[-1][0] if len(name_parts) > 1 else '')
-            
-            received_html += f'''
-            <div class="request-card">
-                <div class="request-header">
-                    <div class="avatar">{initials}</div>
-                    <div class="request-info">
-                        <div class="request-name">{req['other_user_name']}</div>
-                        <div class="request-date">{req['created_at'].strftime('%Y-%m-%d') if hasattr(req['created_at'], 'strftime') else str(req['created_at'])[:10]}</div>
-                    </div>
-                    <div class="request-actions">
-                        <a href="/respond-contact-request/{req['id']}/accept" class="btn btn-accept">
-                            Accept
-                        </a>
-                        <a href="/respond-contact-request/{req['id']}/deny" class="btn btn-decline">
-                            Decline
-                        </a>
-                    </div>
-                </div>
-                
-                {f'<div class="request-message">"{req["message"]}"</div>' if req['message'] else ''}
-                
-                <div class="privacy-notice">
-                    
-                    <div class="privacy-text">
-                        <strong>If you accept:</strong> {req['other_user_name']} will receive your contact number/email: <strong>{user_info['phone']}</strong>
-                    </div>
-                </div>
-            </div>
-            '''
-    else:
-        received_html = '''
-        <div class="empty-state">
-            <div class="empty-title">No Pending Requests</div>
-            <div class="empty-text">When someone wants to connect with you, their requests will appear here.</div>
-        </div>
-        '''
-    
-    # Build sent requests HTML with new design
-    sent_html = ""
-    if sent_requests:
-        for req in sent_requests:
-            # Get initials for avatar
-            name_parts = req['other_user_name'].split()
-            initials = name_parts[0][0] + (name_parts[-1][0] if len(name_parts) > 1 else '')
-            
-            # Status styling with your color palette
-            status_config = {
-                'pending': {'color': 'var(--color-charcoal)', 'bg': 'var(--color-sage)', 'icon': '', 'text': 'Pending'},
-                'accepted': {'color': 'var(--color-white)', 'bg': 'var(--color-emerald)', 'icon': '', 'text': 'Accepted'},
-                'denied': {'color': 'var(--color-white)', 'bg': 'var(--color-gray-600)', 'icon': '', 'text': 'Declined'}
-            }
-            
-            config = status_config.get(req['status'], status_config['pending'])
-            
-            # Phone number display for accepted requests
-            contact_section = ""
-            if req['status'] == 'accepted':
-                contact_section = f'''
-                <div class="contact-info">
-                    <div class="contact-header">
-                        <div class="contact-icon"></div>
-                        <div class="contact-label">Contact Information Available</div>
-                    </div>
-                    <div class="contact-actions">
-                        <a href="tel:{req['other_user_phone']}" class="btn btn-call">
-                            Call {req['other_user_phone']}
-                        </a>
-                        <div class="contact-note">You can now contact each other!</div>
-                    </div>
-                </div>
-                '''
-            
-            sent_html += f'''
-            <div class="request-card">
-                <div class="request-header">
-                    <div class="avatar">{initials}</div>
-                    <div class="request-info">
-                        <div class="request-name">{req['other_user_name']}</div>
-                        <div class="request-date">{req['created_at'].strftime('%Y-%m-%d') if hasattr(req['created_at'], 'strftime') else str(req['created_at'])[:10]}</div>
-                    </div>
-                    <div class="status-badge" style="background: {config['bg']}; color: {config['color']};">
-                        <span class="status-icon">{config['icon']}</span>
-                        <span class="status-text">{config['text']}</span>
-                    </div>
-                </div>
-                
-                {f'<div class="request-message sent"><strong>Your message:</strong> "{req["message"]}"</div>' if req['message'] else ''}
-                {contact_section}
-            </div>
-            '''
-    else:
-        sent_html = '''
-        <div class="empty-state">
-            <div class="empty-title">No Requests Sent</div>
-            <div class="empty-text">When you request someone's contact information, it will appear here.</div>
-        </div>
-        '''
-    
-    # Build the complete HTML content with enhanced styling
-    content = f'''
-    <style>
-        .requests-container {{
-            font-family: 'Satoshi', -apple-system, BlinkMacSystemFont, sans-serif;
-            max-width: 900px;
-            margin: 0 auto;
-            padding: 2rem;
-        }}
-        
-        .requests-title {{
-            font-family: 'Sentient', 'Satoshi', sans-serif;
-            font-size: clamp(2rem, 4vw, 2.5rem);
-            font-weight: 600;
-            text-align: center;
-            margin-bottom: 3rem;
-            color: var(--color-charcoal);
-            letter-spacing: -0.02em;
-        }}
-        
-        .requests-section {{
-            margin-bottom: 3rem;
-        }}
-        
-        .section-header {{
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-            margin-bottom: 1.5rem;
-            padding: 0 0.5rem;
-        }}
-        
-        .section-title {{
-            font-family: 'Sentient', 'Satoshi', sans-serif;
-            font-size: 1.5rem;
-            font-weight: 600;
-            color: var(--color-emerald);
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            letter-spacing: -0.01em;
-        }}
-        
-        .notification-badge {{
-            background: black;
-            color: white;
-            border-radius: 50%;
-            padding: 0.25rem 0.5rem;
-            font-size: 0.75rem;
-            font-weight: 600;
-            min-width: 1.25rem;
-            height: 1.25rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }}
-        
-        .requests-container-inner {{
-            background: var(--color-white);
-            border-radius: 20px;
-            padding: 2rem;
-            box-shadow: 
-                0 1px 3px rgba(0,0,0,0.04),
-                0 8px 24px rgba(0,0,0,0.08);
-            position: relative;
-        }}
-        
-        .requests-container-inner::before {{
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 1px;
-            background: linear-gradient(90deg, transparent, var(--color-sage), transparent);
-        }}
-        
-        .request-card {{
-            background: var(--color-gray-50);
-            border-radius: 16px;
-            padding: 2rem;
-            margin: 1.5rem 0;
-            border-left: 4px solid var(--color-sage);
-            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }}
-        
-        .request-card:hover {{
-            transform: translateY(-2px);
-            box-shadow: 0 8px 32px rgba(0,0,0,0.08);
-        }}
-        
-        .request-header {{
-            display: flex;
-            align-items: center;
-            gap: 1.5rem;
-            margin-bottom: 1.5rem;
-        }}
-        
-        .avatar {{
-            width: 64px;
-            height: 64px;
-            border-radius: 50%;
-            background: white;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: black;
-            font-size: 1.5rem;
-            font-weight: 700;
-            font-family: 'Sentient', 'Satoshi', sans-serif;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.1);
-        }}
-        
-        .request-info {{
-            flex: 1;
-        }}
-        
-        .request-name {{
-            font-family: 'Sentient', 'Satoshi', sans-serif;
-            font-size: 1.25rem;
-            font-weight: 600;
-            color: var(--color-charcoal);
-            margin-bottom: 0.25rem;
-        }}
-        
-        .request-date {{
-            font-size: 0.875rem;
-            color: var(--color-gray-600);
-            font-weight: 500;
-        }}
-        
-        .request-actions {{
-            display: flex;
-            gap: 0.75rem;
-        }}
-        
-        .btn {{
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-            padding: 0.75rem 1.25rem;
-            border-radius: 10px;
-            font-weight: 600;
-            font-size: 0.875rem;
-            text-decoration: none;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            border: none;
-            cursor: pointer;
-            font-family: 'Satoshi', sans-serif;
-            white-space: nowrap;
-        }}
-        
-        .btn-accept {{
-            background: white;
-            color: white;
-            box-shadow: 0 4px 16px rgba(22, 122, 96, 0.2);
-        }}
-        
-        .btn-accept:hover {{
-            background: white;
-            transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(22, 122, 96, 0.3);
-        }}
-        
-        .btn-decline {{
-            background: var(--color-gray-600);
-            color: white;
-            box-shadow: 0 4px 16px rgba(117, 117, 117, 0.2);
-        }}
-        
-        .btn-decline:hover {{
-            background: #616161;
-            transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(117, 117, 117, 0.3);
-        }}
-        
-        .btn-call {{
-            background: white;
-            color: var(--color-charcoal);
-            box-shadow: 0 4px 16px rgba(198, 225, 155, 0.2);
-        }}
-        
-        .btn-call:hover {{
-            background: #9ac463;
-            transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(198, 225, 155, 0.3);
-        }}
-        
-        .status-badge {{
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            padding: 0.75rem 1.25rem;
-            border-radius: 50px;
-            font-size: 0.875rem;
-            font-weight: 600;
-            white-space: nowrap;
-        }}
-        
-        .status-icon {{
-            font-size: 1rem;
-        }}
-        
-        .request-message {{
-            background: var(--color-white);
-            padding: 1.5rem;
-            border-radius: 12px;
-            margin: 1.5rem 0;
-            border-left: 4px solid var(--color-emerald);
-            font-style: italic;
-            color: var(--color-gray-800);
-            line-height: 1.6;
-        }}
-        
-        .request-message.sent {{
-            border-left-color: var(--color-sage);
-        }}
-        
-        .privacy-notice {{
-            display: flex;
-            align-items: flex-start;
-            gap: 1rem;
-            padding: 1.5rem;
-            background: white;
-            border-radius: 12px;
-            margin-top: 1.5rem;
-        }}
-        
-        .privacy-icon {{
-            font-size: 1.25rem;
-            flex-shrink: 0;
-        }}
-        
-        .privacy-text {{
-            font-size: 0.875rem;
-            line-height: 1.5;
-            color: var(--color-charcoal);
-        }}
-        
-        .privacy-text strong {{
-            font-weight: 600;
-        }}
-        
-        .contact-info {{
-            background: #f5f5f5;
-            color: black;
-            padding: 1.5rem;
-            border-radius: 12px;
-            margin-top: 1.5rem;
-        }}
-        
-        .contact-header {{
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            margin-bottom: 1rem;
-        }}
-        
-        .contact-icon {{
-            font-size: 1.25rem;
-        }}
-        
-        .contact-label {{
-            font-weight: 600;
-            font-size: 0.875rem;
-        }}
-        
-        .contact-actions {{
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-            flex-wrap: wrap;
-        }}
-        
-        .contact-note {{
-            font-size: 0.875rem;
-            opacity: 0.9;
-        }}
-        
-        .empty-state {{
-            text-align: center;
-            padding: 3rem 2rem;
-            color: var(--color-gray-600);
-            background: var(--color-white);
-            border-radius: 16px;
-            border: 2px dashed var(--color-gray-200);
-        }}
-        
-        .empty-icon {{
-            font-size: 3rem;
-            margin-bottom: 1rem;
-        }}
-        
-        .empty-title {{
-            font-family: 'Sentient', 'Satoshi', sans-serif;
-            font-size: 1.25rem;
-            font-weight: 600;
-            margin-bottom: 0.5rem;
-            color: var(--color-charcoal);
-        }}
-        
-        .empty-text {{
-            font-size: 0.875rem;
-            line-height: 1.5;
-        }}
-        
-        .back-to-dashboard {{
-            text-align: center;
-            margin-top: 3rem;
-        }}
-        
-        .btn-back {{
-            background: white;
-            color: white;
-            padding: 1rem 2rem;
-            border-radius: 12px;
-            text-decoration: none;
-            font-weight: 600;
-            font-size: 0.875rem;
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            box-shadow: 0 4px 16px rgba(22, 122, 96, 0.2);
-        }}
-        
-        .btn-back:hover {{
-            background: white;
-            transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(22, 122, 96, 0.3);
-        }}
-        
-        @media (max-width: 768px) {{
-            .requests-container {{
-                padding: 1rem;
-            }}
-            
-            .request-card {{
-                padding: 1.5rem;
-            }}
-            
-            .request-header {{
-                flex-direction: column;
-                text-align: center;
-                gap: 1rem;
-            }}
-            
-            .request-actions {{
-                justify-content: center;
-            }}
-            
-            .contact-actions {{
-                flex-direction: column;
-                align-items: flex-start;
-            }}
-        }}
-    </style>
-    
-    <div class="requests-container">
-        <h1 class="requests-title">Contact Requests</h1>
-        
-        <div class="requests-section">
-            <div class="section-header">
-                <h2 class="section-title">
-                    Requests Received
-                    {f'<span class="notification-badge">{len(pending_received)}</span>' if pending_received else ''}
-                </h2>
-            </div>
-            <div class="requests-container-inner">
-                {received_html}
-            </div>
-        </div>
-        
-        <div class="requests-section">
-            <div class="section-header">
-                <h2 class="section-title">Requests Sent</h2>
-            </div>
-            <div class="requests-container-inner">
-                {sent_html}
-            </div>
-        </div>
-        
-        <div class="back-to-dashboard">
-            <a href="/dashboard" class="btn-back">
-                ← Back to Matches
-            </a>
-        </div>
-    </div>
-    '''
-    
-    return render_template_with_header("Contact Requests", content, user_info)
-
-@app.route('/respond-contact-request/<int:request_id>/<response>')
-@login_required
-def respond_contact_request_with_tracking(request_id, response):
-    """Enhanced contact request response with tracking"""
-    user_id = session['user_id']
-    
-    if response not in ['accept', 'deny']:
-        flash('Invalid response', 'error')
-        return redirect('/contact-requests')
-    
-    # Get request details for tracking
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT requester_id FROM contact_requests WHERE id = %s AND requested_id = %s', 
-                      (request_id, user_id))
-        result = cursor.fetchone()
-        conn.close()
-        
-        requester_id = result[0] if result else None
-    except:
-        requester_id = None
-    
-    result = user_auth.respond_to_contact_request(request_id, user_id, response + 'ed')
-    
-    if result['success']:
-        # Track the response
-        if requester_id:
-            interaction_tracker.track_contact_response(user_id, requester_id, response == 'accept')
-        
-        if response == 'accept':
-            flash('Contact request accepted!', 'success')
-        else:
-            flash('Contact request declined.', 'success')
-    else:
-        flash(result['error'], 'error')
-    
-    return redirect('/contact-requests')
 
 
-# ============================================================================
-# ROUTES - EMAIL FOLLOW-UP
-# ============================================================================
-
-@app.route('/followup-response/<token>/<response>')
-def followup_response_with_tracking(token, response):
-    """Enhanced follow-up response with tracking"""
-    if response not in ['yes', 'no']:
-        return render_template_with_header("Invalid Response", 
-            '<div class="container"><h1>Invalid Response</h1><p>Invalid response type.</p></div>')
-    
-    # Get user details from token for tracking
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT user1_id, user2_id, user1_token, user2_token 
-            FROM followup_tracking 
-            WHERE user1_token = %s OR user2_token = %s
-        ''', (token, token))
-        
-        followup = cursor.fetchone()
-        conn.close()
-        
-        if followup:
-            user1_id, user2_id, user1_token, user2_token = followup
-            
-            # Determine which user responded
-            if token == user1_token:
-                responding_user_id = user1_id
-                other_user_id = user2_id
-            else:
-                responding_user_id = user2_id
-                other_user_id = user1_id
-            
-            # Track the email response
-            interaction_tracker.track_email_response(responding_user_id, other_user_id, response == 'yes')
-    except Exception as e:
-        print(f"Error tracking email response: {e}")
-    
-    # Process the response (same as before)
-    result = email_followup.record_followup_response(token, response)
-    
-    if result['success']:
-        response_text = "Yes, I'd meet them again!" if response == 'yes' else "No, not a good match"
-        content = f'''
-        <div class="container" style="text-align: center; max-width: 500px;">
-            <div style="font-size: 64px; margin-bottom: 20px;">{"✅" if response == 'yes' else "❌"}</div>
-            <h1 style="color: black;">Response Recorded</h1>
-            <div style="font-size: 18px; margin: 20px 0; padding: 20px; background: #f8f9fa; border-radius: 8px;">
-                Your response: <strong>{response_text}</strong>
-            </div>
-            <p>Thank you for your feedback! This helps our AI learn and improve future matches.</p>
-            <div style="margin-top: 30px;">
-                <a href="/dashboard" class="btn btn-primary">Back to Dashboard</a>
-            </div>
-        </div>
-        '''
-    else:
-        content = f'''
-        <div class="container" style="text-align: center;">
-            <h1 style="color: #dc3545;">Error</h1>
-            <p>{result['error']}</p>
-            <div style="margin-top: 30px;">
-                <a href="/" class="btn btn-primary">Go Home</a>
-            </div>
-        </div>
-        '''
-    
-    return render_template_with_header("Follow-up Response", content)
-
-@app.route('/api/followup-stats/<int:user_id>')
-@login_required
-def followup_stats(user_id):
-    """Get follow-up statistics for a user"""
-    if session.get('user_id') != user_id:
-        return jsonify({'error': 'Unauthorized'}), 401
-    
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Get follow-up responses for this user's matches
-        cursor.execute('''
-            SELECT 
-                COUNT(*) as total_followups,
-                SUM(CASE WHEN user1_response = 1 OR user2_response = 1 THEN 1 ELSE 0 END) as positive_responses,
-                SUM(CASE WHEN user1_response = 0 OR user2_response = 0 THEN 1 ELSE 0 END) as negative_responses,
-                SUM(CASE WHEN user1_response IS NULL AND user2_response IS NULL THEN 1 ELSE 0 END) as pending_responses
-            FROM followup_tracking 
-            WHERE user1_id = %s OR user2_id = %s
-            AND email_sent_at IS NOT NULL
-        ''', (user_id, user_id))
-        
-        stats = cursor.fetchone()
-        conn.close()
-        
-        return jsonify({
-            'total_followups': stats[0] or 0,
-            'positive_responses': stats[1] or 0,
-            'negative_responses': stats[2] or 0,
-            'pending_responses': stats[3] or 0,
-            'success_rate': round((stats[1] or 0) / max(1, stats[0] or 1) * 100, 1)
-        })
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 # ============================================================================
 # API ROUTES
 # ============================================================================
