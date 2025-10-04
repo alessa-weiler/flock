@@ -4710,7 +4710,7 @@ def home():
 
         <div class="use-cases-grid">
             <a href="/therapy" class="use-case-card">
-                <div class="use-case-icon">🏥</div>
+                
                 <h3 class="use-case-title">Run a Therapy Practice</h3>
                 <p class="use-case-description">
                     Match patients with the right therapist instantly using our intelligent matching widget.
@@ -4720,7 +4720,7 @@ def home():
             </a>
 
             <a href="/teams" class="use-case-card">
-                <div class="use-case-icon">👥</div>
+                
                 <h3 class="use-case-title">Lead a Team</h3>
                 <p class="use-case-description">
                     Predict how your team will respond to changes before you announce them.
@@ -4730,7 +4730,7 @@ def home():
             </a>
 
             <a href="/recruiting" class="use-case-card">
-                <div class="use-case-icon">💼</div>
+                
                 <h3 class="use-case-title">Hire Better</h3>
                 <p class="use-case-description">
                     Assess culture fit before making offers. Let candidates see if they'd thrive
@@ -4740,7 +4740,7 @@ def home():
             </a>
 
             <a href="/networking" class="use-case-card">
-                <div class="use-case-icon">🤝</div>
+                
                 <h3 class="use-case-title">Maximize Networking</h3>
                 <p class="use-case-description">
                     Know exactly who to meet at your next event. We analyze attendees and
