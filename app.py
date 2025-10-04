@@ -4680,44 +4680,67 @@ def home():
 
     <div class="landing-container">
         <div class="hero-section">
-            <h1 class="hero-title">Connect</h1>
-            <p class="hero-subtitle">Skip the small talk. Find meaningful connections.</p>
-            
+            <h1 class="hero-title">Simulating Social Dynamics</h1>
+            <p class="hero-subtitle">Understand how your team will respond before it happens.</p>
+
             <p class="hero-description">
-                We simulate dinner parties to match you with people who truly get you. 
-                Our algorithm creates virtual social scenarios to find your perfect friendship compatibility 
-                before you even meet.
+                Pont uses AI agents to simulate how your team members will react to scenarios, engage with new people,
+                and collaborate with each other. Make better decisions with predictive insights into team dynamics.
             </p>
 
             <div class="features-grid">
                 <div class="feature-card">
-                    <h3 class="feature-title"> Simulation Mode</h3>
-                    <p class="feature-description"> Simulates how your organisation responds to a given scenario. Can help you anticipate changes and accommodate accordingly. Example: how would my investors react if we pivoted?  </p>
+                    
+                    <h3 class="feature-title">Simulation Mode</h3>
+                    <p class="feature-description">Model how each team member responds to scenarios. Test changes before implementing them. Perfect for anticipating reactions to pivots, policy changes, or organizational shifts.</p>
                 </div>
-                
+
                 <div class="feature-card">
                     
                     <h3 class="feature-title">Party Mode</h3>
-                    <p class="feature-description">Beyond change - this uses Agent Based Modelling coupled with LLMs to run a virtual 'mingling' of your organisation - agents communicate with each other within a pre-specified context, and form collaborations. Great for team building.  </p>
+                    <p class="feature-description">AI agents representing your team members interact and collaborate in virtual scenarios. Discover hidden synergies and optimize team composition for specific projects.</p>
                 </div>
-                
+
                 <div class="feature-card">
                     
                     <h3 class="feature-title">Networking Mode</h3>
-                    <p class="feature-description">For networking events when you're planning with your team. You input a shared goal, and a list of the attendees of the event. We enrich this data, and outline who everyone in your team should focus on meeting at the event. </p>
+                    <p class="feature-description">Upload event attendee lists and your team's goals. We analyze everyone and recommend who each team member should prioritize meeting to maximize networking ROI.</p>
+                </div>
+            </div>
+
+            <div style="background: rgba(255, 255, 255, 0.7); padding: 2.5rem; border-radius: 20px; margin: 3rem 0; border: 1px solid rgba(0, 0, 0, 0.05);">
+                <h3 style="font-family: 'Sentient', 'Satoshi', sans-serif; font-size: 1.5rem; font-weight: 600; margin-bottom: 1.5rem; color: var(--color-charcoal);">Use Cases</h3>
+                <div style="display: grid; gap: 1.5rem; text-align: left;">
+                    <div>
+                        <strong style="color: var(--color-emerald); font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.1em;">Clinical Teams</strong>
+                        <p style="margin-top: 0.5rem; color: var(--color-gray-600); line-height: 1.6;">Embed our widget on your website. Potential patients fill out a questionnaire, and instantly see how each therapist on your team would approach their specific needs. Match patients with the right clinician from the start.</p>
+                    </div>
+                    <div>
+                        <strong style="color: var(--color-emerald); font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.1em;">Startup Teams</strong>
+                        <p style="margin-top: 0.5rem; color: var(--color-gray-600); line-height: 1.6;">Simulate how your team, investors, or board will react to a major pivot before the meeting. Test different messaging approaches and anticipate objections.</p>
+                    </div>
+                    <div>
+                        <strong style="color: var(--color-emerald); font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.1em;">Recruiting</strong>
+                        <p style="margin-top: 0.5rem; color: var(--color-gray-600); line-height: 1.6;">Embed on your careers page. Candidates see their compatibility with your existing team and culture. Hire people who will genuinely thrive in your environment.</p>
+                    </div>
+                    <div>
+                        <strong style="color: var(--color-emerald); font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.1em;">Networking Events</strong>
+                        <p style="margin-top: 0.5rem; color: var(--color-gray-600); line-height: 1.6;">Going to a conference with your team? Upload the attendee list. We'll analyze everyone and tell each team member who they should prioritize meeting based on your shared goals.</p>
+                    </div>
                 </div>
             </div>
 
             <div class="testimonial">
-                Honestly wasn't expecting to enjoy this as much as I did. The matches felt surprisingly accurate and I actually had fun chatting with them!
+                We used Pont to predict how our clinical team would respond to different patient profiles.
+                It's helped us match patients with the right therapist from day one, improving outcomes and satisfaction.
             </div>
 
             <div class="cta-buttons">
                 <a href="/register" class="btn btn-primary">
-                    Start Here
+                    Create Your Team
                 </a>
                 <a href="/login" class="btn btn-secondary">
-                    Already have an account?
+                    Sign In
                 </a>
             </div>
         </div>
@@ -14687,7 +14710,7 @@ def terms_of_service():
             </p>
             <ul>
                 <li>Personality and compatibility assessment tools</li>
-                <li>AI-powered matching algorithms based on compatibility factors</li>
+                <li>Research-backed matching algorithms based on compatibility factors</li>
                 <li>Secure contact exchange between matched users</li>
                 <li>Profile management and comprehensive privacy controls</li>
             </ul>
