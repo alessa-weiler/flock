@@ -8606,30 +8606,86 @@ def render_embed_settings_page(org: Dict, embed_config: Optional[Dict], user_inf
     # Generate embed code if config exists
     embed_code_section = ''
     if embed_token:
-        base_url = request.host_url.rstrip('/')
-        embed_url = f"{base_url}/embed/{embed_token}"
+        # Use production URL if in production, otherwise use request host
+        base_url = os.environ.get('BASE_URL', '').rstrip('/')
+        if not base_url or 'localhost' in base_url:
+            # Fallback: use pont.world if BASE_URL is not set or is localhost
+            if os.environ.get('FLASK_ENV') == 'production':
+                base_url = 'https://pont.world'
+            else:
+                base_url = request.host_url.rstrip('/')
 
+        embed_url = f"{base_url}/embed/{embed_token}"
         iframe_code = f'<iframe src="{embed_url}" width="100%" height="800" frameborder="0"></iframe>'
+
+        # Escape quotes for JavaScript
+        iframe_code_escaped = iframe_code.replace("'", "\\'")
 
         embed_code_section = f'''
         <div style="margin-top: 2rem; padding: 2rem; background: #f8f9fa; border-radius: 12px;">
             <h3 style="font-family: 'Sentient', sans-serif; font-size: 1.5rem; margin-bottom: 1rem;">Embed Code</h3>
-            <p style="font-family: 'Satoshi', sans-serif; color: #666; margin-bottom: 1rem;">
-                Copy and paste this code into your website or Notion page:
-            </p>
-            <div style="background: white; padding: 1rem; border-radius: 8px; border: 1px solid #ddd; font-family: monospace; font-size: 0.875rem; overflow-x: auto; margin-bottom: 1rem;">
-                {iframe_code}
+
+            <div style="margin-bottom: 2rem;">
+                <h4 style="font-family: 'Satoshi', sans-serif; font-weight: 600; margin-bottom: 0.75rem;">For Websites (HTML)</h4>
+                <p style="font-family: 'Satoshi', sans-serif; color: #666; font-size: 0.875rem; margin-bottom: 0.75rem;">
+                    Copy and paste this code into your website's HTML:
+                </p>
+                <div style="background: white; padding: 1rem; border-radius: 8px; border: 1px solid #ddd; font-family: monospace; font-size: 0.875rem; overflow-x: auto; margin-bottom: 0.75rem; position: relative;">
+                    <code id="htmlCode">{iframe_code}</code>
+                </div>
+                <button onclick="copyToClipboard('htmlCode')" id="copyHtmlBtn"
+                        style="padding: 0.75rem 1.5rem; background: black; color: white; border: none; border-radius: 8px; font-family: 'Satoshi', sans-serif; font-weight: 600; cursor: pointer;">
+                    Copy HTML Code
+                </button>
             </div>
-            <button onclick="navigator.clipboard.writeText('{iframe_code}')"
-                    style="padding: 0.75rem 1.5rem; background: black; color: white; border: none; border-radius: 8px; font-family: 'Satoshi', sans-serif; font-weight: 600; cursor: pointer;">
-                Copy to Clipboard
-            </button>
-            <div style="margin-top: 1rem;">
+
+            <div style="margin-bottom: 2rem;">
+                <h4 style="font-family: 'Satoshi', sans-serif; font-weight: 600; margin-bottom: 0.75rem;">For Notion</h4>
+                <p style="font-family: 'Satoshi', sans-serif; color: #666; font-size: 0.875rem; margin-bottom: 0.75rem;">
+                    1. Copy the URL below<br>
+                    2. In Notion, type <code>/embed</code> and press Enter<br>
+                    3. Paste the URL and click "Embed link"
+                </p>
+                <div style="background: white; padding: 1rem; border-radius: 8px; border: 1px solid #ddd; font-family: monospace; font-size: 0.875rem; overflow-x: auto; margin-bottom: 0.75rem;">
+                    <code id="notionUrl">{embed_url}</code>
+                </div>
+                <button onclick="copyToClipboard('notionUrl')" id="copyNotionBtn"
+                        style="padding: 0.75rem 1.5rem; background: black; color: white; border: none; border-radius: 8px; font-family: 'Satoshi', sans-serif; font-weight: 600; cursor: pointer;">
+                    Copy URL for Notion
+                </button>
+            </div>
+
+            <div>
+                <h4 style="font-family: 'Satoshi', sans-serif; font-weight: 600; margin-bottom: 0.75rem;">Direct Link</h4>
                 <p style="font-family: 'Satoshi', sans-serif; color: #666; font-size: 0.875rem;">
-                    <strong>Direct link:</strong> <a href="{embed_url}" target="_blank" style="color: #0066cc;">{embed_url}</a>
+                    <a href="{embed_url}" target="_blank" style="color: #0066cc; text-decoration: underline;">{embed_url}</a>
                 </p>
             </div>
         </div>
+
+        <script>
+            function copyToClipboard(elementId) {{
+                const element = document.getElementById(elementId);
+                const text = element.textContent;
+
+                navigator.clipboard.writeText(text).then(() => {{
+                    // Update button text to show success
+                    const buttonId = elementId === 'htmlCode' ? 'copyHtmlBtn' : 'copyNotionBtn';
+                    const button = document.getElementById(buttonId);
+                    const originalText = button.textContent;
+                    button.textContent = '✓ Copied!';
+                    button.style.background = '#10b981';
+
+                    setTimeout(() => {{
+                        button.textContent = originalText;
+                        button.style.background = 'black';
+                    }}, 2000);
+                }}).catch(err => {{
+                    console.error('Failed to copy:', err);
+                    alert('Failed to copy. Please select and copy manually.');
+                }});
+            }}
+        </script>
         '''
 
     party_checked = 'checked' if current_mode == 'party' else ''
@@ -8793,6 +8849,11 @@ def embed_process(embed_token):
 
         # Collect onboarding data from form
         onboarding_data = {
+            'full_name': request.form.get('full_name', ''),
+            'email': request.form.get('email', ''),
+            'linkedin_url': request.form.get('linkedin_url', ''),
+            'age': request.form.get('age', ''),
+            'location': request.form.get('location', ''),
             'defining_moment': request.form.get('defining_moment', ''),
             'resource_allocation': request.form.get('resource_allocation', ''),
             'conflict_response': request.form.get('conflict_response', ''),
@@ -8855,6 +8916,11 @@ def run_embed_party_mode(user_data: Dict, members: List[Dict], config: Dict) -> 
     # Create user profile summary from onboarding
     user_summary = f"""
 User Profile Summary:
+Name: {user_data.get('full_name', 'N/A')}
+Age: {user_data.get('age', 'N/A')}
+Location: {user_data.get('location', 'N/A')}
+LinkedIn: {user_data.get('linkedin_url', 'N/A')}
+
 - Defining Moment: {user_data.get('defining_moment', 'N/A')}
 - Resource Allocation: {user_data.get('resource_allocation', 'N/A')}
 - Conflict Response: {user_data.get('conflict_response', 'N/A')}
@@ -8945,6 +9011,11 @@ def run_embed_simulation_mode(user_data: Dict, members: List[Dict], config: Dict
     # Create person profile from onboarding
     person_profile = f"""
 A {person_spec} with the following characteristics:
+Name: {user_data.get('full_name', 'N/A')}
+Age: {user_data.get('age', 'N/A')}
+Location: {user_data.get('location', 'N/A')}
+LinkedIn: {user_data.get('linkedin_url', 'N/A')}
+
 - Defining Moment: {user_data.get('defining_moment', 'N/A')}
 - Resource Allocation: {user_data.get('resource_allocation', 'N/A')}
 - Conflict Response: {user_data.get('conflict_response', 'N/A')}
@@ -9100,19 +9171,22 @@ def render_embed_onboarding(config: Dict) -> str:
             margin-bottom: 0.75rem;
         }}
 
-        textarea {{
+        input, textarea {{
             width: 100%;
             padding: 1rem;
             border: 2px solid #ddd;
             border-radius: 12px;
             font-family: "Satoshi", sans-serif;
             font-size: 1rem;
-            resize: vertical;
-            min-height: 100px;
             transition: border-color 0.2s ease;
         }}
 
-        textarea:focus {{
+        textarea {{
+            resize: vertical;
+            min-height: 100px;
+        }}
+
+        input:focus, textarea:focus {{
             outline: none;
             border-color: #667eea;
         }}
@@ -9223,6 +9297,32 @@ def render_embed_onboarding(config: Dict) -> str:
             <p class="subtitle">{mode_description}</p>
 
             <form id="onboardingForm">
+                <div class="question">
+                    <label class="question-label">Full Name (Optional)</label>
+                    <input type="text" name="full_name" style="width: 100%; padding: 1rem; border: 2px solid #ddd; border-radius: 12px; font-family: 'Satoshi', sans-serif; font-size: 1rem;">
+                </div>
+
+                <div class="question">
+                    <label class="question-label">Email (Optional)</label>
+                    <input type="email" name="email" style="width: 100%; padding: 1rem; border: 2px solid #ddd; border-radius: 12px; font-family: 'Satoshi', sans-serif; font-size: 1rem;">
+                </div>
+
+                <div class="question">
+                    <label class="question-label">LinkedIn URL</label>
+                    <p class="question-description">Your LinkedIn profile helps us understand your professional background.</p>
+                    <input type="url" name="linkedin_url" placeholder="https://linkedin.com/in/yourname" style="width: 100%; padding: 1rem; border: 2px solid #ddd; border-radius: 12px; font-family: 'Satoshi', sans-serif; font-size: 1rem;">
+                </div>
+
+                <div class="question">
+                    <label class="question-label">Age</label>
+                    <input type="number" name="age" min="18" max="100" style="width: 100%; padding: 1rem; border: 2px solid #ddd; border-radius: 12px; font-family: 'Satoshi', sans-serif; font-size: 1rem;">
+                </div>
+
+                <div class="question">
+                    <label class="question-label">Location (City, Country)</label>
+                    <input type="text" name="location" placeholder="e.g., London, UK" style="width: 100%; padding: 1rem; border: 2px solid #ddd; border-radius: 12px; font-family: 'Satoshi', sans-serif; font-size: 1rem;">
+                </div>
+
                 <div class="question">
                     <label class="question-label">Defining Moment</label>
                     <p class="question-description">Describe a life-changing decision that shaped who you are today.</p>
