@@ -9126,7 +9126,7 @@ def render_embed_onboarding(config: Dict) -> str:
 
         body {{
             font-family: "Satoshi", sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: white;
             min-height: 100vh;
             padding: 2rem;
         }}
@@ -9134,80 +9134,100 @@ def render_embed_onboarding(config: Dict) -> str:
         .container {{
             max-width: 700px;
             margin: 0 auto;
-            background: white;
-            border-radius: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(20px);
+            border-radius: 24px;
             padding: 3rem;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
         }}
 
         h1 {{
             font-family: "Sentient", "Satoshi", sans-serif;
             font-size: 2.5rem;
+            font-weight: 500;
             margin-bottom: 0.5rem;
-            color: #1a1a1a;
+            color: black;
+            letter-spacing: -0.02em;
         }}
 
         .subtitle {{
+            font-family: "Satoshi", sans-serif;
             font-size: 1.125rem;
-            color: #666;
+            line-height: 1.6;
+            color: black;
+            opacity: 0.8;
             margin-bottom: 2rem;
         }}
 
         .question {{
-            margin-bottom: 2.5rem;
+            margin-bottom: 2rem;
         }}
 
         .question-label {{
+            font-family: "Satoshi", sans-serif;
             display: block;
-            font-weight: 600;
-            font-size: 1.125rem;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
             margin-bottom: 0.75rem;
-            color: #1a1a1a;
+            opacity: 0.8;
+            font-weight: 600;
+            color: #2d2d2d;
         }}
 
         .question-description {{
+            font-family: "Satoshi", sans-serif;
             font-size: 0.875rem;
             color: #666;
             margin-bottom: 0.75rem;
+            line-height: 1.5;
         }}
 
         input, textarea {{
-            width: 100%;
-            padding: 1rem;
-            border: 2px solid #ddd;
-            border-radius: 12px;
             font-family: "Satoshi", sans-serif;
+            width: 100%;
+            padding: 1rem 1.25rem;
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            border-radius: 16px;
+            color: #2d2d2d;
             font-size: 1rem;
-            transition: border-color 0.2s ease;
+            transition: all 0.3s ease;
+            box-sizing: border-box;
         }}
 
         textarea {{
             resize: vertical;
-            min-height: 100px;
+            min-height: 120px;
         }}
 
         input:focus, textarea:focus {{
             outline: none;
-            border-color: #667eea;
+            border-color: rgba(107, 155, 153, 0.3);
+            background: rgba(255, 255, 255, 0.9);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(107, 155, 153, 0.15);
         }}
 
         .submit-btn {{
             width: 100%;
             padding: 1.25rem;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: black;
             color: white;
             border: none;
-            border-radius: 12px;
+            border-radius: 16px;
             font-family: "Satoshi", sans-serif;
             font-weight: 600;
             font-size: 1.125rem;
             cursor: pointer;
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            transition: all 0.3s ease;
         }}
 
         .submit-btn:hover {{
             transform: translateY(-2px);
-            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
         }}
 
         .submit-btn:disabled {{
@@ -9224,49 +9244,75 @@ def render_embed_onboarding(config: Dict) -> str:
         }}
 
         .member-result {{
-            background: #f8f9fa;
-            border-radius: 12px;
-            padding: 1.5rem;
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 2rem;
             margin-bottom: 1.5rem;
-            border: 2px solid #e9ecef;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
+            transition: all 0.3s ease;
+        }}
+
+        .member-result:hover {{
+            transform: translateY(-4px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
         }}
 
         .member-name {{
             font-family: "Sentient", "Satoshi", sans-serif;
             font-size: 1.5rem;
-            font-weight: 600;
+            font-weight: 500;
             margin-bottom: 0.75rem;
-            color: #1a1a1a;
+            color: black;
+            letter-spacing: -0.02em;
         }}
 
         .score {{
             display: inline-block;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: black;
             color: white;
             padding: 0.5rem 1rem;
-            border-radius: 8px;
+            border-radius: 12px;
             font-weight: 600;
             margin-bottom: 1rem;
+            font-size: 0.875rem;
         }}
 
         .analysis-section {{
-            margin-top: 1rem;
+            margin-top: 1.25rem;
         }}
 
         .analysis-title {{
+            font-family: "Satoshi", sans-serif;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
             font-weight: 600;
             margin-bottom: 0.5rem;
-            color: #1a1a1a;
+            color: #2d2d2d;
+            opacity: 0.8;
         }}
 
         .analysis-text {{
-            color: #666;
+            font-family: "Satoshi", sans-serif;
+            color: #2d2d2d;
             line-height: 1.6;
+            font-size: 0.9375rem;
+        }}
+
+        .analysis-text ul {{
+            margin-top: 0.5rem;
+            padding-left: 1.5rem;
+        }}
+
+        .analysis-text li {{
+            margin-bottom: 0.5rem;
         }}
 
         .loading {{
             text-align: center;
-            padding: 2rem;
+            padding: 3rem;
             display: none;
         }}
 
@@ -9274,9 +9320,16 @@ def render_embed_onboarding(config: Dict) -> str:
             display: block;
         }}
 
+        .loading p {{
+            font-family: "Satoshi", sans-serif;
+            font-size: 1.125rem;
+            color: #2d2d2d;
+            opacity: 0.8;
+        }}
+
         .spinner {{
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #667eea;
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-top: 4px solid black;
             border-radius: 50%;
             width: 50px;
             height: 50px;
