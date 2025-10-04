@@ -565,6 +565,36 @@ class UserAuthSystem:
             )
         ''')
 
+        # Embed configurations - settings for embeddable widgets
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS embed_configurations (
+                id SERIAL PRIMARY KEY,
+                organization_id INTEGER NOT NULL,
+                embed_token TEXT UNIQUE NOT NULL,
+                mode TEXT NOT NULL CHECK (mode IN ('party', 'simulation')),
+                person_specification TEXT,
+                created_by INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                is_active BOOLEAN DEFAULT TRUE,
+                FOREIGN KEY (organization_id) REFERENCES organizations (id) ON DELETE CASCADE,
+                FOREIGN KEY (created_by) REFERENCES users (id),
+                UNIQUE(organization_id)
+            )
+        ''')
+
+        # Embed sessions - tracks anonymous widget usage
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS embed_sessions (
+                id SERIAL PRIMARY KEY,
+                embed_config_id INTEGER NOT NULL,
+                session_token TEXT UNIQUE NOT NULL,
+                onboarding_data TEXT NOT NULL,
+                results_data TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (embed_config_id) REFERENCES embed_configurations (id) ON DELETE CASCADE
+            )
+        ''')
+
         # Events table - stores upcoming events for matching
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS events (
@@ -8484,6 +8514,906 @@ def delete_organization(org_id):
         return redirect('/dashboard')
 
 
+@app.route('/organization/<int:org_id>/embed-settings', methods=['GET', 'POST'])
+@login_required
+def organization_embed_settings(org_id):
+    """Configure embed widget for organization (owner only)"""
+    user_id = session['user_id']
+    user_info = user_auth.get_user_info(user_id)
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Check if user is the owner
+        cursor.execute('''
+            SELECT o.id, o.name, o.created_by
+            FROM organizations o
+            WHERE o.id = %s AND o.is_active = TRUE
+        ''', (org_id,))
+
+        org = cursor.fetchone()
+
+        if not org or org['created_by'] != user_id:
+            conn.close()
+            flash('Organization not found or you do not have permission', 'error')
+            return redirect('/dashboard')
+
+        if request.method == 'POST':
+            mode = request.form.get('mode')
+            person_specification = request.form.get('person_specification', '').strip()
+
+            if mode not in ['party', 'simulation']:
+                flash('Invalid mode selected', 'error')
+                return redirect(f'/organization/{org_id}/embed-settings')
+
+            # Check if embed config already exists
+            cursor.execute('''
+                SELECT id, embed_token FROM embed_configurations
+                WHERE organization_id = %s
+            ''', (org_id,))
+
+            existing_config = cursor.fetchone()
+
+            if existing_config:
+                # Update existing config
+                cursor.execute('''
+                    UPDATE embed_configurations
+                    SET mode = %s, person_specification = %s, is_active = TRUE
+                    WHERE id = %s
+                ''', (mode, person_specification if mode == 'simulation' else None, existing_config['id']))
+                embed_token = existing_config['embed_token']
+            else:
+                # Create new config
+                embed_token = secrets.token_urlsafe(32)
+                cursor.execute('''
+                    INSERT INTO embed_configurations
+                    (organization_id, embed_token, mode, person_specification, created_by)
+                    VALUES (%s, %s, %s, %s, %s)
+                ''', (org_id, embed_token, mode, person_specification if mode == 'simulation' else None, user_id))
+
+            conn.commit()
+            flash('Embed settings saved successfully', 'success')
+
+        # Get current embed configuration
+        cursor.execute('''
+            SELECT * FROM embed_configurations
+            WHERE organization_id = %s
+        ''', (org_id,))
+
+        embed_config = cursor.fetchone()
+        conn.close()
+
+        # Render settings page
+        content = render_embed_settings_page(org, embed_config, user_info)
+        return render_template_with_header(f"Embed Settings - {org['name']}", content, user_info)
+
+    except Exception as e:
+        print(f"Error in embed settings: {e}")
+        import traceback
+        traceback.print_exc()
+        flash('Error loading embed settings', 'error')
+        return redirect('/dashboard')
+
+
+def render_embed_settings_page(org: Dict, embed_config: Optional[Dict], user_info: Dict) -> str:
+    """Render the embed settings configuration page"""
+
+    current_mode = embed_config['mode'] if embed_config else 'party'
+    person_spec = embed_config['person_specification'] if embed_config else ''
+    embed_token = embed_config['embed_token'] if embed_config else None
+
+    # Generate embed code if config exists
+    embed_code_section = ''
+    if embed_token:
+        base_url = request.host_url.rstrip('/')
+        embed_url = f"{base_url}/embed/{embed_token}"
+
+        iframe_code = f'<iframe src="{embed_url}" width="100%" height="800" frameborder="0"></iframe>'
+
+        embed_code_section = f'''
+        <div style="margin-top: 2rem; padding: 2rem; background: #f8f9fa; border-radius: 12px;">
+            <h3 style="font-family: 'Sentient', sans-serif; font-size: 1.5rem; margin-bottom: 1rem;">Embed Code</h3>
+            <p style="font-family: 'Satoshi', sans-serif; color: #666; margin-bottom: 1rem;">
+                Copy and paste this code into your website or Notion page:
+            </p>
+            <div style="background: white; padding: 1rem; border-radius: 8px; border: 1px solid #ddd; font-family: monospace; font-size: 0.875rem; overflow-x: auto; margin-bottom: 1rem;">
+                {iframe_code}
+            </div>
+            <button onclick="navigator.clipboard.writeText('{iframe_code}')"
+                    style="padding: 0.75rem 1.5rem; background: black; color: white; border: none; border-radius: 8px; font-family: 'Satoshi', sans-serif; font-weight: 600; cursor: pointer;">
+                Copy to Clipboard
+            </button>
+            <div style="margin-top: 1rem;">
+                <p style="font-family: 'Satoshi', sans-serif; color: #666; font-size: 0.875rem;">
+                    <strong>Direct link:</strong> <a href="{embed_url}" target="_blank" style="color: #0066cc;">{embed_url}</a>
+                </p>
+            </div>
+        </div>
+        '''
+
+    party_checked = 'checked' if current_mode == 'party' else ''
+    simulation_checked = 'checked' if current_mode == 'simulation' else ''
+    person_spec_display = 'block' if current_mode == 'simulation' else 'none'
+
+    content = f'''
+    <div style="max-width: 800px; margin: 0 auto; padding: 2rem;">
+        <div style="margin-bottom: 2rem;">
+            <a href="/organization/{org['id']}" style="color: #666; text-decoration: none; font-family: 'Satoshi', sans-serif;">
+                ← Back to Organization
+            </a>
+        </div>
+
+        <h2 style="font-family: 'Sentient', sans-serif; font-size: 2rem; margin-bottom: 1rem;">Embeddable Widget Settings</h2>
+        <p style="font-family: 'Satoshi', sans-serif; color: #666; margin-bottom: 2rem;">
+            Configure how your team assessment widget appears on your website or Notion page.
+        </p>
+
+        <form method="POST" style="background: white; padding: 2rem; border-radius: 12px; border: 1px solid #ddd;">
+            <div style="margin-bottom: 2rem;">
+                <label style="display: block; font-family: 'Satoshi', sans-serif; font-weight: 600; margin-bottom: 1rem;">Widget Mode</label>
+
+                <div style="margin-bottom: 1rem; padding: 1.5rem; border: 2px solid {'black' if current_mode == 'party' else '#ddd'}; border-radius: 12px; cursor: pointer;"
+                     onclick="document.getElementById('mode_party').checked = true; togglePersonSpec();">
+                    <label style="display: flex; align-items: start; cursor: pointer;">
+                        <input type="radio" name="mode" id="mode_party" value="party" {party_checked}
+                               onchange="togglePersonSpec()"
+                               style="margin-right: 1rem; margin-top: 0.25rem;">
+                        <div>
+                            <div style="font-family: 'Satoshi', sans-serif; font-weight: 600; font-size: 1.125rem; margin-bottom: 0.5rem;">
+                                Party Mode (Compatibility)
+                            </div>
+                            <div style="font-family: 'Satoshi', sans-serif; color: #666; font-size: 0.875rem;">
+                                Shows the user how compatible they are with each team member. Perfect for recruiting, team building, or finding cultural fit.
+                            </div>
+                        </div>
+                    </label>
+                </div>
+
+                <div style="margin-bottom: 1rem; padding: 1.5rem; border: 2px solid {'black' if current_mode == 'simulation' else '#ddd'}; border-radius: 12px; cursor: pointer;"
+                     onclick="document.getElementById('mode_simulation').checked = true; togglePersonSpec();">
+                    <label style="display: flex; align-items: start; cursor: pointer;">
+                        <input type="radio" name="mode" id="mode_simulation" value="simulation" {simulation_checked}
+                               onchange="togglePersonSpec()"
+                               style="margin-right: 1rem; margin-top: 0.25rem;">
+                        <div>
+                            <div style="font-family: 'Satoshi', sans-serif; font-weight: 600; font-size: 1.125rem; margin-bottom: 0.5rem;">
+                                Simulation Mode (Team Assessment)
+                            </div>
+                            <div style="font-family: 'Satoshi', sans-serif; color: #666; font-size: 0.875rem;">
+                                Shows how each team member would engage with a specific type of person. Perfect for clinical teams, customer service, or client-facing roles.
+                            </div>
+                        </div>
+                    </label>
+                </div>
+            </div>
+
+            <div id="person_spec_section" style="margin-bottom: 2rem; display: {person_spec_display};">
+                <label style="display: block; font-family: 'Satoshi', sans-serif; font-weight: 600; margin-bottom: 0.5rem;">
+                    Person Specification
+                </label>
+                <p style="font-family: 'Satoshi', sans-serif; color: #666; font-size: 0.875rem; margin-bottom: 0.75rem;">
+                    Describe the type of person entering your clinic/team (e.g., "new patient seeking therapy", "client requesting legal advice", "customer with a complaint")
+                </p>
+                <input type="text" name="person_specification" value="{person_spec}"
+                       placeholder="e.g., new patient seeking therapy"
+                       style="width: 100%; padding: 1rem; border: 1px solid #ddd; border-radius: 12px; font-size: 1rem; font-family: 'Satoshi', sans-serif; box-sizing: border-box;">
+            </div>
+
+            <div style="display: flex; gap: 1rem;">
+                <button type="submit" style="flex: 1; padding: 1rem; background: black; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer; font-family: 'Satoshi', sans-serif;">
+                    Save & Generate Embed Code
+                </button>
+                <a href="/organization/{org['id']}" style="flex: 1; padding: 1rem; background: white; color: black; border: 2px solid black; border-radius: 12px; font-weight: 600; text-decoration: none; text-align: center; font-family: 'Satoshi', sans-serif; display: block;">
+                    Cancel
+                </a>
+            </div>
+        </form>
+
+        {embed_code_section}
+
+        <script>
+            function togglePersonSpec() {{
+                const simulationMode = document.getElementById('mode_simulation').checked;
+                const personSpecSection = document.getElementById('person_spec_section');
+                personSpecSection.style.display = simulationMode ? 'block' : 'none';
+            }}
+        </script>
+    </div>
+    '''
+
+    return content
+
+
+@app.route('/embed/<embed_token>')
+def embed_widget(embed_token):
+    """Public embed widget - no authentication required"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Get embed configuration
+        cursor.execute('''
+            SELECT ec.*, o.name as org_name
+            FROM embed_configurations ec
+            INNER JOIN organizations o ON ec.organization_id = o.id
+            WHERE ec.embed_token = %s AND ec.is_active = TRUE
+        ''', (embed_token,))
+
+        config = cursor.fetchone()
+        conn.close()
+
+        if not config:
+            return "Invalid or inactive embed widget", 404
+
+        # Render minimal onboarding questionnaire
+        content = render_embed_onboarding(config)
+        return content
+
+    except Exception as e:
+        print(f"Error loading embed widget: {e}")
+        import traceback
+        traceback.print_exc()
+        return "Error loading widget", 500
+
+
+@app.route('/embed/<embed_token>/process', methods=['POST'])
+def embed_process(embed_token):
+    """Process embed widget submission and return results"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Get embed configuration
+        cursor.execute('''
+            SELECT ec.*, o.id as org_id, o.name as org_name
+            FROM embed_configurations ec
+            INNER JOIN organizations o ON ec.organization_id = o.id
+            WHERE ec.embed_token = %s AND ec.is_active = TRUE
+        ''', (embed_token,))
+
+        config = cursor.fetchone()
+
+        if not config:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Invalid widget'}), 404
+
+        # Get organization members and their profiles
+        cursor.execute('''
+            SELECT
+                u.id, u.first_name, u.last_name,
+                up.profile_data
+            FROM organization_members om
+            INNER JOIN users u ON om.user_id = u.id
+            LEFT JOIN user_profiles up ON u.id = up.user_id
+            WHERE om.organization_id = %s AND om.is_active = TRUE
+        ''', (config['org_id'],))
+
+        members = cursor.fetchall()
+
+        # Collect onboarding data from form
+        onboarding_data = {
+            'defining_moment': request.form.get('defining_moment', ''),
+            'resource_allocation': request.form.get('resource_allocation', ''),
+            'conflict_response': request.form.get('conflict_response', ''),
+            'trade_off': request.form.get('trade_off', ''),
+            'social_identity': request.form.get('social_identity', ''),
+            'moral_dilemma': request.form.get('moral_dilemma', ''),
+            'system_trust': request.form.get('system_trust', ''),
+            'stress_response': request.form.get('stress_response', ''),
+            'future_values': request.form.get('future_values', '')
+        }
+
+        # Create session token
+        session_token = secrets.token_urlsafe(32)
+
+        # Save session data
+        cursor.execute('''
+            INSERT INTO embed_sessions (embed_config_id, session_token, onboarding_data)
+            VALUES (%s, %s, %s)
+            RETURNING id
+        ''', (config['id'], session_token, json.dumps(onboarding_data)))
+
+        session_id = cursor.fetchone()['id']
+        conn.commit()
+
+        # Run simulation based on mode
+        if config['mode'] == 'party':
+            # Party mode: compatibility between user and each team member
+            results = run_embed_party_mode(onboarding_data, members, config)
+        else:
+            # Simulation mode: how team engages with this person specification
+            results = run_embed_simulation_mode(onboarding_data, members, config)
+
+        # Update session with results
+        cursor.execute('''
+            UPDATE embed_sessions
+            SET results_data = %s
+            WHERE id = %s
+        ''', (json.dumps(results), session_id))
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'session_token': session_token,
+            'results': results
+        })
+
+    except Exception as e:
+        print(f"Error processing embed widget: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+def run_embed_party_mode(user_data: Dict, members: List[Dict], config: Dict) -> Dict:
+    """Run party mode for embed widget - analyze compatibility between user and team"""
+    client = OpenAI(api_key=API_KEY)
+
+    # Create user profile summary from onboarding
+    user_summary = f"""
+User Profile Summary:
+- Defining Moment: {user_data.get('defining_moment', 'N/A')}
+- Resource Allocation: {user_data.get('resource_allocation', 'N/A')}
+- Conflict Response: {user_data.get('conflict_response', 'N/A')}
+- Trade-off: {user_data.get('trade_off', 'N/A')}
+- Social Identity: {user_data.get('social_identity', 'N/A')}
+- Moral Dilemma: {user_data.get('moral_dilemma', 'N/A')}
+- System Trust: {user_data.get('system_trust', 'N/A')}
+- Stress Response: {user_data.get('stress_response', 'N/A')}
+- Future Values: {user_data.get('future_values', 'N/A')}
+"""
+
+    results = {'members': []}
+
+    for member in members:
+        member_name = f"{member['first_name']} {member['last_name']}"
+        member_profile = {}
+
+        if member.get('profile_data'):
+            try:
+                member_profile = json.loads(member['profile_data'])
+            except:
+                pass
+
+        # Create member profile summary
+        member_summary = f"""
+Team Member: {member_name}
+{member_profile.get('agent_onboarding_script', 'Profile not available')}
+"""
+
+        prompt = f"""You are analyzing compatibility between a potential new person and an existing team member.
+
+{user_summary}
+
+{member_summary}
+
+Analyze the compatibility between this person and {member_name}. Focus on:
+1. Communication style compatibility
+2. Value alignment
+3. Work style compatibility
+4. Potential synergies
+5. Potential friction points
+
+Return your analysis as JSON with this structure:
+{{
+    "compatibility_score": <0-100>,
+    "summary": "<brief 2-3 sentence overview>",
+    "strengths": ["<strength 1>", "<strength 2>"],
+    "challenges": ["<challenge 1>", "<challenge 2>"],
+    "recommendation": "<overall recommendation>"
+}}
+"""
+
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.7
+            )
+
+            analysis = json.loads(response.choices[0].message.content)
+            results['members'].append({
+                'name': member_name,
+                'analysis': analysis
+            })
+
+        except Exception as e:
+            print(f"Error analyzing compatibility for {member_name}: {e}")
+            results['members'].append({
+                'name': member_name,
+                'analysis': {
+                    'compatibility_score': 50,
+                    'summary': 'Analysis unavailable',
+                    'strengths': [],
+                    'challenges': [],
+                    'recommendation': 'Unable to complete analysis'
+                }
+            })
+
+    return results
+
+
+def run_embed_simulation_mode(user_data: Dict, members: List[Dict], config: Dict) -> Dict:
+    """Run simulation mode for embed widget - analyze how team would engage with this person"""
+    client = OpenAI(api_key=API_KEY)
+
+    person_spec = config.get('person_specification', 'new person')
+
+    # Create person profile from onboarding
+    person_profile = f"""
+A {person_spec} with the following characteristics:
+- Defining Moment: {user_data.get('defining_moment', 'N/A')}
+- Resource Allocation: {user_data.get('resource_allocation', 'N/A')}
+- Conflict Response: {user_data.get('conflict_response', 'N/A')}
+- Trade-off: {user_data.get('trade_off', 'N/A')}
+- Social Identity: {user_data.get('social_identity', 'N/A')}
+- Moral Dilemma: {user_data.get('moral_dilemma', 'N/A')}
+- System Trust: {user_data.get('system_trust', 'N/A')}
+- Stress Response: {user_data.get('stress_response', 'N/A')}
+- Future Values: {user_data.get('future_values', 'N/A')}
+"""
+
+    results = {'members': []}
+
+    for member in members:
+        member_name = f"{member['first_name']} {member['last_name']}"
+        member_profile = {}
+
+        if member.get('profile_data'):
+            try:
+                member_profile = json.loads(member['profile_data'])
+            except:
+                pass
+
+        # Create member profile summary
+        member_summary = f"""
+Team Member: {member_name}
+{member_profile.get('agent_onboarding_script', 'Profile not available')}
+"""
+
+        prompt = f"""You are analyzing how a team member would engage with a specific type of person.
+
+{person_profile}
+
+{member_summary}
+
+Analyze how {member_name} would engage with this {person_spec}. Consider:
+1. Their natural approach and interaction style
+2. Strengths they would bring to this engagement
+3. Potential challenges or blind spots
+4. Quality of the therapeutic/professional relationship
+5. Overall effectiveness
+
+Return your analysis as JSON with this structure:
+{{
+    "engagement_style": "<description of how they would approach>",
+    "strengths": ["<strength 1>", "<strength 2>", "<strength 3>"],
+    "challenges": ["<challenge 1>", "<challenge 2>"],
+    "relationship_quality": "<assessment of relationship dynamics>",
+    "effectiveness_score": <0-100>,
+    "recommendation": "<overall assessment>"
+}}
+"""
+
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.7
+            )
+
+            analysis = json.loads(response.choices[0].message.content)
+            results['members'].append({
+                'name': member_name,
+                'analysis': analysis
+            })
+
+        except Exception as e:
+            print(f"Error analyzing engagement for {member_name}: {e}")
+            results['members'].append({
+                'name': member_name,
+                'analysis': {
+                    'engagement_style': 'Analysis unavailable',
+                    'strengths': [],
+                    'challenges': [],
+                    'relationship_quality': 'Unable to assess',
+                    'effectiveness_score': 50,
+                    'recommendation': 'Unable to complete analysis'
+                }
+            })
+
+    return results
+
+
+def render_embed_onboarding(config: Dict) -> str:
+    """Render minimal onboarding questionnaire for embed widget"""
+
+    mode_description = ""
+    if config['mode'] == 'party':
+        mode_description = "Answer these questions to see how compatible you are with our team members."
+    else:
+        person_spec = config.get('person_specification', 'a person')
+        mode_description = f"Answer these questions as if you are {person_spec} to see how our team would engage with you."
+
+    return f'''
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{config['org_name']} - Team Assessment</title>
+    <link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=sentient@400,500,600,700&display=swap">
+    <style>
+        * {{
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }}
+
+        body {{
+            font-family: "Satoshi", sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 2rem;
+        }}
+
+        .container {{
+            max-width: 700px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 3rem;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }}
+
+        h1 {{
+            font-family: "Sentient", "Satoshi", sans-serif;
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            color: #1a1a1a;
+        }}
+
+        .subtitle {{
+            font-size: 1.125rem;
+            color: #666;
+            margin-bottom: 2rem;
+        }}
+
+        .question {{
+            margin-bottom: 2.5rem;
+        }}
+
+        .question-label {{
+            display: block;
+            font-weight: 600;
+            font-size: 1.125rem;
+            margin-bottom: 0.75rem;
+            color: #1a1a1a;
+        }}
+
+        .question-description {{
+            font-size: 0.875rem;
+            color: #666;
+            margin-bottom: 0.75rem;
+        }}
+
+        textarea {{
+            width: 100%;
+            padding: 1rem;
+            border: 2px solid #ddd;
+            border-radius: 12px;
+            font-family: "Satoshi", sans-serif;
+            font-size: 1rem;
+            resize: vertical;
+            min-height: 100px;
+            transition: border-color 0.2s ease;
+        }}
+
+        textarea:focus {{
+            outline: none;
+            border-color: #667eea;
+        }}
+
+        .submit-btn {{
+            width: 100%;
+            padding: 1.25rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-family: "Satoshi", sans-serif;
+            font-weight: 600;
+            font-size: 1.125rem;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }}
+
+        .submit-btn:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+        }}
+
+        .submit-btn:disabled {{
+            opacity: 0.6;
+            cursor: not-allowed;
+        }}
+
+        .results {{
+            display: none;
+        }}
+
+        .results.show {{
+            display: block;
+        }}
+
+        .member-result {{
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            border: 2px solid #e9ecef;
+        }}
+
+        .member-name {{
+            font-family: "Sentient", "Satoshi", sans-serif;
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 0.75rem;
+            color: #1a1a1a;
+        }}
+
+        .score {{
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-weight: 600;
+            margin-bottom: 1rem;
+        }}
+
+        .analysis-section {{
+            margin-top: 1rem;
+        }}
+
+        .analysis-title {{
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            color: #1a1a1a;
+        }}
+
+        .analysis-text {{
+            color: #666;
+            line-height: 1.6;
+        }}
+
+        .loading {{
+            text-align: center;
+            padding: 2rem;
+            display: none;
+        }}
+
+        .loading.show {{
+            display: block;
+        }}
+
+        .spinner {{
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }}
+
+        @keyframes spin {{
+            0% {{ transform: rotate(0deg); }}
+            100% {{ transform: rotate(360deg); }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="questionnaire">
+            <h1>{config['org_name']}</h1>
+            <p class="subtitle">{mode_description}</p>
+
+            <form id="onboardingForm">
+                <div class="question">
+                    <label class="question-label">Defining Moment</label>
+                    <p class="question-description">Describe a life-changing decision that shaped who you are today.</p>
+                    <textarea name="defining_moment" required></textarea>
+                </div>
+
+                <div class="question">
+                    <label class="question-label">Resource Allocation</label>
+                    <p class="question-description">If you received an unexpected $10,000 windfall, how would you allocate it?</p>
+                    <textarea name="resource_allocation" required></textarea>
+                </div>
+
+                <div class="question">
+                    <label class="question-label">Conflict Response</label>
+                    <p class="question-description">Describe a time when you had a significant disagreement with someone. How did you navigate it?</p>
+                    <textarea name="conflict_response" required></textarea>
+                </div>
+
+                <div class="question">
+                    <label class="question-label">Trade-off Scenario</label>
+                    <p class="question-description">Would you prefer a high-paying job you find meaningless, or meaningful work with lower pay? Why?</p>
+                    <textarea name="trade_off" required></textarea>
+                </div>
+
+                <div class="question">
+                    <label class="question-label">Social Identity</label>
+                    <p class="question-description">What communities or groups are most important to your identity?</p>
+                    <textarea name="social_identity" required></textarea>
+                </div>
+
+                <div class="question">
+                    <label class="question-label">Moral Dilemma</label>
+                    <p class="question-description">A close friend does something unethical at work. Do you report it or stay loyal? Why?</p>
+                    <textarea name="moral_dilemma" required></textarea>
+                </div>
+
+                <div class="question">
+                    <label class="question-label">System Trust</label>
+                    <p class="question-description">How much do you trust institutions (government, corporations, media)? Why?</p>
+                    <textarea name="system_trust" required></textarea>
+                </div>
+
+                <div class="question">
+                    <label class="question-label">Stress Response</label>
+                    <p class="question-description">Describe a highly stressful situation and how you coped with it.</p>
+                    <textarea name="stress_response" required></textarea>
+                </div>
+
+                <div class="question">
+                    <label class="question-label">Future & Values</label>
+                    <p class="question-description">What are your most important goals for the next 5 years?</p>
+                    <textarea name="future_values" required></textarea>
+                </div>
+
+                <button type="submit" class="submit-btn" id="submitBtn">View Results</button>
+            </form>
+        </div>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Analyzing responses...</p>
+        </div>
+
+        <div class="results" id="results">
+            <h1>Results</h1>
+            <p class="subtitle" id="resultsSubtitle"></p>
+            <div id="resultsContent"></div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('onboardingForm').addEventListener('submit', async (e) => {{
+            e.preventDefault();
+
+            const formData = new FormData(e.target);
+            const submitBtn = document.getElementById('submitBtn');
+            const questionnaire = document.getElementById('questionnaire');
+            const loading = document.getElementById('loading');
+            const results = document.getElementById('results');
+
+            // Show loading
+            questionnaire.style.display = 'none';
+            loading.classList.add('show');
+            submitBtn.disabled = true;
+
+            try {{
+                const response = await fetch('/embed/{config['embed_token']}/process', {{
+                    method: 'POST',
+                    body: formData
+                }});
+
+                const data = await response.json();
+
+                if (data.success) {{
+                    displayResults(data.results, '{config['mode']}');
+                    loading.classList.remove('show');
+                    results.classList.add('show');
+                }} else {{
+                    alert('Error: ' + (data.error || 'Unknown error'));
+                    loading.classList.remove('show');
+                    questionnaire.style.display = 'block';
+                    submitBtn.disabled = false;
+                }}
+            }} catch (error) {{
+                console.error('Error:', error);
+                alert('An error occurred. Please try again.');
+                loading.classList.remove('show');
+                questionnaire.style.display = 'block';
+                submitBtn.disabled = false;
+            }}
+        }});
+
+        function displayResults(results, mode) {{
+            const resultsContent = document.getElementById('resultsContent');
+            const resultsSubtitle = document.getElementById('resultsSubtitle');
+
+            if (mode === 'party') {{
+                resultsSubtitle.textContent = 'Your compatibility with each team member:';
+
+                resultsContent.innerHTML = results.members.map(member => {{
+                    const analysis = member.analysis;
+                    return `
+                        <div class="member-result">
+                            <div class="member-name">${{member.name}}</div>
+                            <div class="score">Compatibility: ${{analysis.compatibility_score}}%</div>
+                            <div class="analysis-section">
+                                <p class="analysis-text">${{analysis.summary}}</p>
+                            </div>
+                            <div class="analysis-section">
+                                <div class="analysis-title">Strengths</div>
+                                <ul class="analysis-text">
+                                    ${{analysis.strengths.map(s => `<li>${{s}}</li>`).join('')}}
+                                </ul>
+                            </div>
+                            <div class="analysis-section">
+                                <div class="analysis-title">Potential Challenges</div>
+                                <ul class="analysis-text">
+                                    ${{analysis.challenges.map(c => `<li>${{c}}</li>`).join('')}}
+                                </ul>
+                            </div>
+                            <div class="analysis-section">
+                                <div class="analysis-title">Recommendation</div>
+                                <p class="analysis-text">${{analysis.recommendation}}</p>
+                            </div>
+                        </div>
+                    `;
+                }}).join('');
+            }} else {{
+                resultsSubtitle.textContent = 'How each team member would engage with you:';
+
+                resultsContent.innerHTML = results.members.map(member => {{
+                    const analysis = member.analysis;
+                    return `
+                        <div class="member-result">
+                            <div class="member-name">${{member.name}}</div>
+                            <div class="score">Effectiveness: ${{analysis.effectiveness_score}}%</div>
+                            <div class="analysis-section">
+                                <div class="analysis-title">Engagement Style</div>
+                                <p class="analysis-text">${{analysis.engagement_style}}</p>
+                            </div>
+                            <div class="analysis-section">
+                                <div class="analysis-title">Strengths</div>
+                                <ul class="analysis-text">
+                                    ${{analysis.strengths.map(s => `<li>${{s}}</li>`).join('')}}
+                                </ul>
+                            </div>
+                            <div class="analysis-section">
+                                <div class="analysis-title">Challenges</div>
+                                <ul class="analysis-text">
+                                    ${{analysis.challenges.map(c => `<li>${{c}}</li>`).join('')}}
+                                </ul>
+                            </div>
+                            <div class="analysis-section">
+                                <div class="analysis-title">Relationship Quality</div>
+                                <p class="analysis-text">${{analysis.relationship_quality}}</p>
+                            </div>
+                            <div class="analysis-section">
+                                <div class="analysis-title">Overall Assessment</div>
+                                <p class="analysis-text">${{analysis.recommendation}}</p>
+                            </div>
+                        </div>
+                    `;
+                }}).join('');
+            }}
+        }}
+    </script>
+</body>
+</html>
+    '''
+
+
 @app.route('/organization/<int:org_id>')
 @login_required
 def organization_view(org_id):
@@ -8969,6 +9899,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                 <div class="invite-section">
                     <input type="text" class="invite-link-input" id="inviteLink" value="{invite_url}" readonly>
                     <button class="copy-btn" onclick="copyInviteLink()">Copy Link</button>
+                    {f'<a href="/organization/{org_info["id"]}/embed-settings" class="copy-btn" style="margin-left: 0.5rem; text-decoration: none;">Embed Widget</a>' if org_info['is_owner'] else ''}
                 </div>
             </div>
 
