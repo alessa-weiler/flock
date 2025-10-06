@@ -802,27 +802,34 @@ class UserAuthSystem:
         try:
             conn = get_db_connection()
             cursor = conn.cursor()
-            
+
             cursor.execute('''
-                SELECT email_encrypted, first_name_encrypted, last_name_encrypted, 
-                    phone_encrypted, profile_completed, profile_date
+                SELECT email_encrypted, first_name_encrypted, last_name_encrypted,
+                    phone_encrypted, profile_completed, profile_date,
+                    email, first_name, last_name, phone
                 FROM users WHERE id = %s
             ''', (user_id,))
-            
+
             user = cursor.fetchone()
             conn.close()
-            
+
             if user:
+                # Decrypt encrypted fields, with fallback to plain text fields
+                email_decrypted = self.encryption.decrypt_sensitive_data(user['email_encrypted']) if user['email_encrypted'] else None
+                first_name_decrypted = self.encryption.decrypt_sensitive_data(user['first_name_encrypted']) if user['first_name_encrypted'] else None
+                last_name_decrypted = self.encryption.decrypt_sensitive_data(user['last_name_encrypted']) if user['last_name_encrypted'] else None
+                phone_decrypted = self.encryption.decrypt_sensitive_data(user['phone_encrypted']) if user['phone_encrypted'] else None
+
                 return {
-                    'email': self.encryption.decrypt_sensitive_data(user['email_encrypted']) if user['email_encrypted'] else None,
-                    'first_name': self.encryption.decrypt_sensitive_data(user['first_name_encrypted']) if user['first_name_encrypted'] else None,
-                    'last_name': self.encryption.decrypt_sensitive_data(user['last_name_encrypted']) if user['last_name_encrypted'] else None,
-                    'phone': self.encryption.decrypt_sensitive_data(user['phone_encrypted']) if user['phone_encrypted'] else None,
+                    'email': email_decrypted or user.get('email'),
+                    'first_name': first_name_decrypted or user.get('first_name') or '',
+                    'last_name': last_name_decrypted or user.get('last_name') or '',
+                    'phone': phone_decrypted or user.get('phone'),
                     'profile_completed': bool(user['profile_completed']) if user['profile_completed'] is not None else False,
                     'profile_date': user['profile_date']
                 }
             return None
-            
+
         except Exception as e:
             print(f"Error getting user info: {e}")
             return None
@@ -9406,19 +9413,35 @@ def organization_view(org_id):
 
         # Get all members of the organization
         cursor.execute('''
-            SELECT u.id, u.first_name, u.last_name, om.role, om.joined_at
+            SELECT u.id, u.first_name, u.last_name,
+                   u.first_name_encrypted, u.last_name_encrypted,
+                   om.role, om.joined_at
             FROM organization_members om
             INNER JOIN users u ON om.user_id = u.id
             WHERE om.organization_id = %s AND om.is_active = TRUE
             ORDER BY om.joined_at ASC
         ''', (org_id,))
 
-        members = cursor.fetchall()
+        members_raw = cursor.fetchall()
+
+        # Decrypt member names with fallback to plain text
+        members = []
+        for member in members_raw:
+            first_name = user_auth.encryption.decrypt_sensitive_data(member['first_name_encrypted']) if member['first_name_encrypted'] else member.get('first_name') or ''
+            last_name = user_auth.encryption.decrypt_sensitive_data(member['last_name_encrypted']) if member['last_name_encrypted'] else member.get('last_name') or ''
+
+            members.append({
+                'id': member['id'],
+                'first_name': first_name,
+                'last_name': last_name,
+                'role': member['role'],
+                'joined_at': member['joined_at']
+            })
 
         # Get recent simulations for this organization
         cursor.execute('''
             SELECT s.id, s.scenario_text, s.created_at, s.status,
-                   u.first_name as created_by_name
+                   u.first_name, u.first_name_encrypted
             FROM simulations s
             INNER JOIN users u ON s.created_by = u.id
             WHERE s.organization_id = %s
@@ -9426,7 +9449,19 @@ def organization_view(org_id):
             LIMIT 10
         ''', (org_id,))
 
-        recent_simulations = cursor.fetchall()
+        simulations_raw = cursor.fetchall()
+
+        # Decrypt simulation creator names with fallback
+        recent_simulations = []
+        for sim in simulations_raw:
+            created_by_name = user_auth.encryption.decrypt_sensitive_data(sim['first_name_encrypted']) if sim['first_name_encrypted'] else sim.get('first_name') or 'Unknown'
+            recent_simulations.append({
+                'id': sim['id'],
+                'scenario_text': sim['scenario_text'],
+                'created_at': sim['created_at'],
+                'status': sim['status'],
+                'created_by_name': created_by_name
+            })
 
         conn.close()
 
