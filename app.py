@@ -610,6 +610,28 @@ class UserAuthSystem:
             )
         ''')
 
+        # Applicants table - tracks candidates who apply via widget
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS applicants (
+                id SERIAL PRIMARY KEY,
+                organization_id INTEGER NOT NULL,
+                embed_session_id INTEGER,
+                full_name VARCHAR(255) NOT NULL,
+                email VARCHAR(255) NOT NULL,
+                linkedin_url TEXT,
+                application_token TEXT UNIQUE NOT NULL,
+                onboarding_data TEXT NOT NULL,
+                compatibility_results TEXT,
+                behavioral_fit_analysis TEXT,
+                status VARCHAR(50) DEFAULT 'pending',
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (organization_id) REFERENCES organizations (id) ON DELETE CASCADE,
+                FOREIGN KEY (embed_session_id) REFERENCES embed_sessions (id) ON DELETE SET NULL
+            )
+        ''')
+
         # Events table - stores upcoming events for matching
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS events (
@@ -4965,8 +4987,8 @@ def register():
                 session['user_id'] = result['user_id']
                 session['user_email'] = email
                 session['user_name'] = first_name
-                flash('Account created successfully! Choose your agent to begin.', 'success')
-                return redirect('/choose-agent')  # Changed from /profile-setup
+                flash('Account created successfully! Let\'s set up your profile.', 'success')
+                return redirect('/onboarding/step/1')
             else:
                 flash(result['error'], 'error')
     
@@ -7841,6 +7863,180 @@ def organization_embed_settings(org_id):
         return redirect('/dashboard')
 
 
+@app.route('/organization/<int:org_id>/applicants')
+@login_required
+def organization_applicants(org_id):
+    """View applicants for organization"""
+    user_id = session['user_id']
+    user_info = user_auth.get_user_info(user_id)
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Check if user is a member of the organization
+        cursor.execute('''
+            SELECT o.id, o.name, om.role
+            FROM organizations o
+            INNER JOIN organization_members om ON o.id = om.organization_id
+            WHERE o.id = %s AND om.user_id = %s AND o.is_active = TRUE AND om.is_active = TRUE
+        ''', (org_id, user_id))
+
+        org = cursor.fetchone()
+
+        if not org:
+            conn.close()
+            flash('Organization not found or you do not have access', 'error')
+            return redirect('/dashboard')
+
+        # Get all applicants for this organization
+        cursor.execute('''
+            SELECT
+                id, full_name, email, linkedin_url,
+                compatibility_results, behavioral_fit_analysis,
+                status, created_at, application_token
+            FROM applicants
+            WHERE organization_id = %s
+            ORDER BY created_at DESC
+        ''', (org_id,))
+
+        applicants = cursor.fetchall()
+
+        # Parse compatibility results for each applicant
+        for applicant in applicants:
+            if applicant['compatibility_results']:
+                try:
+                    applicant['compatibility_data'] = json.loads(applicant['compatibility_results'])
+                    # Calculate average score
+                    scores = [m.get('compatibility_score', 0) for m in applicant['compatibility_data'].get('members', [])]
+                    applicant['avg_score'] = sum(scores) / len(scores) if scores else 0
+                except:
+                    applicant['compatibility_data'] = {}
+                    applicant['avg_score'] = 0
+
+        conn.close()
+
+        # Render applicants dashboard
+        content = render_applicants_dashboard(org, applicants, user_info)
+        return render_template_with_header(f"Applicants - {org['name']}", content, user_info)
+
+    except Exception as e:
+        print(f"Error loading applicants: {e}")
+        import traceback
+        traceback.print_exc()
+        flash('Error loading applicants', 'error')
+        return redirect('/dashboard')
+
+
+@app.route('/organization/<int:org_id>/applicant/<int:applicant_id>')
+@login_required
+def view_applicant(org_id, applicant_id):
+    """View detailed applicant profile"""
+    user_id = session['user_id']
+    user_info = user_auth.get_user_info(user_id)
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Check if user is a member of the organization
+        cursor.execute('''
+            SELECT o.id, o.name, om.role
+            FROM organizations o
+            INNER JOIN organization_members om ON o.id = om.organization_id
+            WHERE o.id = %s AND om.user_id = %s AND o.is_active = TRUE AND om.is_active = TRUE
+        ''', (org_id, user_id))
+
+        org = cursor.fetchone()
+
+        if not org:
+            conn.close()
+            flash('Organization not found or you do not have access', 'error')
+            return redirect('/dashboard')
+
+        # Get applicant details
+        cursor.execute('''
+            SELECT
+                id, full_name, email, linkedin_url,
+                onboarding_data, compatibility_results, behavioral_fit_analysis,
+                status, notes, created_at
+            FROM applicants
+            WHERE id = %s AND organization_id = %s
+        ''', (applicant_id, org_id))
+
+        applicant = cursor.fetchone()
+
+        if not applicant:
+            conn.close()
+            flash('Applicant not found', 'error')
+            return redirect(f'/organization/{org_id}/applicants')
+
+        # Parse JSON data
+        if applicant['onboarding_data']:
+            applicant['onboarding'] = json.loads(applicant['onboarding_data'])
+        if applicant['compatibility_results']:
+            applicant['compatibility_data'] = json.loads(applicant['compatibility_results'])
+
+        conn.close()
+
+        # Render detailed applicant view
+        content = render_applicant_detail(org, applicant, user_info)
+        return render_template_with_header(f"{applicant['full_name']} - {org['name']}", content, user_info)
+
+    except Exception as e:
+        print(f"Error loading applicant: {e}")
+        import traceback
+        traceback.print_exc()
+        flash('Error loading applicant', 'error')
+        return redirect(f'/organization/{org_id}/applicants')
+
+
+@app.route('/organization/<int:org_id>/applicant/<int:applicant_id>/update-status', methods=['POST'])
+@login_required
+def update_applicant_status(org_id, applicant_id):
+    """Update applicant status"""
+    user_id = session['user_id']
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Check if user has permission (owner or member)
+        cursor.execute('''
+            SELECT om.role
+            FROM organization_members om
+            WHERE om.organization_id = %s AND om.user_id = %s AND om.is_active = TRUE
+        ''', (org_id, user_id))
+
+        member = cursor.fetchone()
+
+        if not member:
+            conn.close()
+            return jsonify({'success': False, 'error': 'No permission'}), 403
+
+        status = request.json.get('status')
+        notes = request.json.get('notes', '')
+
+        if status not in ['pending', 'reviewing', 'shortlisted', 'rejected', 'hired']:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Invalid status'}), 400
+
+        cursor.execute('''
+            UPDATE applicants
+            SET status = %s, notes = %s, updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s AND organization_id = %s
+        ''', (status, notes, applicant_id, org_id))
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({'success': True})
+
+    except Exception as e:
+        print(f"Error updating applicant status: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 def render_embed_settings_page(org: Dict, embed_config: Optional[Dict], user_info: Dict) -> str:
     """Render the embed settings configuration page"""
 
@@ -8140,12 +8336,36 @@ def embed_process(embed_token):
             WHERE id = %s
         ''', (json.dumps(results), session_id))
 
+        # If in party mode (applicant assessment), also create an applicant record
+        applicant_id = None
+        if config['mode'] == 'party' and onboarding_data.get('full_name') and onboarding_data.get('email'):
+            # Generate behavioral fit analysis
+            behavioral_fit = generate_behavioral_fit_analysis(onboarding_data, results, members)
+
+            # Create applicant record
+            application_token = secrets.token_urlsafe(32)
+            cursor.execute('''
+                INSERT INTO applicants (
+                    organization_id, embed_session_id, full_name, email, linkedin_url,
+                    application_token, onboarding_data, compatibility_results, behavioral_fit_analysis
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+            ''', (
+                config['org_id'], session_id, onboarding_data['full_name'],
+                onboarding_data['email'], onboarding_data.get('linkedin_url', ''),
+                application_token, json.dumps(onboarding_data), json.dumps(results),
+                behavioral_fit
+            ))
+            applicant_id = cursor.fetchone()['id']
+
         conn.commit()
         conn.close()
 
         return jsonify({
             'success': True,
             'session_token': session_token,
+            'applicant_id': applicant_id,
             'results': results
         })
 
@@ -8154,6 +8374,68 @@ def embed_process(embed_token):
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+def generate_behavioral_fit_analysis(user_data: Dict, compatibility_results: Dict, members: List[Dict]) -> str:
+    """Generate comprehensive behavioral fit analysis for applicant"""
+    client = OpenAI(api_key=API_KEY)
+
+    # Extract key patterns from compatibility results
+    all_scores = []
+    strengths_list = []
+    challenges_list = []
+
+    for member_result in compatibility_results.get('members', []):
+        if 'compatibility_score' in member_result:
+            all_scores.append(member_result['compatibility_score'])
+        if 'strengths' in member_result:
+            strengths_list.extend(member_result['strengths'])
+        if 'challenges' in member_result:
+            challenges_list.extend(member_result['challenges'])
+
+    avg_score = sum(all_scores) / len(all_scores) if all_scores else 0
+
+    prompt = f"""You are an expert organizational psychologist analyzing a candidate's behavioral fit with a team.
+
+Candidate Profile:
+- Defining Moment: {user_data.get('defining_moment', 'N/A')}
+- Resource Allocation: {user_data.get('resource_allocation', 'N/A')}
+- Conflict Response: {user_data.get('conflict_response', 'N/A')}
+- Trade-off Decisions: {user_data.get('trade_off', 'N/A')}
+- Social Identity: {user_data.get('social_identity', 'N/A')}
+- Moral Compass: {user_data.get('moral_dilemma', 'N/A')}
+- System Trust: {user_data.get('system_trust', 'N/A')}
+- Stress Response: {user_data.get('stress_response', 'N/A')}
+- Future Values: {user_data.get('future_values', 'N/A')}
+
+Team Compatibility Analysis:
+- Average compatibility score: {avg_score:.1f}/100
+- Number of team members analyzed: {len(members)}
+- Common strengths identified: {', '.join(set(strengths_list[:5]))}
+- Common challenges identified: {', '.join(set(challenges_list[:5]))}
+
+Provide a comprehensive behavioral fit analysis covering:
+1. **Core Behavioral Traits**: What are the candidate's primary behavioral patterns based on their responses?
+2. **Team Dynamics Fit**: How would this person mesh with the team's existing dynamics?
+3. **Communication Style**: How does the candidate communicate and process information?
+4. **Collaboration Potential**: Strengths and challenges in working with this team
+5. **Cultural Add**: What unique perspective or value would this person bring?
+6. **Risk Factors**: Any potential areas of concern or friction
+7. **Recommendations**: How to best onboard and integrate this person
+
+Write a detailed analysis (300-500 words) that helps the team understand if this is a good behavioral fit."""
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7
+        )
+
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"Error generating behavioral fit analysis: {e}")
+        return f"Behavioral fit analysis unavailable. Average compatibility score: {avg_score:.1f}/100"
 
 
 def run_embed_party_mode(user_data: Dict, members: List[Dict], config: Dict) -> Dict:
@@ -8344,6 +8626,279 @@ Return your analysis as JSON with this structure:
             })
 
     return results
+
+
+def render_applicants_dashboard(org: Dict, applicants: List[Dict], user_info: Dict) -> str:
+    """Render the applicants dashboard for an organization"""
+
+    applicants_html = ''
+    if applicants:
+        for applicant in applicants:
+            avg_score = applicant.get('avg_score', 0)
+            status_color = {
+                'pending': '#fbbf24',
+                'reviewing': '#3b82f6',
+                'shortlisted': '#10b981',
+                'rejected': '#ef4444',
+                'hired': '#8b5cf6'
+            }.get(applicant['status'], '#6b7280')
+
+            applicants_html += f'''
+            <div style="background: white; border: 1px solid #e5e7eb; border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem;">
+                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 1rem;">
+                    <div style="flex-grow: 1;">
+                        <h3 style="font-family: 'Satoshi', sans-serif; font-weight: 600; font-size: 1.25rem; margin-bottom: 0.5rem;">
+                            <a href="/organization/{org['id']}/applicant/{applicant['id']}" style="color: black; text-decoration: none;">
+                                {applicant['full_name']}
+                            </a>
+                        </h3>
+                        <p style="font-family: 'Satoshi', sans-serif; color: #6b7280; font-size: 0.875rem;">
+                            {applicant['email']}
+                            {f" • <a href='{applicant['linkedin_url']}' target='_blank' style='color: #0066cc;'>LinkedIn</a>" if applicant.get('linkedin_url') else ''}
+                        </p>
+                    </div>
+                    <div style="text-align: right;">
+                        <div style="display: inline-block; padding: 0.5rem 1rem; background: {status_color}; color: white; border-radius: 8px; font-family: 'Satoshi', sans-serif; font-weight: 600; font-size: 0.875rem; margin-bottom: 0.5rem;">
+                            {applicant['status'].capitalize()}
+                        </div>
+                        <div style="font-family: 'Satoshi', sans-serif; font-size: 0.875rem; color: #6b7280;">
+                            Applied {applicant['created_at'].strftime('%b %d, %Y') if hasattr(applicant['created_at'], 'strftime') else applicant['created_at']}
+                        </div>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 1rem; align-items: center;">
+                    <div style="flex-grow: 1; background: #f3f4f6; border-radius: 8px; height: 8px; overflow: hidden;">
+                        <div style="background: linear-gradient(90deg, #ef4444, #fbbf24, #10b981); width: {avg_score}%; height: 100%;"></div>
+                    </div>
+                    <div style="font-family: 'Satoshi', sans-serif; font-weight: 600; font-size: 1.125rem; min-width: 60px; text-align: right;">
+                        {avg_score:.0f}/100
+                    </div>
+                </div>
+
+                <div style="margin-top: 1rem;">
+                    <a href="/organization/{org['id']}/applicant/{applicant['id']}"
+                       style="display: inline-block; padding: 0.75rem 1.5rem; background: black; color: white; text-decoration: none; border-radius: 8px; font-family: 'Satoshi', sans-serif; font-weight: 600; font-size: 0.875rem;">
+                        View Full Analysis →
+                    </a>
+                </div>
+            </div>
+            '''
+    else:
+        applicants_html = f'''
+        <div style="text-align: center; padding: 4rem 2rem; background: #f9fafb; border-radius: 12px; border: 2px dashed #d1d5db;">
+            <p style="font-family: 'Satoshi', sans-serif; font-size: 1.125rem; color: #6b7280; margin-bottom: 1rem;">
+                No applicants yet
+            </p>
+            <p style="font-family: 'Satoshi', sans-serif; color: #9ca3af; font-size: 0.875rem;">
+                Share your widget to start receiving applications
+            </p>
+            <a href="/organization/{org['id']}/embed-settings"
+               style="display: inline-block; margin-top: 1.5rem; padding: 0.75rem 1.5rem; background: black; color: white; text-decoration: none; border-radius: 8px; font-family: 'Satoshi', sans-serif; font-weight: 600;">
+                Configure Widget
+            </a>
+        </div>
+        '''
+
+    content = f'''
+    <div style="max-width: 1200px; margin: 0 auto; padding: 2rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+            <div>
+                <a href="/organization/{org['id']}" style="color: #6b7280; text-decoration: none; font-family: 'Satoshi', sans-serif; display: block; margin-bottom: 0.5rem;">
+                    ← Back to {org['name']}
+                </a>
+                <h2 style="font-family: 'Sentient', sans-serif; font-size: 2rem; margin: 0;">
+                    Applicants
+                </h2>
+            </div>
+            <div>
+                <a href="/organization/{org['id']}/embed-settings"
+                   style="display: inline-block; padding: 0.75rem 1.5rem; background: white; border: 2px solid black; color: black; text-decoration: none; border-radius: 8px; font-family: 'Satoshi', sans-serif; font-weight: 600; margin-right: 1rem;">
+                    Widget Settings
+                </a>
+            </div>
+        </div>
+
+        {applicants_html}
+    </div>
+    '''
+
+    return content
+
+
+def render_applicant_detail(org: Dict, applicant: Dict, user_info: Dict) -> str:
+    """Render detailed applicant profile view"""
+
+    # Extract compatibility data
+    compatibility_html = ''
+    if applicant.get('compatibility_data'):
+        for member in applicant['compatibility_data'].get('members', []):
+            score = member.get('compatibility_score', 0)
+            score_color = '#10b981' if score >= 75 else '#fbbf24' if score >= 50 else '#ef4444'
+
+            strengths_html = ''.join([f"<li>{s}</li>" for s in member.get('strengths', [])])
+            challenges_html = ''.join([f"<li>{c}</li>" for c in member.get('challenges', [])])
+
+            compatibility_html += f'''
+            <div style="background: white; border: 1px solid #e5e7eb; border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <h4 style="font-family: 'Satoshi', sans-serif; font-weight: 600; font-size: 1.125rem; margin: 0;">
+                        {member.get('member_name', 'Team Member')}
+                    </h4>
+                    <div style="font-family: 'Satoshi', sans-serif; font-weight: 700; font-size: 1.5rem; color: {score_color};">
+                        {score}/100
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 1rem;">
+                    <div style="background: #f3f4f6; border-radius: 8px; height: 8px; overflow: hidden;">
+                        <div style="background: {score_color}; width: {score}%; height: 100%;"></div>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem;">
+                    <div>
+                        <h5 style="font-family: 'Satoshi', sans-serif; font-weight: 600; color: #10b981; margin-bottom: 0.5rem;">Strengths</h5>
+                        <ul style="font-family: 'Satoshi', sans-serif; font-size: 0.875rem; color: #4b5563; margin: 0; padding-left: 1.25rem;">
+                            {strengths_html}
+                        </ul>
+                    </div>
+                    <div>
+                        <h5 style="font-family: 'Satoshi', sans-serif; font-weight: 600; color: #f59e0b; margin-bottom: 0.5rem;">Challenges</h5>
+                        <ul style="font-family: 'Satoshi', sans-serif; font-size: 0.875rem; color: #4b5563; margin: 0; padding-left: 1.25rem;">
+                            {challenges_html}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            '''
+
+    # Extract onboarding responses
+    onboarding = applicant.get('onboarding', {})
+    responses_html = f'''
+    <div style="background: white; border: 1px solid #e5e7eb; border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem;">
+        <h3 style="font-family: 'Satoshi', sans-serif; font-weight: 600; font-size: 1.25rem; margin-bottom: 1rem;">Profile Responses</h3>
+        <div style="display: grid; gap: 1rem;">
+            <div>
+                <p style="font-family: 'Satoshi', sans-serif; font-weight: 600; color: #6b7280; font-size: 0.875rem; margin-bottom: 0.25rem;">Defining Moment</p>
+                <p style="font-family: 'Satoshi', sans-serif; color: #1f2937; margin: 0;">{onboarding.get('defining_moment', 'N/A')}</p>
+            </div>
+            <div>
+                <p style="font-family: 'Satoshi', sans-serif; font-weight: 600; color: #6b7280; font-size: 0.875rem; margin-bottom: 0.25rem;">Conflict Response</p>
+                <p style="font-family: 'Satoshi', sans-serif; color: #1f2937; margin: 0;">{onboarding.get('conflict_response', 'N/A')}</p>
+            </div>
+            <div>
+                <p style="font-family: 'Satoshi', sans-serif; font-weight: 600; color: #6b7280; font-size: 0.875rem; margin-bottom: 0.25rem;">Stress Response</p>
+                <p style="font-family: 'Satoshi', sans-serif; color: #1f2937; margin: 0;">{onboarding.get('stress_response', 'N/A')}</p>
+            </div>
+            <div>
+                <p style="font-family: 'Satoshi', sans-serif; font-weight: 600; color: #6b7280; font-size: 0.875rem; margin-bottom: 0.25rem;">Future Values</p>
+                <p style="font-family: 'Satoshi', sans-serif; color: #1f2937; margin: 0;">{onboarding.get('future_values', 'N/A')}</p>
+            </div>
+        </div>
+    </div>
+    '''
+
+    # Status update section
+    status_options = ['pending', 'reviewing', 'shortlisted', 'rejected', 'hired']
+    status_select = ''.join([
+        f"<option value='{s}' {'selected' if s == applicant['status'] else ''}>{s.capitalize()}</option>"
+        for s in status_options
+    ])
+
+    content = f'''
+    <div style="max-width: 1200px; margin: 0 auto; padding: 2rem;">
+        <div style="margin-bottom: 2rem;">
+            <a href="/organization/{org['id']}/applicants" style="color: #6b7280; text-decoration: none; font-family: 'Satoshi', sans-serif;">
+                ← Back to Applicants
+            </a>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 2rem;">
+            <div>
+                <h2 style="font-family: 'Sentient', sans-serif; font-size: 2rem; margin-bottom: 0.5rem;">
+                    {applicant['full_name']}
+                </h2>
+                <p style="font-family: 'Satoshi', sans-serif; color: #6b7280; margin: 0;">
+                    {applicant['email']}
+                    {f" • <a href='{applicant['linkedin_url']}' target='_blank' style='color: #0066cc;'>LinkedIn Profile</a>" if applicant.get('linkedin_url') else ''}
+                </p>
+            </div>
+            <div style="min-width: 200px;">
+                <label style="display: block; font-family: 'Satoshi', sans-serif; font-weight: 600; font-size: 0.875rem; margin-bottom: 0.5rem;">Status</label>
+                <select id="statusSelect" onchange="updateStatus()"
+                        style="width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 8px; font-family: 'Satoshi', sans-serif; font-size: 1rem;">
+                    {status_select}
+                </select>
+            </div>
+        </div>
+
+        <div style="background: #f0f9ff; border-left: 4px solid #3b82f6; border-radius: 8px; padding: 1.5rem; margin-bottom: 2rem;">
+            <h3 style="font-family: 'Satoshi', sans-serif; font-weight: 600; font-size: 1.125rem; margin-bottom: 1rem;">Behavioral Fit Analysis</h3>
+            <div style="font-family: 'Satoshi', sans-serif; color: #1f2937; line-height: 1.6; white-space: pre-wrap;">
+                {applicant.get('behavioral_fit_analysis', 'Analysis not available')}
+            </div>
+        </div>
+
+        <h3 style="font-family: 'Satoshi', sans-serif; font-weight: 600; font-size: 1.5rem; margin-bottom: 1rem;">Team Compatibility Breakdown</h3>
+        {compatibility_html}
+
+        {responses_html}
+
+        <div style="background: white; border: 1px solid #e5e7eb; border-radius: 12px; padding: 1.5rem;">
+            <h3 style="font-family: 'Satoshi', sans-serif; font-weight: 600; font-size: 1.25rem; margin-bottom: 1rem;">Notes</h3>
+            <textarea id="notesTextarea"
+                      style="width: 100%; min-height: 120px; padding: 1rem; border: 1px solid #d1d5db; border-radius: 8px; font-family: 'Satoshi', sans-serif; font-size: 1rem; resize: vertical;"
+                      placeholder="Add notes about this applicant...">{applicant.get('notes', '')}</textarea>
+            <button onclick="saveNotes()"
+                    style="margin-top: 1rem; padding: 0.75rem 1.5rem; background: black; color: white; border: none; border-radius: 8px; font-family: 'Satoshi', sans-serif; font-weight: 600; cursor: pointer;">
+                Save Notes
+            </button>
+        </div>
+    </div>
+
+    <script>
+        function updateStatus() {{
+            const status = document.getElementById('statusSelect').value;
+            const notes = document.getElementById('notesTextarea').value;
+
+            fetch('/organization/{org['id']}/applicant/{applicant['id']}/update-status', {{
+                method: 'POST',
+                headers: {{ 'Content-Type': 'application/json' }},
+                body: JSON.stringify({{ status: status, notes: notes }})
+            }})
+            .then(response => response.json())
+            .then(data => {{
+                if (data.success) {{
+                    alert('Status updated successfully');
+                }} else {{
+                    alert('Error updating status: ' + data.error);
+                }}
+            }});
+        }}
+
+        function saveNotes() {{
+            const status = document.getElementById('statusSelect').value;
+            const notes = document.getElementById('notesTextarea').value;
+
+            fetch('/organization/{org['id']}/applicant/{applicant['id']}/update-status', {{
+                method: 'POST',
+                headers: {{ 'Content-Type': 'application/json' }},
+                body: JSON.stringify({{ status: status, notes: notes }})
+            }})
+            .then(response => response.json())
+            .then(data => {{
+                if (data.success) {{
+                    alert('Notes saved successfully');
+                }} else {{
+                    alert('Error saving notes: ' + data.error);
+                }}
+            }});
+        }}
+    </script>
+    '''
+
+    return content
 
 
 def render_embed_onboarding(config: Dict) -> str:
@@ -9299,7 +9854,8 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                 <div class="invite-section">
                     <input type="text" class="invite-link-input" id="inviteLink" value="{invite_url}" readonly>
                     <button class="copy-btn" onclick="copyInviteLink()">Copy Link</button>
-                    {f'<a href="/organization/{org_info["id"]}/embed-settings" class="copy-btn" style="margin-left: 0.5rem; text-decoration: none;">Embed Widget</a>' if org_info['is_owner'] else ''}
+                    <a href="/organization/{org_info['id']}/applicants" class="copy-btn" style="margin-left: 0.5rem; text-decoration: none;">View Applicants</a>
+                    {f'<a href="/organization/{org_info["id"]}/embed-settings" class="copy-btn" style="margin-left: 0.5rem; text-decoration: none;">Widget Settings</a>' if org_info['is_owner'] else ''}
                 </div>
             </div>
 
@@ -9567,7 +10123,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             const btn = document.getElementById('simulateBtn');
 
             if (mode === 'party') {{
-                scenarioInput.placeholder = 'Enter a social scenario... (e.g., "Business dinner at a fancy restaurant")';
+                scenarioInput.placeholder = 'Party Mode analyzes how compatible each team member is with each other in social settings. Enter a scenario to see compatibility insights...';
                 attendeeInput.style.display = 'none';
                 btn.textContent = 'Analyze Compatibility';
             }} else if (mode === 'networking') {{

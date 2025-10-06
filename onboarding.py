@@ -516,36 +516,6 @@ def render_step_1_basic_info(profile: Dict) -> str:
         </div>
     </div>
 
-    <div class="form-group">
-        <label class="form-label">Gender</label>
-        <select name="gender" required class="form-select">
-            <option value="">Select your gender</option>
-            <option value="woman" {"selected" if profile.get('gender') == 'woman' else ""}>Woman</option>
-            <option value="man" {"selected" if profile.get('gender') == 'man' else ""}>Man</option>
-            <option value="non_binary" {"selected" if profile.get('gender') == 'non_binary' else ""}>Non-binary</option>
-            <option value="prefer_not_to_say" {"selected" if profile.get('gender') == 'prefer_not_to_say' else ""}>Prefer not to say</option>
-        </select>
-    </div>
-
-    <div class="form-group">
-        <label class="form-label">Location (City/Area)</label>
-        <select name="location" required class="form-select">
-            <option value="London" {"selected" if profile.get('location', 'London') == 'London' else ""}>London</option>
-        </select>
-        <p style="font-size: 0.9em; color: #666; margin-top: 5px;">
-            We're starting with London, feel free to drop us a message to
-            <a href="mailto:admin@pont.world">admin@pont.world</a>
-            if you want us to expand to your city!
-        </p>
-    </div>
-
-    <div class="form-group">
-        <label class="form-label">Postcode</label>
-        <input type="text" name="postcode" required
-               value="{profile.get('postcode', '')}"
-               placeholder="e.g., SW3 4HN"
-               class="form-input">
-    </div>
     '''
 
 def render_slider_component(label: str, name: str, left_label: str, right_label: str, value: int = 5) -> str:
