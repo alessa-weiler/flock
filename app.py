@@ -4728,7 +4728,7 @@ def home():
 
     <div class="landing-container">
         <div class="hero-section">
-            <h1 class="hero-title">AI That Predicts How People Will Work Together</h1>
+            <h1 class="hero-title"> Predicting How People Will Work Together With Agent Based Modelling</h1>
             <p class="hero-subtitle">
                 Stop guessing. Start knowing. Pont creates AI simulations of real people to predict compatibility,
                 reactions, and team dynamics before they happen.
@@ -8115,23 +8115,60 @@ def render_embed_settings_page(org: Dict, embed_config: Optional[Dict], user_inf
             function copyToClipboard(elementId) {{
                 const element = document.getElementById(elementId);
                 const text = element.textContent;
+                const buttonId = elementId === 'htmlCode' ? 'copyHtmlBtn' : 'copyNotionBtn';
+                const button = document.getElementById(buttonId);
+                const originalText = button.textContent;
 
-                navigator.clipboard.writeText(text).then(() => {{
-                    // Update button text to show success
-                    const buttonId = elementId === 'htmlCode' ? 'copyHtmlBtn' : 'copyNotionBtn';
-                    const button = document.getElementById(buttonId);
-                    const originalText = button.textContent;
-                    button.textContent = '✓ Copied!';
-                    button.style.background = '#10b981';
+                // Try modern clipboard API first
+                if (navigator.clipboard && navigator.clipboard.writeText) {{
+                    navigator.clipboard.writeText(text).then(() => {{
+                        button.textContent = '✓ Copied!';
+                        button.style.background = '#10b981';
 
-                    setTimeout(() => {{
-                        button.textContent = originalText;
-                        button.style.background = 'black';
-                    }}, 2000);
-                }}).catch(err => {{
-                    console.error('Failed to copy:', err);
-                    alert('Failed to copy. Please select and copy manually.');
-                }});
+                        setTimeout(() => {{
+                            button.textContent = originalText;
+                            button.style.background = 'black';
+                        }}, 2000);
+                    }}).catch(err => {{
+                        console.error('Clipboard API failed:', err);
+                        fallbackCopy(text, button, originalText);
+                    }});
+                }} else {{
+                    // Fallback for browsers without clipboard API
+                    fallbackCopy(text, button, originalText);
+                }}
+            }}
+
+            function fallbackCopy(text, button, originalText) {{
+                // Create temporary textarea
+                const textarea = document.createElement('textarea');
+                textarea.value = text;
+                textarea.style.position = 'fixed';
+                textarea.style.opacity = '0';
+                document.body.appendChild(textarea);
+
+                try {{
+                    textarea.select();
+                    textarea.setSelectionRange(0, 99999); // For mobile devices
+
+                    const successful = document.execCommand('copy');
+                    if (successful) {{
+                        button.textContent = '✓ Copied!';
+                        button.style.background = '#10b981';
+
+                        setTimeout(() => {{
+                            button.textContent = originalText;
+                            button.style.background = 'black';
+                        }}, 2000);
+                    }} else {{
+                        alert('Copy failed. Please select and copy the code manually.');
+                    }}
+                }} catch (err) {{
+                    console.error('Fallback copy failed:', err);
+                    alert('Copy not supported. Please select and copy the code manually.');
+                }} finally {{
+                    document.body.removeChild(textarea);
+                }}
             }}
         </script>
         '''
