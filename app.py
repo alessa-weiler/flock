@@ -9902,6 +9902,160 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             margin-left: 1rem;
         }}
 
+        /* Subscription Modal */
+        .subscription-modal {{
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }}
+
+        .subscription-modal-overlay {{
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(8px);
+        }}
+
+        .subscription-modal-content {{
+            position: relative;
+            background: white;
+            border-radius: 20px;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            animation: modalSlideIn 0.3s ease-out;
+            overflow: hidden;
+        }}
+
+        @keyframes modalSlideIn {{
+            from {{
+                opacity: 0;
+                transform: translateY(-30px) scale(0.95);
+            }}
+            to {{
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }}
+        }}
+
+        .subscription-modal-header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 2rem 2rem 1rem 2rem;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+        }}
+
+        .subscription-modal-header h2 {{
+            font-family: "Sentient", "Satoshi", sans-serif;
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin: 0;
+            color: black;
+        }}
+
+        .modal-close-btn {{
+            background: none;
+            border: none;
+            font-size: 2rem;
+            color: #999;
+            cursor: pointer;
+            padding: 0;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: all 0.2s ease;
+        }}
+
+        .modal-close-btn:hover {{
+            background: rgba(0, 0, 0, 0.05);
+            color: black;
+        }}
+
+        .subscription-modal-body {{
+            padding: 2rem;
+            text-align: center;
+        }}
+
+        .subscription-icon {{
+            font-size: 4rem;
+            margin-bottom: 1rem;
+        }}
+
+        .subscription-message {{
+            font-size: 1.1rem;
+            line-height: 1.6;
+            color: #333;
+            margin-bottom: 1.5rem;
+        }}
+
+        .subscription-features {{
+            background: rgba(0, 0, 0, 0.02);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-top: 1.5rem;
+        }}
+
+        .feature-item {{
+            font-size: 1rem;
+            color: #333;
+            padding: 0.5rem 0;
+            text-align: left;
+            font-weight: 500;
+        }}
+
+        .subscription-modal-footer {{
+            padding: 1.5rem 2rem 2rem 2rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }}
+
+        .btn-subscribe-now {{
+            background: black;
+            color: white;
+            border: none;
+            padding: 1rem 2rem;
+            border-radius: 12px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            font-family: "Satoshi", sans-serif;
+            transition: all 0.2s ease;
+        }}
+
+        .btn-subscribe-now:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+        }}
+
+        .btn-cancel {{
+            background: transparent;
+            color: #666;
+            border: none;
+            padding: 0.75rem;
+            font-size: 0.95rem;
+            cursor: pointer;
+            font-family: "Satoshi", sans-serif;
+            transition: color 0.2s ease;
+        }}
+
+        .btn-cancel:hover {{
+            color: black;
+        }}
+
     </style>
 
     <div class="org-view-container">
@@ -9971,6 +10125,37 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                 <div class="response-content">
                     Click on a team member's sphere to see their predicted response to the scenario.
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Subscription Required Modal -->
+    <div id="subscriptionModal" class="subscription-modal" style="display: none;">
+        <div class="subscription-modal-overlay" onclick="closeSubscriptionModal()"></div>
+        <div class="subscription-modal-content">
+            <div class="subscription-modal-header">
+                <h2>Subscription Required</h2>
+                <button class="modal-close-btn" onclick="closeSubscriptionModal()">&times;</button>
+            </div>
+            <div class="subscription-modal-body">
+                <div class="subscription-icon">🔒</div>
+                <p class="subscription-message" id="subscriptionMessage">
+                    You've used all 20 free simulations. Subscribe now to continue running simulations and unlock unlimited access to all features.
+                </p>
+                <div class="subscription-features">
+                    <div class="feature-item">✓ Unlimited simulations</div>
+                    <div class="feature-item">✓ Unlimited organizations</div>
+                    <div class="feature-item">✓ Advanced embeddings & analytics</div>
+                    <div class="feature-item">✓ Priority support</div>
+                </div>
+            </div>
+            <div class="subscription-modal-footer">
+                <button class="btn-subscribe-now" onclick="window.location.href='/subscription/plans'">
+                    Subscribe Now
+                </button>
+                <button class="btn-cancel" onclick="closeSubscriptionModal()">
+                    Maybe Later
+                </button>
             </div>
         </div>
     </div>
@@ -10275,9 +10460,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                 }} else {{
                     // Check if subscription is required
                     if (data.requires_subscription) {{
-                        if (confirm(data.message + '\\n\\nWould you like to upgrade now?')) {{
-                            window.location.href = '/subscription/plans';
-                        }}
+                        showSubscriptionModal(data.message, data.simulations_used);
                     }} else {{
                         alert('Error: ' + data.error);
                     }}
@@ -10333,7 +10516,12 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                         sidebar.classList.add('visible');
                     }}, 500);
                 }} else {{
-                    alert('Error: ' + data.error);
+                    // Check if subscription is required
+                    if (data.requires_subscription) {{
+                        showSubscriptionModal(data.message, data.simulations_used);
+                    }} else {{
+                        alert('Error: ' + data.error);
+                    }}
                 }}
             }} catch (error) {{
                 console.error('Error:', error);
@@ -10493,7 +10681,12 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                         sidebar.classList.add('visible');
                     }}, 500);
                 }} else {{
-                    alert('Error: ' + data.error);
+                    // Check if subscription is required
+                    if (data.requires_subscription) {{
+                        showSubscriptionModal(data.message, data.simulations_used);
+                    }} else {{
+                        alert('Error: ' + data.error);
+                    }}
                 }}
             }} catch (error) {{
                 console.error('Error:', error);
@@ -10666,6 +10859,33 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                 btn.textContent = originalText;
             }}, 2000);
         }}
+
+        function showSubscriptionModal(message, simulationsUsed) {{
+            const modal = document.getElementById('subscriptionModal');
+            const messageEl = document.getElementById('subscriptionMessage');
+
+            if (message) {{
+                messageEl.textContent = message;
+            }}
+
+            modal.style.display = 'flex';
+            // Prevent body scroll when modal is open
+            document.body.style.overflow = 'hidden';
+        }}
+
+        function closeSubscriptionModal() {{
+            const modal = document.getElementById('subscriptionModal');
+            modal.style.display = 'none';
+            // Restore body scroll
+            document.body.style.overflow = 'auto';
+        }}
+
+        // Close modal on ESC key
+        document.addEventListener('keydown', function(event) {{
+            if (event.key === 'Escape') {{
+                closeSubscriptionModal();
+            }}
+        }});
 
         async function loadSimulation(simId) {{
             console.log('Loading simulation:', simId);
@@ -10945,6 +11165,28 @@ def run_party_mode():
         conn = get_db_connection()
         cursor = conn.cursor()
 
+        # Check subscription status and simulation count
+        subscription_status = subscription_manager.get_user_subscription_status(user_id)
+
+        # Count user's simulations
+        cursor.execute('''
+            SELECT COUNT(*) as sim_count FROM simulations
+            WHERE created_by = %s
+        ''', (user_id,))
+
+        sim_count = cursor.fetchone()['sim_count']
+
+        # Check if user needs subscription (20 free simulations)
+        if not subscription_status['is_subscribed'] and sim_count >= 20:
+            conn.close()
+            return jsonify({
+                'success': False,
+                'error': 'Simulation limit reached',
+                'message': f'You have used all 20 free simulations. Please subscribe to continue.',
+                'simulations_used': sim_count,
+                'requires_subscription': True
+            }), 402  # Payment Required status code
+
         # Verify user is member of organization
         cursor.execute('''
             SELECT id FROM organization_members
@@ -11159,6 +11401,28 @@ def run_networking_mode():
 
         conn = get_db_connection()
         cursor = conn.cursor()
+
+        # Check subscription status and simulation count
+        subscription_status = subscription_manager.get_user_subscription_status(user_id)
+
+        # Count user's simulations
+        cursor.execute('''
+            SELECT COUNT(*) as sim_count FROM simulations
+            WHERE created_by = %s
+        ''', (user_id,))
+
+        sim_count = cursor.fetchone()['sim_count']
+
+        # Check if user needs subscription (20 free simulations)
+        if not subscription_status['is_subscribed'] and sim_count >= 20:
+            conn.close()
+            return jsonify({
+                'success': False,
+                'error': 'Simulation limit reached',
+                'message': f'You have used all 20 free simulations. Please subscribe to continue.',
+                'simulations_used': sim_count,
+                'requires_subscription': True
+            }), 402  # Payment Required status code
 
         # Verify user is member of organization
         cursor.execute('''

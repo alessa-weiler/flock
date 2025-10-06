@@ -117,23 +117,23 @@ class SubscriptionManager:
             # Debug logging
             print(f"Database result for user {user_id}: {result}")
             
-            # Check free matches used
+            # Check free simulations used (changed from matches to simulations)
             cursor.execute('''
-                SELECT free_matches_used, last_free_match_date 
-                FROM users 
+                SELECT free_matches_used, last_free_match_date
+                FROM users
                 WHERE id = %s
             ''', (user_id,))
-            
+
             user_data = cursor.fetchone()
             conn.close()
-            
-            free_matches_used = user_data['free_matches_used'] if user_data else 0
-            last_free_match = user_data['last_free_match_date'] if user_data else None
-            
-            # Reset free matches monthly
-            if last_free_match and last_free_match < datetime.now() - timedelta(days=30):
-                self.reset_free_matches(user_id)
-                free_matches_used = 0
+
+            free_simulations_used = user_data['free_matches_used'] if user_data else 0
+            last_free_simulation = user_data['last_free_match_date'] if user_data else None
+
+            # No monthly reset - simulations are lifetime limit
+            # Commented out: if last_free_simulation and last_free_simulation < datetime.now() - timedelta(days=30):
+            #     self.reset_free_matches(user_id)
+            #     free_simulations_used = 0
             
             if result and result['status'] == 'active':
                 # If we don't have period end data, sync from Stripe
@@ -150,22 +150,22 @@ class SubscriptionManager:
                     conn = self.get_db_connection()
                     cursor = conn.cursor()
                     cursor.execute('''
-                        UPDATE user_subscriptions 
+                        UPDATE user_subscriptions
                         SET status = 'inactive'
                         WHERE user_id = %s
                     ''', (user_id,))
                     conn.commit()
                     conn.close()
-                    
-                    # Return as expired subscription
-                    free_matches_remaining = max(0, 5 - free_matches_used)
+
+                    # Return as expired subscription (changed from 5 to 20 free simulations)
+                    free_simulations_remaining = max(0, 20 - free_simulations_used)
                     return {
                         'is_subscribed': False,
                         'status': 'expired',
                         'expired_at': result['current_period_end'],
-                        'can_run_matching': free_matches_remaining > 0,
-                        'free_matches_remaining': free_matches_remaining,
-                        'subscription_required': free_matches_remaining == 0
+                        'can_run_matching': free_simulations_remaining > 0,
+                        'free_matches_remaining': free_simulations_remaining,
+                        'subscription_required': free_simulations_remaining == 0
                     }
                 
                 # Check if subscription is cancelled but still active (running until period end)
@@ -190,13 +190,14 @@ class SubscriptionManager:
                         'subscription_required': False
                     }
             else:
-                free_matches_remaining = max(0, 5 - free_matches_used)
+                # Changed from 5 to 20 free simulations
+                free_simulations_remaining = max(0, 20 - free_simulations_used)
                 return {
                     'is_subscribed': False,
                     'status': 'inactive',
-                    'can_run_matching': free_matches_remaining > 0,
-                    'free_matches_remaining': free_matches_remaining,
-                    'subscription_required': free_matches_remaining == 0
+                    'can_run_matching': free_simulations_remaining > 0,
+                    'free_matches_remaining': free_simulations_remaining,
+                    'subscription_required': free_simulations_remaining == 0
                 }
                 
         except Exception as e:
