@@ -9207,7 +9207,7 @@ def render_embed_onboarding(config: Dict) -> str:
                 </div>
 
                 <div class="question">
-                    <label class="question-label">LinkedIn URL</label>
+                    <label class="question-label">LinkedIn URL (Optional)</label>
                     <p class="question-description">Your LinkedIn profile helps us understand your professional background.</p>
                     <input type="url" name="linkedin_url" placeholder="https://linkedin.com/in/yourname" style="width: 100%; padding: 1rem; border: 2px solid #ddd; border-radius: 12px; font-family: 'Satoshi', sans-serif; font-size: 1rem;">
                 </div>
