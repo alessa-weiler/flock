@@ -6746,7 +6746,8 @@ def dashboard():
         # Get all organizations the user is a member of
         cursor.execute('''
             SELECT o.id, o.name, o.description, o.created_at,
-                   COUNT(om.user_id) as member_count,
+                   (SELECT COUNT(*) FROM organization_members om2
+                    WHERE om2.organization_id = o.id AND om2.is_active = TRUE) as member_count,
                    (o.created_by = %s) as is_owner
             FROM organizations o
             INNER JOIN organization_members om ON o.id = om.organization_id
