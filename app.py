@@ -514,11 +514,25 @@ class UserAuthSystem:
                 description TEXT,
                 created_by INTEGER NOT NULL,
                 invite_token TEXT UNIQUE NOT NULL,
+                use_case TEXT DEFAULT 'hiring',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 is_active BOOLEAN DEFAULT TRUE,
                 FOREIGN KEY (created_by) REFERENCES users (id)
             )
+        ''')
+
+        # Add use_case column if it doesn't exist (for existing databases)
+        cursor.execute('''
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name='organizations' AND column_name='use_case'
+                ) THEN
+                    ALTER TABLE organizations ADD COLUMN use_case TEXT DEFAULT 'hiring';
+                END IF;
+            END $$;
         ''')
 
         # Organization members - junction table linking users to organizations
@@ -629,6 +643,22 @@ class UserAuthSystem:
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (organization_id) REFERENCES organizations (id) ON DELETE CASCADE,
                 FOREIGN KEY (embed_session_id) REFERENCES embed_sessions (id) ON DELETE SET NULL
+            )
+        ''')
+
+        # Match feedback table - stores thumbs up/down feedback on patient matches
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS match_feedback (
+                id SERIAL PRIMARY KEY,
+                applicant_id INTEGER NOT NULL,
+                matched_member_id INTEGER NOT NULL,
+                organization_id INTEGER NOT NULL,
+                feedback VARCHAR(10) CHECK (feedback IN ('up', 'down')),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (applicant_id) REFERENCES applicants (id) ON DELETE CASCADE,
+                FOREIGN KEY (matched_member_id) REFERENCES users (id) ON DELETE CASCADE,
+                FOREIGN KEY (organization_id) REFERENCES organizations (id) ON DELETE CASCADE,
+                UNIQUE(applicant_id, matched_member_id, organization_id)
             )
         ''')
 
@@ -7322,6 +7352,7 @@ def create_organization():
     if request.method == 'POST':
         org_name = request.form.get('org_name', '').strip()
         org_description = request.form.get('org_description', '').strip()
+        use_case = request.form.get('use_case', 'hiring')
 
         if not org_name:
             flash('Organization name is required', 'error')
@@ -7336,10 +7367,10 @@ def create_organization():
 
             # Create organization
             cursor.execute('''
-                INSERT INTO organizations (name, description, created_by, invite_token)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO organizations (name, description, created_by, invite_token, use_case)
+                VALUES (%s, %s, %s, %s, %s)
                 RETURNING id
-            ''', (org_name, org_description, user_id, invite_token))
+            ''', (org_name, org_description, user_id, invite_token, use_case))
 
             org_id = cursor.fetchone()['id']
 
@@ -7508,6 +7539,14 @@ def create_organization():
                 <textarea name="org_description"
                           placeholder="Brief description of your organization or team..."
                           class="form-textarea"></textarea>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Use Case</label>
+                <select name="use_case" class="form-input" required>
+                    <option value="hiring">Hiring</option>
+                    <option value="therapy_matching">Therapy Matching</option>
+                </select>
             </div>
 
             <div class="action-buttons">
@@ -7801,7 +7840,7 @@ def organization_embed_settings(org_id):
 
         # Check if user is the owner
         cursor.execute('''
-            SELECT o.id, o.name, o.created_by
+            SELECT o.id, o.name, o.created_by, o.use_case
             FROM organizations o
             WHERE o.id = %s AND o.is_active = TRUE
         ''', (org_id,))
@@ -8045,9 +8084,139 @@ def update_applicant_status(org_id, applicant_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/organization/<int:org_id>/patients')
+@login_required
+def organization_patients(org_id):
+    """View patients (applicants) for therapy matching organizations with match feedback"""
+    user_id = session['user_id']
+    user_info = user_auth.get_user_info(user_id)
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Check if user is a member of the organization and it's therapy_matching
+        cursor.execute('''
+            SELECT o.id, o.name, om.role, o.use_case
+            FROM organizations o
+            INNER JOIN organization_members om ON o.id = om.organization_id
+            WHERE o.id = %s AND om.user_id = %s AND o.is_active = TRUE AND om.is_active = TRUE
+        ''', (org_id, user_id))
+
+        org = cursor.fetchone()
+
+        if not org:
+            conn.close()
+            flash('Organization not found or you do not have access', 'error')
+            return redirect('/dashboard')
+
+        # Get all patients (applicants) for this organization with their match feedback
+        cursor.execute('''
+            SELECT
+                a.id, a.full_name, a.email, a.linkedin_url,
+                a.compatibility_results, a.behavioral_fit_analysis,
+                a.status, a.created_at, a.application_token
+            FROM applicants a
+            WHERE a.organization_id = %s
+            ORDER BY a.created_at DESC
+        ''', (org_id,))
+
+        patients = cursor.fetchall()
+
+        # Parse compatibility results and get feedback for each patient
+        for patient in patients:
+            if patient['compatibility_results']:
+                try:
+                    patient['compatibility_data'] = json.loads(patient['compatibility_results'])
+
+                    # Get feedback for each matched member
+                    for member in patient['compatibility_data'].get('members', []):
+                        member_id = member.get('id')
+                        if member_id:
+                            cursor.execute('''
+                                SELECT feedback
+                                FROM match_feedback
+                                WHERE applicant_id = %s AND matched_member_id = %s AND organization_id = %s
+                            ''', (patient['id'], member_id, org_id))
+
+                            feedback_result = cursor.fetchone()
+                            member['feedback'] = feedback_result['feedback'] if feedback_result else None
+
+                    # Calculate average score
+                    scores = [m.get('compatibility_score', 0) for m in patient['compatibility_data'].get('members', [])]
+                    patient['avg_score'] = sum(scores) / len(scores) if scores else 0
+                except Exception as e:
+                    print(f"Error parsing patient compatibility data: {e}")
+                    patient['compatibility_data'] = {}
+                    patient['avg_score'] = 0
+
+        conn.close()
+
+        # Render patients dashboard
+        content = render_patients_dashboard(org, patients, user_info)
+        return render_template_with_header(f"Patients - {org['name']}", content, user_info)
+
+    except Exception as e:
+        print(f"Error loading patients: {e}")
+        import traceback
+        traceback.print_exc()
+        flash('Error loading patients', 'error')
+        return redirect('/dashboard')
+
+
+@app.route('/organization/<int:org_id>/patient/<int:patient_id>/feedback', methods=['POST'])
+@login_required
+def update_patient_feedback(org_id, patient_id):
+    """Update match feedback (thumbs up/down) for a patient-member match"""
+    user_id = session['user_id']
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Check if user has permission
+        cursor.execute('''
+            SELECT om.role
+            FROM organization_members om
+            WHERE om.organization_id = %s AND om.user_id = %s AND om.is_active = TRUE
+        ''', (org_id, user_id))
+
+        member = cursor.fetchone()
+
+        if not member:
+            conn.close()
+            return jsonify({'success': False, 'error': 'No permission'}), 403
+
+        matched_member_id = request.json.get('matched_member_id')
+        feedback = request.json.get('feedback')
+
+        if feedback not in ['up', 'down']:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Invalid feedback'}), 400
+
+        # Upsert feedback
+        cursor.execute('''
+            INSERT INTO match_feedback (applicant_id, matched_member_id, organization_id, feedback)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (applicant_id, matched_member_id, organization_id)
+            DO UPDATE SET feedback = EXCLUDED.feedback, created_at = CURRENT_TIMESTAMP
+        ''', (patient_id, matched_member_id, org_id, feedback))
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({'success': True})
+
+    except Exception as e:
+        print(f"Error updating patient feedback: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 def render_embed_settings_page(org: Dict, embed_config: Optional[Dict], user_info: Dict) -> str:
     """Render the embed settings configuration page"""
 
+    use_case = org.get('use_case', 'hiring')
+    is_therapy_matching = use_case == 'therapy_matching'
     current_mode = embed_config['mode'] if embed_config else 'party'
     person_spec = embed_config['person_specification'] if embed_config else ''
     embed_token = embed_config['embed_token'] if embed_config else None
@@ -8180,6 +8349,34 @@ def render_embed_settings_page(org: Dict, embed_config: Optional[Dict], user_inf
     use_linkedin = embed_config.get('use_linkedin', False) if embed_config else False
     linkedin_checked = 'checked' if use_linkedin else ''
 
+    # Debug logging
+    print(f"DEBUG render_embed_settings_page: org use_case = {org.get('use_case', 'NOT FOUND')}")
+    print(f"DEBUG render_embed_settings_page: embed_token = {embed_token}")
+    print(f"DEBUG render_embed_settings_page: is_therapy_matching = {is_therapy_matching}")
+
+    # Build simulation mode section conditionally
+    party_mode_title = 'Compatibility Assessment' if is_therapy_matching else 'Party Mode (Compatibility)'
+    party_mode_desc = 'Shows the patient how compatible they are with each therapist in your network.' if is_therapy_matching else 'Shows the user how compatible they are with each team member. Perfect for recruiting, team building, or finding cultural fit.'
+
+    simulation_mode_section = '' if is_therapy_matching else f'''
+                <div style="margin-bottom: 1rem; padding: 1.5rem; border: 2px solid {'black' if current_mode == 'simulation' else '#ddd'}; border-radius: 12px; cursor: pointer;"
+                     onclick="document.getElementById('mode_simulation').checked = true; togglePersonSpec();">
+                    <label style="display: flex; align-items: start; cursor: pointer;">
+                        <input type="radio" name="mode" id="mode_simulation" value="simulation" {simulation_checked}
+                               onchange="togglePersonSpec()"
+                               style="margin-right: 1rem; margin-top: 0.25rem;">
+                        <div>
+                            <div style="font-family: 'Satoshi', sans-serif; font-weight: 600; font-size: 1.125rem; margin-bottom: 0.5rem;">
+                                Simulation Mode (Team Assessment)
+                            </div>
+                            <div style="font-family: 'Satoshi', sans-serif; color: #666; font-size: 0.875rem;">
+                                Shows how each team member would engage with a specific type of person. Perfect for clinical teams, customer service, or client-facing roles.
+                            </div>
+                        </div>
+                    </label>
+                </div>
+    '''
+
     content = f'''
     <div style="max-width: 800px; margin: 0 auto; padding: 2rem;">
         <div style="margin-bottom: 2rem;">
@@ -8205,31 +8402,16 @@ def render_embed_settings_page(org: Dict, embed_config: Optional[Dict], user_inf
                                style="margin-right: 1rem; margin-top: 0.25rem;">
                         <div>
                             <div style="font-family: 'Satoshi', sans-serif; font-weight: 600; font-size: 1.125rem; margin-bottom: 0.5rem;">
-                                Party Mode (Compatibility)
+                                {party_mode_title}
                             </div>
                             <div style="font-family: 'Satoshi', sans-serif; color: #666; font-size: 0.875rem;">
-                                Shows the user how compatible they are with each team member. Perfect for recruiting, team building, or finding cultural fit.
+                                {party_mode_desc}
                             </div>
                         </div>
                     </label>
                 </div>
 
-                <div style="margin-bottom: 1rem; padding: 1.5rem; border: 2px solid {'black' if current_mode == 'simulation' else '#ddd'}; border-radius: 12px; cursor: pointer;"
-                     onclick="document.getElementById('mode_simulation').checked = true; togglePersonSpec();">
-                    <label style="display: flex; align-items: start; cursor: pointer;">
-                        <input type="radio" name="mode" id="mode_simulation" value="simulation" {simulation_checked}
-                               onchange="togglePersonSpec()"
-                               style="margin-right: 1rem; margin-top: 0.25rem;">
-                        <div>
-                            <div style="font-family: 'Satoshi', sans-serif; font-weight: 600; font-size: 1.125rem; margin-bottom: 0.5rem;">
-                                Simulation Mode (Team Assessment)
-                            </div>
-                            <div style="font-family: 'Satoshi', sans-serif; color: #666; font-size: 0.875rem;">
-                                Shows how each team member would engage with a specific type of person. Perfect for clinical teams, customer service, or client-facing roles.
-                            </div>
-                        </div>
-                    </label>
-                </div>
+                {simulation_mode_section}
             </div>
 
             <div id="person_spec_section" style="margin-bottom: 2rem; display: {person_spec_display};">
@@ -8278,7 +8460,7 @@ def embed_widget(embed_token):
 
         # Get embed configuration
         cursor.execute('''
-            SELECT ec.*, o.name as org_name
+            SELECT ec.*, o.name as org_name, o.use_case
             FROM embed_configurations ec
             INNER JOIN organizations o ON ec.organization_id = o.id
             WHERE ec.embed_token = %s AND ec.is_active = TRUE
@@ -8289,6 +8471,11 @@ def embed_widget(embed_token):
 
         if not config:
             return "Invalid or inactive embed widget", 404
+
+        # Debug output
+        print(f"DEBUG embed_widget route: embed_token={embed_token}")
+        print(f"DEBUG embed_widget route: config use_case = {config.get('use_case', 'NOT FOUND')}")
+        print(f"DEBUG embed_widget route: config keys = {list(config.keys())}")
 
         # Render minimal onboarding questionnaire
         content = render_embed_onboarding(config)
@@ -8382,7 +8569,7 @@ def embed_process(embed_token):
 
         # Get embed configuration
         cursor.execute('''
-            SELECT ec.*, o.id as org_id, o.name as org_name
+            SELECT ec.*, o.id as org_id, o.name as org_name, o.use_case
             FROM embed_configurations ec
             INNER JOIN organizations o ON ec.organization_id = o.id
             WHERE ec.embed_token = %s AND ec.is_active = TRUE
@@ -8843,6 +9030,150 @@ def render_applicants_dashboard(org: Dict, applicants: List[Dict], user_info: Di
     return content
 
 
+def render_patients_dashboard(org: Dict, patients: List[Dict], user_info: Dict) -> str:
+    """Render the patients dashboard for therapy matching organizations with match feedback"""
+
+    patients_html = ''
+    if patients:
+        for patient in patients:
+            avg_score = patient.get('avg_score', 0)
+
+            # Build matched members HTML with thumbs up/down
+            matched_members_html = ''
+            if patient.get('compatibility_data'):
+                for member in patient['compatibility_data'].get('members', []):
+                    score = member.get('compatibility_score', 0)
+                    feedback = member.get('feedback')
+                    member_id = member.get('id')
+
+                    # Thumbs styling based on feedback
+                    thumbs_up_style = 'font-size: 1.5rem; cursor: pointer; opacity: 0.3; transition: opacity 0.2s;'
+                    thumbs_down_style = 'font-size: 1.5rem; cursor: pointer; opacity: 0.3; transition: opacity 0.2s;'
+
+                    if feedback == 'up':
+                        thumbs_up_style = 'font-size: 1.5rem; cursor: pointer; opacity: 1;'
+                    elif feedback == 'down':
+                        thumbs_down_style = 'font-size: 1.5rem; cursor: pointer; opacity: 1;'
+
+                    matched_members_html += f'''
+                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; background: #f9fafb; border-radius: 8px; margin-bottom: 0.5rem;">
+                        <div style="flex-grow: 1;">
+                            <span style="font-family: 'Satoshi', sans-serif; font-weight: 600;">{member.get('member_name', 'Team Member')}</span>
+                            <span style="font-family: 'Satoshi', sans-serif; color: #6b7280; margin-left: 0.5rem;">({score}/100)</span>
+                        </div>
+                        <div style="display: flex; gap: 1rem; align-items: center;" id="feedback-{patient['id']}-{member_id}">
+                            <span onclick="updateFeedback({patient['id']}, {member_id}, 'up')" style="{thumbs_up_style}" id="thumbs-up-{patient['id']}-{member_id}">👍</span>
+                            <span onclick="updateFeedback({patient['id']}, {member_id}, 'down')" style="{thumbs_down_style}" id="thumbs-down-{patient['id']}-{member_id}">👎</span>
+                        </div>
+                    </div>
+                    '''
+
+            patients_html += f'''
+            <div style="background: white; border: 1px solid #e5e7eb; border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem;">
+                <div style="margin-bottom: 1rem;">
+                    <h3 style="font-family: 'Satoshi', sans-serif; font-weight: 600; font-size: 1.25rem; margin-bottom: 0.5rem;">
+                        {patient['full_name']}
+                    </h3>
+                    <p style="font-family: 'Satoshi', sans-serif; color: #6b7280; font-size: 0.875rem;">
+                        {patient['email']}
+                    </p>
+                    <p style="font-family: 'Satoshi', sans-serif; color: #9ca3af; font-size: 0.75rem; margin-top: 0.25rem;">
+                        Submitted {patient['created_at'].strftime('%b %d, %Y') if hasattr(patient['created_at'], 'strftime') else patient['created_at']}
+                    </p>
+                </div>
+
+                <div style="margin-bottom: 1rem;">
+                    <h4 style="font-family: 'Satoshi', sans-serif; font-weight: 600; font-size: 1rem; margin-bottom: 0.75rem;">Matched With:</h4>
+                    {matched_members_html if matched_members_html else '<p style="font-family: &quot;Satoshi&quot;, sans-serif; color: #9ca3af; font-size: 0.875rem;">No matches yet</p>'}
+                </div>
+            </div>
+            '''
+    else:
+        patients_html = f'''
+        <div style="text-align: center; padding: 4rem 2rem; background: #f9fafb; border-radius: 12px; border: 2px dashed #d1d5db;">
+            <p style="font-family: 'Satoshi', sans-serif; font-size: 1.125rem; color: #6b7280; margin-bottom: 1rem;">
+                No patients yet
+            </p>
+            <p style="font-family: 'Satoshi', sans-serif; color: #9ca3af; font-size: 0.875rem;">
+                Share your widget to start receiving patient assessments
+            </p>
+            <a href="/organization/{org['id']}/embed-settings"
+               style="display: inline-block; margin-top: 1.5rem; padding: 0.75rem 1.5rem; background: black; color: white; text-decoration: none; border-radius: 8px; font-family: 'Satoshi', sans-serif; font-weight: 600;">
+                Configure Widget
+            </a>
+        </div>
+        '''
+
+    content = f'''
+    <div style="max-width: 1200px; margin: 0 auto; padding: 2rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+            <div>
+                <a href="/organization/{org['id']}" style="color: #6b7280; text-decoration: none; font-family: 'Satoshi', sans-serif; display: block; margin-bottom: 0.5rem;">
+                    ← Back to {org['name']}
+                </a>
+                <h2 style="font-family: 'Sentient', sans-serif; font-size: 2rem; margin: 0;">
+                    Patients
+                </h2>
+            </div>
+            <div>
+                <a href="/organization/{org['id']}/embed-settings"
+                   style="display: inline-block; padding: 0.75rem 1.5rem; background: white; border: 2px solid black; color: black; text-decoration: none; border-radius: 8px; font-family: 'Satoshi', sans-serif; font-weight: 600; margin-right: 1rem;">
+                    Widget Settings
+                </a>
+            </div>
+        </div>
+
+        {patients_html}
+    </div>
+
+    <script>
+    async function updateFeedback(patientId, memberId, feedback) {{
+        try {{
+            // Update UI immediately
+            const thumbsUp = document.getElementById(`thumbs-up-${{patientId}}-${{memberId}}`);
+            const thumbsDown = document.getElementById(`thumbs-down-${{patientId}}-${{memberId}}`);
+
+            if (feedback === 'up') {{
+                thumbsUp.style.opacity = '1';
+                thumbsDown.style.opacity = '0.3';
+            }} else {{
+                thumbsUp.style.opacity = '0.3';
+                thumbsDown.style.opacity = '1';
+            }}
+
+            const response = await fetch(`/organization/{org['id']}/patient/${{patientId}}/feedback`, {{
+                method: 'POST',
+                headers: {{
+                    'Content-Type': 'application/json',
+                }},
+                body: JSON.stringify({{
+                    matched_member_id: memberId,
+                    feedback: feedback
+                }})
+            }});
+
+            if (!response.ok) {{
+                throw new Error('Failed to update feedback');
+            }}
+
+            // Hide the thumbs after a moment
+            setTimeout(() => {{
+                const feedbackDiv = document.getElementById(`feedback-${{patientId}}-${{memberId}}`);
+                if (feedbackDiv) {{
+                    feedbackDiv.style.display = 'none';
+                }}
+            }}, 500);
+        }} catch (error) {{
+            console.error('Error updating feedback:', error);
+            alert('Failed to update feedback. Please try again.');
+        }}
+    }}
+    </script>
+    '''
+
+    return content
+
+
 def render_applicant_detail(org: Dict, applicant: Dict, user_info: Dict) -> str:
     """Render detailed applicant profile view"""
 
@@ -9021,12 +9352,33 @@ def render_applicant_detail(org: Dict, applicant: Dict, user_info: Dict) -> str:
 def render_embed_onboarding(config: Dict) -> str:
     """Render minimal onboarding questionnaire for embed widget"""
 
+    use_case = config.get('use_case', 'hiring')
+    is_therapy_matching = use_case == 'therapy_matching'
+
     mode_description = ""
     if config['mode'] == 'party':
         mode_description = "Answer these questions to see how compatible you are with our team members."
     else:
         person_spec = config.get('person_specification', 'a person')
         mode_description = f"Answer these questions as if you are {person_spec} to see how our team would engage with you."
+
+    # Debug logging
+    print(f"DEBUG: Rendering embed widget - use_case='{use_case}', is_therapy_matching={is_therapy_matching}")
+    print(f"DEBUG: Config keys: {config.keys() if hasattr(config, 'keys') else 'not a dict'}")
+
+    # Build LinkedIn section conditionally
+    linkedin_section = '' if is_therapy_matching else '''
+                <div class="question">
+                    <label class="question-label">LinkedIn URL (Optional)</label>
+                    <p class="question-description">Your LinkedIn profile helps us understand your professional background.</p>
+                    <input type="url" name="linkedin_url" placeholder="https://linkedin.com/in/yourname" style="width: 100%; padding: 1rem; border: 2px solid #ddd; border-radius: 12px; font-family: 'Satoshi', sans-serif; font-size: 1rem;">
+                </div>
+    '''
+
+    email_label = 'Email (Required)' if is_therapy_matching else 'Email (Optional)'
+    email_required = 'required' if is_therapy_matching else ''
+    age_label = 'Age (Optional)' if is_therapy_matching else 'Age'
+    location_label = 'Location (City, Country) (Optional)' if is_therapy_matching else 'Location (City, Country)'
 
     return f'''
 <!DOCTYPE html>
@@ -9380,23 +9732,19 @@ def render_embed_onboarding(config: Dict) -> str:
                 </div>
 
                 <div class="question">
-                    <label class="question-label">Email (Optional)</label>
-                    <input type="email" name="email" style="width: 100%; padding: 1rem; border: 2px solid #ddd; border-radius: 12px; font-family: 'Satoshi', sans-serif; font-size: 1rem;">
+                    <label class="question-label">{email_label}</label>
+                    <input type="email" name="email" {email_required} style="width: 100%; padding: 1rem; border: 2px solid #ddd; border-radius: 12px; font-family: 'Satoshi', sans-serif; font-size: 1rem;">
                 </div>
 
-                <div class="question">
-                    <label class="question-label">LinkedIn URL (Optional)</label>
-                    <p class="question-description">Your LinkedIn profile helps us understand your professional background.</p>
-                    <input type="url" name="linkedin_url" placeholder="https://linkedin.com/in/yourname" style="width: 100%; padding: 1rem; border: 2px solid #ddd; border-radius: 12px; font-family: 'Satoshi', sans-serif; font-size: 1rem;">
-                </div>
+                {linkedin_section}
 
                 <div class="question">
-                    <label class="question-label">Age</label>
+                    <label class="question-label">{age_label}</label>
                     <input type="number" name="age" min="18" max="100" style="width: 100%; padding: 1rem; border: 2px solid #ddd; border-radius: 12px; font-family: 'Satoshi', sans-serif; font-size: 1rem;">
                 </div>
 
                 <div class="question">
-                    <label class="question-label">Location (City, Country)</label>
+                    <label class="question-label">{location_label}</label>
                     <input type="text" name="location" placeholder="e.g., London, UK" style="width: 100%; padding: 1rem; border: 2px solid #ddd; border-radius: 12px; font-family: 'Satoshi', sans-serif; font-size: 1rem;">
                 </div>
 
@@ -9896,7 +10244,7 @@ def organization_view(org_id):
 
         # Check if user is a member of this organization
         cursor.execute('''
-            SELECT om.role, o.id, o.name, o.description, o.invite_token, o.created_by
+            SELECT om.role, o.id, o.name, o.description, o.invite_token, o.created_by, o.use_case
             FROM organization_members om
             INNER JOIN organizations o ON om.organization_id = o.id
             WHERE om.organization_id = %s AND om.user_id = %s AND o.is_active = TRUE
@@ -9915,7 +10263,8 @@ def organization_view(org_id):
             'description': membership['description'],
             'invite_token': membership['invite_token'],
             'is_owner': membership['created_by'] == user_id,
-            'role': membership['role']
+            'role': membership['role'],
+            'use_case': membership.get('use_case', 'hiring')
         }
 
         # Get all members of the organization
@@ -10020,6 +10369,21 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
 
     # Generate invite link
     invite_url = f"{request.host_url}join-organization/{org_info['invite_token']}"
+
+    # Build conditional sections based on use_case
+    use_case = org_info.get('use_case', 'hiring')
+    is_therapy = use_case == 'therapy_matching'
+
+    applicants_link = 'patients' if is_therapy else 'applicants'
+    applicants_text = 'View Patients' if is_therapy else 'View Applicants'
+    simulation_mode_text = 'Test Reactions' if is_therapy else 'Simulation Mode'
+    party_mode_text = 'Compatibility within Network' if is_therapy else 'Party Mode'
+
+    networking_mode_btn = '' if is_therapy else '''
+                        <button class="mode-btn" id="networkingModeBtn" onclick="switchMode('networking')">
+                            Networking Mode
+                        </button>
+    '''
 
     content = f'''
     <style>
@@ -10550,7 +10914,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                 <div class="invite-section">
                     <input type="text" class="invite-link-input" id="inviteLink" value="{invite_url}" readonly>
                     <button class="copy-btn" onclick="copyInviteLink()">Copy Link</button>
-                    <a href="/organization/{org_info['id']}/applicants" class="copy-btn" style="margin-left: 0.5rem; text-decoration: none;">View Applicants</a>
+                    <a href="/organization/{org_info['id']}/{applicants_link}" class="copy-btn" style="margin-left: 0.5rem; text-decoration: none;">{applicants_text}</a>
                     {f'<a href="/organization/{org_info["id"]}/embed-settings" class="copy-btn" style="margin-left: 0.5rem; text-decoration: none;">Widget Settings</a>' if org_info['is_owner'] else ''}
                 </div>
             </div>
@@ -10561,14 +10925,12 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                 <div class="simulation-form">
                     <div class="mode-toggle">
                         <button class="mode-btn active" id="simulationModeBtn" onclick="switchMode('simulation')">
-                            Simulation Mode
+                            {simulation_mode_text}
                         </button>
                         <button class="mode-btn" id="partyModeBtn" onclick="switchMode('party')">
-                            Party Mode
+                            {party_mode_text}
                         </button>
-                        <button class="mode-btn" id="networkingModeBtn" onclick="switchMode('networking')">
-                            Networking Mode
-                        </button>
+                        {networking_mode_btn}
                     </div>
                     <textarea
                         class="scenario-input"
