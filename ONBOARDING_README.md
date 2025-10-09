@@ -2,6 +2,11 @@
 
 This onboarding system uses the **Compressed Protocol** methodology to efficiently gather high-variance diagnostic information about users in ~15 minutes, then uses AI to extrapolate rich psychological insights.
 
+## Need to add
+1. verbal onboarding - start with a calendly link to my calendar for manual onboarding with a free cal - i just do an interview to onboard them
+
+2. toggle between verbal and text input - if verbal add in whisper01 LLM to transcribe audio file, then delete audio file
+
 ## Overview
 
 The system consists of three main components:

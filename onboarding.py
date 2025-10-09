@@ -437,6 +437,105 @@ def render_onboarding_template(step, total_steps, step_title, step_description, 
                 transform: translateY(0);
             }}
         }}
+
+        /* Voice Input Styles */
+        .input-mode-btn {{
+            font-family: "Satoshi", sans-serif;
+            padding: 0.5rem 1.5rem;
+            border: 2px solid rgba(107, 155, 153, 0.3);
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 12px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.875rem;
+            transition: all 0.3s ease;
+            color: #2d2d2d;
+        }}
+
+        .input-mode-btn.active {{
+            background: black;
+            color: white;
+            border-color: black;
+        }}
+
+        .input-mode-btn:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }}
+
+        .audio-recorder {{
+            text-align: center;
+            padding: 2rem;
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 16px;
+            border: 2px dashed rgba(107, 155, 153, 0.3);
+        }}
+
+        .record-btn {{
+            font-family: "Satoshi", sans-serif;
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 1.5rem 2rem;
+            background: rgba(107, 155, 153, 0.1);
+            border: 2px solid rgba(107, 155, 153, 0.3);
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 600;
+        }}
+
+        .record-btn:hover {{
+            background: rgba(107, 155, 153, 0.2);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(107, 155, 153, 0.2);
+        }}
+
+        .record-btn.recording {{
+            background: rgba(255, 59, 48, 0.1);
+            border-color: rgba(255, 59, 48, 0.5);
+            animation: pulse 1.5s ease-in-out infinite;
+        }}
+
+        @keyframes pulse {{
+            0%, 100% {{ transform: scale(1); }}
+            50% {{ transform: scale(1.05); }}
+        }}
+
+        .record-icon {{
+            font-size: 2rem;
+        }}
+
+        .record-text {{
+            font-size: 0.875rem;
+            color: #2d2d2d;
+        }}
+
+        .recording-status {{
+            margin-top: 1rem;
+            font-family: "Satoshi", sans-serif;
+            font-size: 0.875rem;
+            color: #6b9b99;
+            min-height: 1.5rem;
+        }}
+
+        .transcription-result {{
+            margin-top: 1rem;
+            padding: 1rem;
+            background: rgba(107, 155, 153, 0.05);
+            border-radius: 12px;
+            font-family: "Satoshi", sans-serif;
+            font-size: 0.875rem;
+            line-height: 1.6;
+            color: #2d2d2d;
+            min-height: 60px;
+            text-align: left;
+        }}
+
+        .transcription-result:empty {{
+            display: none;
+        }}
     </style>
     
     <div class="onboarding-container">
@@ -463,8 +562,122 @@ def render_onboarding_template(step, total_steps, step_title, step_description, 
             </div>
         </form>
     </div>
+
+    <script>
+        let mediaRecorder = null;
+        let audioChunks = [];
+        let currentField = null;
+
+        function switchInputMode(mode, fieldName) {{
+            // Toggle button states
+            const buttons = document.querySelectorAll(`[data-mode]`);
+            buttons.forEach(btn => {{
+                if (btn.getAttribute('data-mode') === mode && btn.onclick.toString().includes(fieldName)) {{
+                    btn.classList.add('active');
+                }} else if (btn.onclick.toString().includes(fieldName)) {{
+                    btn.classList.remove('active');
+                }}
+            }});
+
+            // Toggle input containers
+            const textInput = document.getElementById(`text-input-${{fieldName}}`);
+            const voiceInput = document.getElementById(`voice-input-${{fieldName}}`);
+
+            if (mode === 'text') {{
+                textInput.style.display = 'block';
+                voiceInput.style.display = 'none';
+                // Enable textarea required attribute
+                const textarea = document.getElementById(`${{fieldName}}_text`);
+                if (textarea) textarea.required = true;
+            }} else {{
+                textInput.style.display = 'none';
+                voiceInput.style.display = 'block';
+                // Disable textarea required attribute when using voice
+                const textarea = document.getElementById(`${{fieldName}}_text`);
+                if (textarea) textarea.required = false;
+            }}
+        }}
+
+        async function toggleRecording(fieldName) {{
+            const recordBtn = document.getElementById(`record-btn-${{fieldName}}`);
+            const statusDiv = document.getElementById(`status-${{fieldName}}`);
+            const recordText = recordBtn.querySelector('.record-text');
+
+            if (!mediaRecorder || mediaRecorder.state === 'inactive') {{
+                // Start recording
+                try {{
+                    const stream = await navigator.mediaDevices.getUserMedia({{ audio: true }});
+                    mediaRecorder = new MediaRecorder(stream);
+                    audioChunks = [];
+                    currentField = fieldName;
+
+                    mediaRecorder.ondataavailable = (event) => {{
+                        audioChunks.push(event.data);
+                    }};
+
+                    mediaRecorder.onstop = async () => {{
+                        const audioBlob = new Blob(audioChunks, {{ type: 'audio/webm' }});
+                        await transcribeAudio(audioBlob, fieldName);
+
+                        // Stop all tracks to release microphone
+                        stream.getTracks().forEach(track => track.stop());
+                    }};
+
+                    mediaRecorder.start();
+                    recordBtn.classList.add('recording');
+                    recordText.textContent = 'Stop Recording';
+                    statusDiv.textContent = 'Recording... Click to stop';
+                }} catch (err) {{
+                    console.error('Error accessing microphone:', err);
+                    statusDiv.textContent = 'Error: Could not access microphone';
+                }}
+            }} else {{
+                // Stop recording
+                mediaRecorder.stop();
+                recordBtn.classList.remove('recording');
+                recordText.textContent = 'Start Recording';
+                statusDiv.textContent = 'Processing...';
+            }}
+        }}
+
+        async function transcribeAudio(audioBlob, fieldName) {{
+            const statusDiv = document.getElementById(`status-${{fieldName}}`);
+            const transcriptionDiv = document.getElementById(`transcription-${{fieldName}}`);
+            const hiddenInput = document.getElementById(`${{fieldName}}_audio`);
+
+            try {{
+                const formData = new FormData();
+                formData.append('audio', audioBlob, 'recording.webm');
+                formData.append('field_name', fieldName);
+
+                const response = await fetch('/transcribe-audio', {{
+                    method: 'POST',
+                    body: formData
+                }});
+
+                const data = await response.json();
+
+                if (data.success) {{
+                    transcriptionDiv.textContent = data.transcription;
+                    hiddenInput.value = data.transcription;
+                    statusDiv.textContent = 'Transcription complete!';
+
+                    // Also update the text field so it gets saved
+                    const textarea = document.getElementById(`${{fieldName}}_text`);
+                    if (textarea) {{
+                        textarea.value = data.transcription;
+                    }}
+                }} else {{
+                    statusDiv.textContent = 'Error: ' + (data.error || 'Transcription failed');
+                }}
+            }} catch (err) {{
+                console.error('Error transcribing audio:', err);
+                statusDiv.textContent = 'Error: Could not transcribe audio';
+            }}
+        }}
+    </script>
     '''
-    
+
     return render_template_with_header(f"Step {step}: {step_title}", content, minimal_nav=True)
 
 
@@ -518,6 +731,46 @@ def render_step_1_basic_info(profile: Dict) -> str:
 
     '''
 
+def render_voice_text_input(field_name: str, label: str, placeholder: str, current_value: str = '', height: str = '150px', help_text: str = '') -> str:
+    """Render a textarea with voice/text toggle capability"""
+    return f'''
+    <div class="form-group">
+        <label class="form-label">{label}</label>
+
+        <!-- Input Mode Toggle -->
+        <div style="display: flex; gap: 1rem; margin-bottom: 1rem;">
+            <button type="button" class="input-mode-btn active" data-mode="text" onclick="switchInputMode('text', '{field_name}')">
+                Text
+            </button>
+            <button type="button" class="input-mode-btn" data-mode="voice" onclick="switchInputMode('voice', '{field_name}')">
+                Voice
+            </button>
+        </div>
+
+        <!-- Text Input (default) -->
+        <div id="text-input-{field_name}" class="input-container">
+            <textarea name="{field_name}" id="{field_name}_text" required
+                      placeholder="{placeholder}"
+                      class="form-textarea" style="height: {height};">{current_value}</textarea>
+        </div>
+
+        <!-- Voice Input (hidden by default) -->
+        <div id="voice-input-{field_name}" class="input-container" style="display: none;">
+            <div class="audio-recorder">
+                <button type="button" class="record-btn" id="record-btn-{field_name}" onclick="toggleRecording('{field_name}')">
+                    <span class="record-icon">🎤</span>
+                    <span class="record-text">Start Recording</span>
+                </button>
+                <div class="recording-status" id="status-{field_name}"></div>
+                <div class="transcription-result" id="transcription-{field_name}"></div>
+                <input type="hidden" name="{field_name}_audio" id="{field_name}_audio">
+            </div>
+        </div>
+
+        {f'<div style="font-size: 12px; color: #6b9b99; margin-top: 5px;">{help_text}</div>' if help_text else ''}
+    </div>
+    '''
+
 def render_slider_component(label: str, name: str, left_label: str, right_label: str, value: int = 5) -> str:
     """Render slider component matching dashboard aesthetic"""
     return f'''
@@ -545,31 +798,25 @@ def render_slider_component(label: str, name: str, left_label: str, right_label:
 
 def render_step_2_defining_moment(profile: Dict) -> str:
     """Defining Moment - Reveals values, risk tolerance, locus of control"""
-    return f'''
-    <div class="form-group">
-        <label class="form-label">Tell me about a decision you made that significantly changed the direction of your life. What did you choose and why?</label>
-        <textarea name="defining_moment" required
-                  placeholder="Describe a pivotal life decision and your reasoning..."
-                  class="form-textarea" style="height: 150px;">{profile.get('defining_moment', '')}</textarea>
-        <div style="font-size: 12px; color: #6b9b99; margin-top: 5px;">
-            ~2 minutes. This reveals your values, risk tolerance, and self-narrative style.
-        </div>
-    </div>
-    '''
+    return render_voice_text_input(
+        field_name='defining_moment',
+        label='Tell me about a decision you made that significantly changed the direction of your life. What did you choose and why?',
+        placeholder='Describe a pivotal life decision and your reasoning...',
+        current_value=profile.get('defining_moment', ''),
+        height='150px',
+        help_text='~2 minutes. This reveals your values, risk tolerance, and self-narrative style.'
+    )
 
 def render_step_3_resource_allocation(profile: Dict) -> str:
     """Resource Allocation - Reveals financial priorities, risk orientation, altruism"""
-    return f'''
-    <div class="form-group">
-        <label class="form-label">Imagine you unexpectedly received £10,000. How would you use it?</label>
-        <textarea name="resource_allocation" required
-                  placeholder="Describe how you would allocate this windfall and why..."
-                  class="form-textarea" style="height: 120px;">{profile.get('resource_allocation', '')}</textarea>
-        <div style="font-size: 12px; color: #6b9b99; margin-top: 5px;">
-            ~1 minute. This reveals your financial priorities and time preference.
-        </div>
-    </div>
-    '''
+    return render_voice_text_input(
+        field_name='resource_allocation',
+        label='Imagine you unexpectedly received £10,000. How would you use it?',
+        placeholder='Describe how you would allocate this windfall and why...',
+        current_value=profile.get('resource_allocation', ''),
+        height='120px',
+        help_text='~1 minute. This reveals your financial priorities and time preference.'
+    )
 
 def render_radio_options(name: str, options: List[Tuple[str, str]], selected: str = '') -> str:
     """Render radio button options using choice-item styling"""
@@ -586,66 +833,58 @@ def render_radio_options(name: str, options: List[Tuple[str, str]], selected: st
 
 def render_step_4_conflict_response(profile: Dict) -> str:
     """Conflict Response - Reveals conflict style, emotional regulation, communication patterns"""
-    return f'''
-    <div class="form-group">
-        <label class="form-label">Describe a time when you strongly disagreed with someone important to you. How did you handle it?</label>
-        <textarea name="conflict_response" required
-                  placeholder="Share a specific disagreement and how you navigated it..."
-                  class="form-textarea" style="height: 150px;">{profile.get('conflict_response', '')}</textarea>
-        <div style="font-size: 12px; color: #6b9b99; margin-top: 5px;">
-            ~2 minutes. This reveals your conflict style and relationship priorities.
-        </div>
-    </div>
-    '''
+    return render_voice_text_input(
+        field_name='conflict_response',
+        label='Describe a time when you strongly disagreed with someone important to you. How did you handle it?',
+        placeholder='Share a specific disagreement and how you navigated it...',
+        current_value=profile.get('conflict_response', ''),
+        height='150px',
+        help_text='~2 minutes. This reveals your conflict style and relationship priorities.'
+    )
 
 def render_step_5_trade_off(profile: Dict) -> str:
     """Trade-off Scenario - Reveals materialism vs. meaning-seeking, risk tolerance, work values"""
-    return f'''
-    <div class="form-group">
-        <label class="form-label">If you had to choose between a job that pays well but bores you, versus one that excites you but pays barely enough to live on, which would you choose and why?</label>
-        <textarea name="trade_off_scenario" required
-                  placeholder="Explain your choice and the reasoning behind it..."
-                  class="form-textarea" style="height: 120px;">{profile.get('trade_off_scenario', '')}</textarea>
-        <div style="font-size: 12px; color: #6b9b99; margin-top: 5px;">
-            ~1 minute. This reveals your materialism vs. meaning-seeking balance.
-        </div>
-    </div>
-    '''
+    return render_voice_text_input(
+        field_name='trade_off_scenario',
+        label='If you had to choose between a job that pays well but bores you, versus one that excites you but pays barely enough to live on, which would you choose and why?',
+        placeholder='Explain your choice and the reasoning behind it...',
+        current_value=profile.get('trade_off_scenario', ''),
+        height='120px',
+        help_text='~1 minute. This reveals your materialism vs. meaning-seeking balance.'
+    )
 
 def render_step_6_social_identity(profile: Dict) -> str:
     """Social Identity - Reveals identity dimensions, in-group/out-group dynamics, value systems"""
     return f'''
-    <div class="form-group">
-        <label class="form-label">What groups or communities do you feel you belong to?</label>
-        <textarea name="social_identity_groups" required
-                  placeholder="List the communities you identify with (professional, cultural, hobby-based, etc.)..."
-                  class="form-textarea" style="height: 120px;">{profile.get('social_identity_groups', '')}</textarea>
-    </div>
+    {render_voice_text_input(
+        field_name='social_identity_groups',
+        label='What groups or communities do you feel you belong to?',
+        placeholder='List the communities you identify with (professional, cultural, hobby-based, etc.)...',
+        current_value=profile.get('social_identity_groups', ''),
+        height='120px',
+        help_text=''
+    )}
 
-    <div class="form-group">
-        <label class="form-label">Which of these is most important to your sense of who you are?</label>
-        <textarea name="social_identity_central" required
-                  placeholder="Which community or identity is most central to you and why?..."
-                  class="form-textarea" style="height: 100px;">{profile.get('social_identity_central', '')}</textarea>
-        <div style="font-size: 12px; color: #6b9b99; margin-top: 5px;">
-            ~2 minutes total. This reveals your social identity dimensions and value systems.
-        </div>
-    </div>
+    {render_voice_text_input(
+        field_name='social_identity_central',
+        label='Which of these is most important to your sense of who you are?',
+        placeholder='Which community or identity is most central to you and why?...',
+        current_value=profile.get('social_identity_central', ''),
+        height='100px',
+        help_text='~2 minutes total. This reveals your social identity dimensions and value systems.'
+    )}
     '''
 
 def render_step_7_moral_dilemma(profile: Dict) -> str:
     """Moral Dilemma - Reveals moral framework, loyalty vs. honesty, relationship boundaries"""
-    return f'''
-    <div class="form-group">
-        <label class="form-label">A close friend asks you to lie to protect them from serious consequences they deserve. What do you do?</label>
-        <textarea name="moral_dilemma" required
-                  placeholder="Describe what you would do and your reasoning..."
-                  class="form-textarea" style="height: 150px;">{profile.get('moral_dilemma', '')}</textarea>
-        <div style="font-size: 12px; color: #6b9b99; margin-top: 5px;">
-            ~2 minutes. This reveals your moral framework and relationship boundaries.
-        </div>
-    </div>
-    '''
+    return render_voice_text_input(
+        field_name='moral_dilemma',
+        label='A close friend asks you to lie to protect them from serious consequences they deserve. What do you do?',
+        placeholder='Describe what you would do and your reasoning...',
+        current_value=profile.get('moral_dilemma', ''),
+        height='150px',
+        help_text='~2 minutes. This reveals your moral framework and relationship boundaries.'
+    )
 
 def render_checkbox_options_with_limit(name: str, options: List[Tuple[str, str]], 
                                        selected: List[str] = [], max_selections: int = 3) -> str:
@@ -665,17 +904,14 @@ def render_checkbox_options_with_limit(name: str, options: List[Tuple[str, str]]
 
 def render_step_8_system_trust(profile: Dict) -> str:
     """System Trust - Reveals trust in institutions, perceived agency, political orientation"""
-    return f'''
-    <div class="form-group">
-        <label class="form-label">When you think about institutions like government, healthcare, or the economy, do you generally feel they work for people like you, against you, or neither? Why?</label>
-        <textarea name="system_trust" required
-                  placeholder="Share your perspective on institutional trust and why you feel this way..."
-                  class="form-textarea" style="height: 120px;">{profile.get('system_trust', '')}</textarea>
-        <div style="font-size: 12px; color: #6b9b99; margin-top: 5px;">
-            ~1 minute. This reveals your trust in institutions and perceived agency.
-        </div>
-    </div>
-    '''
+    return render_voice_text_input(
+        field_name='system_trust',
+        label='When you think about institutions like government, healthcare, or the economy, do you generally feel they work for people like you, against you, or neither? Why?',
+        placeholder='Share your perspective on institutional trust and why you feel this way...',
+        current_value=profile.get('system_trust', ''),
+        height='120px',
+        help_text='~1 minute. This reveals your trust in institutions and perceived agency.'
+    )
 
 def render_ranking_items(items: List[Tuple[str, str]], profile: Dict) -> str:
     """Render ranking dropdown items with glassmorphism styling"""
@@ -713,17 +949,14 @@ def render_checkbox_options(name: str, options: List[Tuple[str, str]], selected:
 
 def render_step_9_stress_response(profile: Dict) -> str:
     """Stress Response - Reveals stress triggers, coping mechanisms, support network"""
-    return f'''
-    <div class="form-group">
-        <label class="form-label">Tell me about the last time you felt really overwhelmed or stressed. What caused it and how did you cope?</label>
-        <textarea name="stress_response" required
-                  placeholder="Describe a stressful situation and how you managed it..."
-                  class="form-textarea" style="height: 150px;">{profile.get('stress_response', '')}</textarea>
-        <div style="font-size: 12px; color: #6b9b99; margin-top: 5px;">
-            ~2 minutes. This reveals your stress triggers and coping mechanisms.
-        </div>
-    </div>
-    '''
+    return render_voice_text_input(
+        field_name='stress_response',
+        label='Tell me about the last time you felt really overwhelmed or stressed. What caused it and how did you cope?',
+        placeholder='Describe a stressful situation and how you managed it...',
+        current_value=profile.get('stress_response', ''),
+        height='150px',
+        help_text='~2 minutes. This reveals your stress triggers and coping mechanisms.'
+    )
 
 def process_onboarding_with_ai(user_id: int, profile_data: Dict[str, Any], user_auth) -> None:
     """
@@ -797,15 +1030,14 @@ def process_onboarding_with_ai(user_id: int, profile_data: Dict[str, Any], user_
 def render_step_10_future_values(profile: Dict) -> str:
     """Future Orientation & Rapid-Fire Values - Reveals goals, optimism, value hierarchy"""
     return f'''
-    <div class="form-group">
-        <label class="form-label">In 5 years, what do you hope will be different about your life?</label>
-        <textarea name="future_orientation" required
-                  placeholder="Describe your hopes and aspirations for the future..."
-                  class="form-textarea" style="height: 120px;">{profile.get('future_orientation', '')}</textarea>
-        <div style="font-size: 12px; color: #6b9b99; margin-top: 5px;">
-            ~1 minute. This reveals your goal orientation and life priorities.
-        </div>
-    </div>
+    {render_voice_text_input(
+        field_name='future_orientation',
+        label='In 5 years, what do you hope will be different about your life?',
+        placeholder='Describe your hopes and aspirations for the future...',
+        current_value=profile.get('future_orientation', ''),
+        height='120px',
+        help_text='~1 minute. This reveals your goal orientation and life priorities.'
+    )}
 
     <div class="form-group">
         <label class="form-label">Rapid-Fire Values: Which matters more to you?</label>
@@ -869,6 +1101,66 @@ def render_step_10_future_values(profile: Dict) -> str:
 # ROUTES - PROFILE SETUP & ONBOARDING
 # ============================================================================
 def add_onboarding_routes(app, login_required, user_auth, render_template_with_header, get_db_connection, process_matching_background):
+
+    @app.route('/transcribe-audio', methods=['POST'])
+    @login_required
+    def transcribe_audio():
+        """Handle audio transcription using OpenAI Whisper API"""
+        import tempfile
+        from openai import OpenAI
+
+        try:
+            # Get the audio file from the request
+            if 'audio' not in request.files:
+                return {'success': False, 'error': 'No audio file provided'}, 400
+
+            audio_file = request.files['audio']
+            field_name = request.form.get('field_name', 'unknown')
+
+            # Save audio to temporary file
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.webm') as temp_audio:
+                audio_file.save(temp_audio.name)
+                temp_audio_path = temp_audio.name
+
+            try:
+                # Initialize OpenAI client
+                api_key = os.environ.get('OPENAI_API_KEY')
+                if not api_key:
+                    return {'success': False, 'error': 'OpenAI API key not configured'}, 500
+
+                client = OpenAI(api_key=api_key)
+
+                # Transcribe using Whisper
+                with open(temp_audio_path, 'rb') as audio:
+                    transcription = client.audio.transcriptions.create(
+                        model="whisper-1",
+                        file=audio,
+                        response_format="text"
+                    )
+
+                # Clean up temporary file
+                os.unlink(temp_audio_path)
+
+                return {
+                    'success': True,
+                    'transcription': transcription
+                }, 200
+
+            except Exception as e:
+                # Clean up temporary file on error
+                if os.path.exists(temp_audio_path):
+                    os.unlink(temp_audio_path)
+                raise e
+
+        except Exception as e:
+            print(f"Error transcribing audio: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'success': False,
+                'error': str(e)
+            }, 500
+
 
     @app.route('/profile-setup')
     @login_required 

@@ -8301,6 +8301,78 @@ def embed_widget(embed_token):
         return "Error loading widget", 500
 
 
+@app.route('/embed/<embed_token>/transcribe-audio', methods=['POST'])
+def embed_transcribe_audio(embed_token):
+    """Handle audio transcription for embed widget (no auth required)"""
+    import tempfile
+    from openai import OpenAI
+
+    try:
+        # Verify embed token is valid
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT id FROM embed_configurations
+            WHERE embed_token = %s AND is_active = TRUE
+        ''', (embed_token,))
+
+        if not cursor.fetchone():
+            conn.close()
+            return jsonify({'success': False, 'error': 'Invalid widget'}), 404
+
+        conn.close()
+
+        # Get the audio file from the request
+        if 'audio' not in request.files:
+            return jsonify({'success': False, 'error': 'No audio file provided'}), 400
+
+        audio_file = request.files['audio']
+
+        # Save audio to temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.webm') as temp_audio:
+            audio_file.save(temp_audio.name)
+            temp_audio_path = temp_audio.name
+
+        try:
+            # Initialize OpenAI client
+            api_key = os.environ.get('OPENAI_API_KEY')
+            if not api_key:
+                return jsonify({'success': False, 'error': 'Transcription service not configured'}), 500
+
+            client = OpenAI(api_key=api_key)
+
+            # Transcribe using Whisper
+            with open(temp_audio_path, 'rb') as audio:
+                transcription = client.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=audio,
+                    response_format="text"
+                )
+
+            # Clean up temporary file
+            os.unlink(temp_audio_path)
+
+            return jsonify({
+                'success': True,
+                'transcription': transcription
+            }), 200
+
+        except Exception as e:
+            # Clean up temporary file on error
+            if os.path.exists(temp_audio_path):
+                os.unlink(temp_audio_path)
+            raise e
+
+    except Exception as e:
+        print(f"Error transcribing audio: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @app.route('/embed/<embed_token>/process', methods=['POST'])
 def embed_process(embed_token):
     """Process embed widget submission and return results"""
@@ -9188,6 +9260,111 @@ def render_embed_onboarding(config: Dict) -> str:
             0% {{ transform: rotate(0deg); }}
             100% {{ transform: rotate(360deg); }}
         }}
+
+        /* Voice Input Styles */
+        .input-mode-toggle {{
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }}
+
+        .input-mode-btn {{
+            font-family: "Satoshi", sans-serif;
+            padding: 0.5rem 1.5rem;
+            border: 2px solid rgba(0, 0, 0, 0.1);
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 12px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.875rem;
+            transition: all 0.3s ease;
+            color: #2d2d2d;
+        }}
+
+        .input-mode-btn.active {{
+            background: black;
+            color: white;
+            border-color: black;
+        }}
+
+        .input-mode-btn:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }}
+
+        .audio-recorder {{
+            text-align: center;
+            padding: 2rem;
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 16px;
+            border: 2px dashed rgba(0, 0, 0, 0.1);
+        }}
+
+        .record-btn {{
+            font-family: "Satoshi", sans-serif;
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 1.5rem 2rem;
+            background: rgba(0, 0, 0, 0.05);
+            border: 2px solid rgba(0, 0, 0, 0.1);
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 600;
+        }}
+
+        .record-btn:hover {{
+            background: rgba(0, 0, 0, 0.1);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+        }}
+
+        .record-btn.recording {{
+            background: rgba(255, 59, 48, 0.1);
+            border-color: rgba(255, 59, 48, 0.5);
+            animation: pulse 1.5s ease-in-out infinite;
+        }}
+
+        @keyframes pulse {{
+            0%, 100% {{ transform: scale(1); }}
+            50% {{ transform: scale(1.05); }}
+        }}
+
+        .record-icon {{
+            font-size: 2rem;
+        }}
+
+        .record-text {{
+            font-size: 0.875rem;
+            color: #2d2d2d;
+        }}
+
+        .recording-status {{
+            margin-top: 1rem;
+            font-family: "Satoshi", sans-serif;
+            font-size: 0.875rem;
+            color: #666;
+            min-height: 1.5rem;
+        }}
+
+        .transcription-result {{
+            margin-top: 1rem;
+            padding: 1rem;
+            background: rgba(0, 0, 0, 0.05);
+            border-radius: 12px;
+            font-family: "Satoshi", sans-serif;
+            font-size: 0.875rem;
+            line-height: 1.6;
+            color: #2d2d2d;
+            min-height: 60px;
+            text-align: left;
+        }}
+
+        .transcription-result:empty {{
+            display: none;
+        }}
     </style>
 </head>
 <body>
@@ -9223,58 +9400,238 @@ def render_embed_onboarding(config: Dict) -> str:
                     <input type="text" name="location" placeholder="e.g., London, UK" style="width: 100%; padding: 1rem; border: 2px solid #ddd; border-radius: 12px; font-family: 'Satoshi', sans-serif; font-size: 1rem;">
                 </div>
 
+                <!-- Defining Moment -->
                 <div class="question">
                     <label class="question-label">Defining Moment</label>
                     <p class="question-description">Describe a life-changing decision that shaped who you are today.</p>
-                    <textarea name="defining_moment" required></textarea>
+
+                    <div class="input-mode-toggle">
+                        <button type="button" class="input-mode-btn active" onclick="switchInputMode('text', 'defining_moment')">Text</button>
+                        <button type="button" class="input-mode-btn" onclick="switchInputMode('voice', 'defining_moment')">Voice</button>
+                    </div>
+
+                    <div id="text-input-defining_moment" class="input-container">
+                        <textarea name="defining_moment" id="defining_moment_text" required></textarea>
+                    </div>
+
+                    <div id="voice-input-defining_moment" class="input-container" style="display: none;">
+                        <div class="audio-recorder">
+                            <button type="button" class="record-btn" id="record-btn-defining_moment" onclick="toggleRecording('defining_moment')">
+                                <span class="record-icon">🎤</span>
+                                <span class="record-text">Start Recording</span>
+                            </button>
+                            <div class="recording-status" id="status-defining_moment"></div>
+                            <div class="transcription-result" id="transcription-defining_moment"></div>
+                        </div>
+                    </div>
                 </div>
 
+                <!-- Resource Allocation -->
                 <div class="question">
                     <label class="question-label">Resource Allocation</label>
                     <p class="question-description">If you received an unexpected $10,000 windfall, how would you allocate it?</p>
-                    <textarea name="resource_allocation" required></textarea>
+
+                    <div class="input-mode-toggle">
+                        <button type="button" class="input-mode-btn active" onclick="switchInputMode('text', 'resource_allocation')">Text</button>
+                        <button type="button" class="input-mode-btn" onclick="switchInputMode('voice', 'resource_allocation')">Voice</button>
+                    </div>
+
+                    <div id="text-input-resource_allocation" class="input-container">
+                        <textarea name="resource_allocation" id="resource_allocation_text" required></textarea>
+                    </div>
+
+                    <div id="voice-input-resource_allocation" class="input-container" style="display: none;">
+                        <div class="audio-recorder">
+                            <button type="button" class="record-btn" id="record-btn-resource_allocation" onclick="toggleRecording('resource_allocation')">
+                                <span class="record-icon">🎤</span>
+                                <span class="record-text">Start Recording</span>
+                            </button>
+                            <div class="recording-status" id="status-resource_allocation"></div>
+                            <div class="transcription-result" id="transcription-resource_allocation"></div>
+                        </div>
+                    </div>
                 </div>
 
+                <!-- Conflict Response -->
                 <div class="question">
                     <label class="question-label">Conflict Response</label>
                     <p class="question-description">Describe a time when you had a significant disagreement with someone. How did you navigate it?</p>
-                    <textarea name="conflict_response" required></textarea>
+
+                    <div class="input-mode-toggle">
+                        <button type="button" class="input-mode-btn active" onclick="switchInputMode('text', 'conflict_response')">Text</button>
+                        <button type="button" class="input-mode-btn" onclick="switchInputMode('voice', 'conflict_response')">Voice</button>
+                    </div>
+
+                    <div id="text-input-conflict_response" class="input-container">
+                        <textarea name="conflict_response" id="conflict_response_text" required></textarea>
+                    </div>
+
+                    <div id="voice-input-conflict_response" class="input-container" style="display: none;">
+                        <div class="audio-recorder">
+                            <button type="button" class="record-btn" id="record-btn-conflict_response" onclick="toggleRecording('conflict_response')">
+                                <span class="record-icon">🎤</span>
+                                <span class="record-text">Start Recording</span>
+                            </button>
+                            <div class="recording-status" id="status-conflict_response"></div>
+                            <div class="transcription-result" id="transcription-conflict_response"></div>
+                        </div>
+                    </div>
                 </div>
 
+                <!-- Trade-off Scenario -->
                 <div class="question">
                     <label class="question-label">Trade-off Scenario</label>
                     <p class="question-description">Would you prefer a high-paying job you find meaningless, or meaningful work with lower pay? Why?</p>
-                    <textarea name="trade_off" required></textarea>
+
+                    <div class="input-mode-toggle">
+                        <button type="button" class="input-mode-btn active" onclick="switchInputMode('text', 'trade_off')">Text</button>
+                        <button type="button" class="input-mode-btn" onclick="switchInputMode('voice', 'trade_off')">Voice</button>
+                    </div>
+
+                    <div id="text-input-trade_off" class="input-container">
+                        <textarea name="trade_off" id="trade_off_text" required></textarea>
+                    </div>
+
+                    <div id="voice-input-trade_off" class="input-container" style="display: none;">
+                        <div class="audio-recorder">
+                            <button type="button" class="record-btn" id="record-btn-trade_off" onclick="toggleRecording('trade_off')">
+                                <span class="record-icon">🎤</span>
+                                <span class="record-text">Start Recording</span>
+                            </button>
+                            <div class="recording-status" id="status-trade_off"></div>
+                            <div class="transcription-result" id="transcription-trade_off"></div>
+                        </div>
+                    </div>
                 </div>
 
+                <!-- Social Identity -->
                 <div class="question">
                     <label class="question-label">Social Identity</label>
                     <p class="question-description">What communities or groups are most important to your identity?</p>
-                    <textarea name="social_identity" required></textarea>
+
+                    <div class="input-mode-toggle">
+                        <button type="button" class="input-mode-btn active" onclick="switchInputMode('text', 'social_identity')">Text</button>
+                        <button type="button" class="input-mode-btn" onclick="switchInputMode('voice', 'social_identity')">Voice</button>
+                    </div>
+
+                    <div id="text-input-social_identity" class="input-container">
+                        <textarea name="social_identity" id="social_identity_text" required></textarea>
+                    </div>
+
+                    <div id="voice-input-social_identity" class="input-container" style="display: none;">
+                        <div class="audio-recorder">
+                            <button type="button" class="record-btn" id="record-btn-social_identity" onclick="toggleRecording('social_identity')">
+                                <span class="record-icon">🎤</span>
+                                <span class="record-text">Start Recording</span>
+                            </button>
+                            <div class="recording-status" id="status-social_identity"></div>
+                            <div class="transcription-result" id="transcription-social_identity"></div>
+                        </div>
+                    </div>
                 </div>
 
+                <!-- Moral Dilemma -->
                 <div class="question">
                     <label class="question-label">Moral Dilemma</label>
                     <p class="question-description">A close friend does something unethical at work. Do you report it or stay loyal? Why?</p>
-                    <textarea name="moral_dilemma" required></textarea>
+
+                    <div class="input-mode-toggle">
+                        <button type="button" class="input-mode-btn active" onclick="switchInputMode('text', 'moral_dilemma')">Text</button>
+                        <button type="button" class="input-mode-btn" onclick="switchInputMode('voice', 'moral_dilemma')">Voice</button>
+                    </div>
+
+                    <div id="text-input-moral_dilemma" class="input-container">
+                        <textarea name="moral_dilemma" id="moral_dilemma_text" required></textarea>
+                    </div>
+
+                    <div id="voice-input-moral_dilemma" class="input-container" style="display: none;">
+                        <div class="audio-recorder">
+                            <button type="button" class="record-btn" id="record-btn-moral_dilemma" onclick="toggleRecording('moral_dilemma')">
+                                <span class="record-icon">🎤</span>
+                                <span class="record-text">Start Recording</span>
+                            </button>
+                            <div class="recording-status" id="status-moral_dilemma"></div>
+                            <div class="transcription-result" id="transcription-moral_dilemma"></div>
+                        </div>
+                    </div>
                 </div>
 
+                <!-- System Trust -->
                 <div class="question">
                     <label class="question-label">System Trust</label>
                     <p class="question-description">How much do you trust institutions (government, corporations, media)? Why?</p>
-                    <textarea name="system_trust" required></textarea>
+
+                    <div class="input-mode-toggle">
+                        <button type="button" class="input-mode-btn active" onclick="switchInputMode('text', 'system_trust')">Text</button>
+                        <button type="button" class="input-mode-btn" onclick="switchInputMode('voice', 'system_trust')">Voice</button>
+                    </div>
+
+                    <div id="text-input-system_trust" class="input-container">
+                        <textarea name="system_trust" id="system_trust_text" required></textarea>
+                    </div>
+
+                    <div id="voice-input-system_trust" class="input-container" style="display: none;">
+                        <div class="audio-recorder">
+                            <button type="button" class="record-btn" id="record-btn-system_trust" onclick="toggleRecording('system_trust')">
+                                <span class="record-icon">🎤</span>
+                                <span class="record-text">Start Recording</span>
+                            </button>
+                            <div class="recording-status" id="status-system_trust"></div>
+                            <div class="transcription-result" id="transcription-system_trust"></div>
+                        </div>
+                    </div>
                 </div>
 
+                <!-- Stress Response -->
                 <div class="question">
                     <label class="question-label">Stress Response</label>
                     <p class="question-description">Describe a highly stressful situation and how you coped with it.</p>
-                    <textarea name="stress_response" required></textarea>
+
+                    <div class="input-mode-toggle">
+                        <button type="button" class="input-mode-btn active" onclick="switchInputMode('text', 'stress_response')">Text</button>
+                        <button type="button" class="input-mode-btn" onclick="switchInputMode('voice', 'stress_response')">Voice</button>
+                    </div>
+
+                    <div id="text-input-stress_response" class="input-container">
+                        <textarea name="stress_response" id="stress_response_text" required></textarea>
+                    </div>
+
+                    <div id="voice-input-stress_response" class="input-container" style="display: none;">
+                        <div class="audio-recorder">
+                            <button type="button" class="record-btn" id="record-btn-stress_response" onclick="toggleRecording('stress_response')">
+                                <span class="record-icon">🎤</span>
+                                <span class="record-text">Start Recording</span>
+                            </button>
+                            <div class="recording-status" id="status-stress_response"></div>
+                            <div class="transcription-result" id="transcription-stress_response"></div>
+                        </div>
+                    </div>
                 </div>
 
+                <!-- Future & Values -->
                 <div class="question">
                     <label class="question-label">Future & Values</label>
                     <p class="question-description">What are your most important goals for the next 5 years?</p>
-                    <textarea name="future_values" required></textarea>
+
+                    <div class="input-mode-toggle">
+                        <button type="button" class="input-mode-btn active" onclick="switchInputMode('text', 'future_values')">Text</button>
+                        <button type="button" class="input-mode-btn" onclick="switchInputMode('voice', 'future_values')">Voice</button>
+                    </div>
+
+                    <div id="text-input-future_values" class="input-container">
+                        <textarea name="future_values" id="future_values_text" required></textarea>
+                    </div>
+
+                    <div id="voice-input-future_values" class="input-container" style="display: none;">
+                        <div class="audio-recorder">
+                            <button type="button" class="record-btn" id="record-btn-future_values" onclick="toggleRecording('future_values')">
+                                <span class="record-icon">🎤</span>
+                                <span class="record-text">Start Recording</span>
+                            </button>
+                            <div class="recording-status" id="status-future_values"></div>
+                            <div class="transcription-result" id="transcription-future_values"></div>
+                        </div>
+                    </div>
                 </div>
 
                 <button type="submit" class="submit-btn" id="submitBtn">View Results</button>
@@ -9294,6 +9651,118 @@ def render_embed_onboarding(config: Dict) -> str:
     </div>
 
     <script>
+        let mediaRecorder = null;
+        let audioChunks = [];
+        let currentField = null;
+
+        function switchInputMode(mode, fieldName) {{
+            // Get all buttons for this field
+            const textBtn = document.querySelector(`[onclick*="switchInputMode('text', '${{fieldName}}')"]`);
+            const voiceBtn = document.querySelector(`[onclick*="switchInputMode('voice', '${{fieldName}}')"]`);
+
+            // Toggle button states
+            if (mode === 'text') {{
+                textBtn.classList.add('active');
+                voiceBtn.classList.remove('active');
+            }} else {{
+                textBtn.classList.remove('active');
+                voiceBtn.classList.add('active');
+            }}
+
+            // Toggle input containers
+            const textInput = document.getElementById(`text-input-${{fieldName}}`);
+            const voiceInput = document.getElementById(`voice-input-${{fieldName}}`);
+
+            if (mode === 'text') {{
+                textInput.style.display = 'block';
+                voiceInput.style.display = 'none';
+                // Enable textarea required attribute
+                const textarea = document.getElementById(`${{fieldName}}_text`);
+                if (textarea) textarea.required = true;
+            }} else {{
+                textInput.style.display = 'none';
+                voiceInput.style.display = 'block';
+                // Disable textarea required attribute when using voice
+                const textarea = document.getElementById(`${{fieldName}}_text`);
+                if (textarea) textarea.required = false;
+            }}
+        }}
+
+        async function toggleRecording(fieldName) {{
+            const recordBtn = document.getElementById(`record-btn-${{fieldName}}`);
+            const statusDiv = document.getElementById(`status-${{fieldName}}`);
+            const recordText = recordBtn.querySelector('.record-text');
+
+            if (!mediaRecorder || mediaRecorder.state === 'inactive') {{
+                // Start recording
+                try {{
+                    const stream = await navigator.mediaDevices.getUserMedia({{ audio: true }});
+                    mediaRecorder = new MediaRecorder(stream);
+                    audioChunks = [];
+                    currentField = fieldName;
+
+                    mediaRecorder.ondataavailable = (event) => {{
+                        audioChunks.push(event.data);
+                    }};
+
+                    mediaRecorder.onstop = async () => {{
+                        const audioBlob = new Blob(audioChunks, {{ type: 'audio/webm' }});
+                        await transcribeAudio(audioBlob, fieldName);
+
+                        // Stop all tracks to release microphone
+                        stream.getTracks().forEach(track => track.stop());
+                    }};
+
+                    mediaRecorder.start();
+                    recordBtn.classList.add('recording');
+                    recordText.textContent = 'Stop Recording';
+                    statusDiv.textContent = 'Recording... Click to stop';
+                }} catch (err) {{
+                    console.error('Error accessing microphone:', err);
+                    statusDiv.textContent = 'Error: Could not access microphone';
+                }}
+            }} else {{
+                // Stop recording
+                mediaRecorder.stop();
+                recordBtn.classList.remove('recording');
+                recordText.textContent = 'Start Recording';
+                statusDiv.textContent = 'Processing...';
+            }}
+        }}
+
+        async function transcribeAudio(audioBlob, fieldName) {{
+            const statusDiv = document.getElementById(`status-${{fieldName}}`);
+            const transcriptionDiv = document.getElementById(`transcription-${{fieldName}}`);
+            const textarea = document.getElementById(`${{fieldName}}_text`);
+
+            try {{
+                const formData = new FormData();
+                formData.append('audio', audioBlob, 'recording.webm');
+
+                const response = await fetch('/embed/{config['embed_token']}/transcribe-audio', {{
+                    method: 'POST',
+                    body: formData
+                }});
+
+                const data = await response.json();
+
+                if (data.success) {{
+                    transcriptionDiv.textContent = data.transcription;
+                    statusDiv.textContent = 'Transcription complete!';
+
+                    // Update the text field so it gets saved
+                    if (textarea) {{
+                        textarea.value = data.transcription;
+                    }}
+                }} else {{
+                    statusDiv.textContent = 'Error: ' + (data.error || 'Transcription failed');
+                }}
+            }} catch (err) {{
+                console.error('Error transcribing audio:', err);
+                statusDiv.textContent = 'Error: Could not transcribe audio';
+            }}
+        }}
+
         document.getElementById('onboardingForm').addEventListener('submit', async (e) => {{
             e.preventDefault();
 
