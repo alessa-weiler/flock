@@ -7954,8 +7954,15 @@ def organization_applicants(org_id):
             if applicant['compatibility_results']:
                 try:
                     applicant['compatibility_data'] = json.loads(applicant['compatibility_results'])
-                    # Calculate average score
-                    scores = [m.get('compatibility_score', 0) for m in applicant['compatibility_data'].get('members', [])]
+                    # Calculate average score - handle both old and new structures
+                    scores = []
+                    for m in applicant['compatibility_data'].get('members', []):
+                        if 'analysis' in m:
+                            # New structure
+                            scores.append(m.get('analysis', {}).get('compatibility_score', 0))
+                        else:
+                            # Old structure
+                            scores.append(m.get('compatibility_score', 0))
                     applicant['avg_score'] = sum(scores) / len(scores) if scores else 0
                 except:
                     applicant['compatibility_data'] = {}
@@ -8590,7 +8597,7 @@ def embed_process(embed_token):
         # Get organization members and their profiles
         cursor.execute('''
             SELECT
-                u.id, u.first_name, u.last_name,
+                u.id, u.first_name, u.last_name, u.email,
                 up.profile_data
             FROM organization_members om
             INNER JOIN users u ON om.user_id = u.id
@@ -8600,6 +8607,8 @@ def embed_process(embed_token):
 
         members = cursor.fetchall()
         print(f"Found {len(members)} team members")
+        for member in members:
+            print(f"  Member: id={member.get('id')}, first_name={member.get('first_name')}, last_name={member.get('last_name')}, email={member.get('email')}")
 
         # Collect onboarding data from form
         onboarding_data = {
@@ -8783,9 +8792,20 @@ LinkedIn: {user_data.get('linkedin_url', 'N/A')}
     def analyze_member_compatibility(member):
         """Analyze compatibility for a single member"""
         # Handle None values for first_name and last_name
-        first_name = member.get('first_name') or 'Team'
-        last_name = member.get('last_name') or 'Member'
-        member_name = f"{first_name} {last_name}"
+        first_name = member.get('first_name')
+        last_name = member.get('last_name')
+
+        if first_name and last_name:
+            member_name = f"{first_name} {last_name}"
+        elif first_name:
+            member_name = first_name
+        elif last_name:
+            member_name = last_name
+        elif member.get('email'):
+            # Use email prefix as fallback
+            member_name = member['email'].split('@')[0].replace('.', ' ').title()
+        else:
+            member_name = "Team Member"
 
         member_profile = {}
 
@@ -8913,9 +8933,20 @@ LinkedIn: {user_data.get('linkedin_url', 'N/A')}
 
     def analyze_member_engagement(member):
         # Handle None values for first_name and last_name
-        first_name = member.get('first_name') or 'Team'
-        last_name = member.get('last_name') or 'Member'
-        member_name = f"{first_name} {last_name}"
+        first_name = member.get('first_name')
+        last_name = member.get('last_name')
+
+        if first_name and last_name:
+            member_name = f"{first_name} {last_name}"
+        elif first_name:
+            member_name = first_name
+        elif last_name:
+            member_name = last_name
+        elif member.get('email'):
+            # Use email prefix as fallback
+            member_name = member['email'].split('@')[0].replace('.', ' ').title()
+        else:
+            member_name = "Team Member"
         member_profile = {}
 
         if member.get('profile_data'):
@@ -9121,10 +9152,19 @@ def render_patients_dashboard(org: Dict, patients: List[Dict], user_info: Dict) 
             # Build matched members HTML with thumbs up/down
             matched_members_html = ''
             if patient.get('compatibility_data'):
-                for member in patient['compatibility_data'].get('members', []):
-                    score = member.get('compatibility_score', 0)
+                for idx, member in enumerate(patient['compatibility_data'].get('members', [])):
+                    # Handle both old and new result structures
+                    if 'analysis' in member:
+                        # New structure: {'name': '...', 'analysis': {'compatibility_score': ...}}
+                        member_name = member.get('name', 'Team Member')
+                        score = member.get('analysis', {}).get('compatibility_score', 0)
+                    else:
+                        # Old structure: {'member_name': '...', 'compatibility_score': ...}
+                        member_name = member.get('member_name', 'Team Member')
+                        score = member.get('compatibility_score', 0)
+
                     feedback = member.get('feedback')
-                    member_id = member.get('id')
+                    member_id = member.get('id', idx)  # Use index as fallback
 
                     # Thumbs styling based on feedback
                     thumbs_up_style = 'font-size: 1.5rem; cursor: pointer; opacity: 0.3; transition: opacity 0.2s;'
@@ -9138,8 +9178,8 @@ def render_patients_dashboard(org: Dict, patients: List[Dict], user_info: Dict) 
                     matched_members_html += f'''
                     <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; background: #f9fafb; border-radius: 8px; margin-bottom: 0.5rem;">
                         <div style="flex-grow: 1;">
-                            <span style="font-family: 'Satoshi', sans-serif; font-weight: 600;">{member.get('member_name', 'Team Member')}</span>
-                            <span style="font-family: 'Satoshi', sans-serif; color: #6b7280; margin-left: 0.5rem;">({score}/100)</span>
+                            <span style="font-family: 'Satoshi', sans-serif; font-weight: 600;">{member_name}</span>
+                            <span style="font-family: 'Satoshi', sans-serif; color: #6b7280; margin-left: 0.5rem;">({int(score)}/100)</span>
                         </div>
                         <div style="display: flex; gap: 1rem; align-items: center;" id="feedback-{patient['id']}-{member_id}">
                             <span onclick="updateFeedback({patient['id']}, {member_id}, 'up')" style="{thumbs_up_style}" id="thumbs-up-{patient['id']}-{member_id}">👍</span>
