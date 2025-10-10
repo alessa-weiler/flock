@@ -8791,6 +8791,9 @@ LinkedIn: {user_data.get('linkedin_url', 'N/A')}
 
     def analyze_member_compatibility(member):
         """Analyze compatibility for a single member"""
+        # Store member ID for later use
+        member_id = member.get('id')
+
         # Handle None values for first_name and last_name
         first_name = member.get('first_name')
         last_name = member.get('last_name')
@@ -8806,6 +8809,8 @@ LinkedIn: {user_data.get('linkedin_url', 'N/A')}
             member_name = member['email'].split('@')[0].replace('.', ' ').title()
         else:
             member_name = "Team Member"
+
+        print(f"  Processing member: id={member_id}, name={member_name}, email={member.get('email')}")
 
         member_profile = {}
 
@@ -8860,6 +8865,7 @@ Return your analysis as JSON with this structure:
             analysis = json.loads(response_text)
             print(f"Completed analysis for {member_name}")
             return {
+                'id': member_id,  # Include member ID for feedback
                 'name': member_name,
                 'analysis': analysis
             }
@@ -8868,6 +8874,7 @@ Return your analysis as JSON with this structure:
             print(f"JSON parsing error for {member_name}: {e}")
             print(f"Response was: {response_text if 'response_text' in locals() else 'No response'}")
             return {
+                'id': member_id,
                 'name': member_name,
                 'analysis': {
                     'compatibility_score': 50,
@@ -8882,6 +8889,7 @@ Return your analysis as JSON with this structure:
             import traceback
             traceback.print_exc()
             return {
+                'id': member_id,
                 'name': member_name,
                 'analysis': {
                     'compatibility_score': 50,
