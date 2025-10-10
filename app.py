@@ -8743,9 +8743,10 @@ Write a detailed analysis (300-500 words) that helps the team understand if this
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o-mini",  # Using faster model
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.7
+            temperature=0.7,
+            timeout=20
         )
 
         return response.choices[0].message.content.strip()
@@ -8756,6 +8757,8 @@ Write a detailed analysis (300-500 words) that helps the team understand if this
 
 def run_embed_party_mode(user_data: Dict, members: List[Dict], config: Dict) -> Dict:
     """Run party mode for embed widget - analyze compatibility between user and team"""
+    import concurrent.futures
+
     client = OpenAI(api_key=API_KEY)
 
     # Create user profile summary from onboarding
@@ -8777,9 +8780,8 @@ LinkedIn: {user_data.get('linkedin_url', 'N/A')}
 - Future Values: {user_data.get('future_values', 'N/A')}
 """
 
-    results = {'members': []}
-
-    for member in members:
+    def analyze_member_compatibility(member):
+        """Analyze compatibility for a single member"""
         member_name = f"{member['first_name']} {member['last_name']}"
         member_profile = {}
 
@@ -8819,21 +8821,24 @@ Return your analysis as JSON with this structure:
 """
 
         try:
+            print(f"Analyzing compatibility with {member_name}...")
             response = client.chat.completions.create(
-                model="gpt-4",
+                model="gpt-4o-mini",  # Using faster model
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.7
+                temperature=0.7,
+                timeout=20  # Add timeout
             )
 
             analysis = json.loads(response.choices[0].message.content)
-            results['members'].append({
+            print(f"Completed analysis for {member_name}")
+            return {
                 'name': member_name,
                 'analysis': analysis
-            })
+            }
 
         except Exception as e:
             print(f"Error analyzing compatibility for {member_name}: {e}")
-            results['members'].append({
+            return {
                 'name': member_name,
                 'analysis': {
                     'compatibility_score': 50,
@@ -8842,13 +8847,20 @@ Return your analysis as JSON with this structure:
                     'challenges': [],
                     'recommendation': 'Unable to complete analysis'
                 }
-            })
+            }
 
-    return results
+    # Process all members in parallel to speed up
+    print(f"Processing {len(members)} team members in parallel...")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(5, len(members))) as executor:
+        member_results = list(executor.map(analyze_member_compatibility, members))
+
+    return {'members': member_results}
 
 
 def run_embed_simulation_mode(user_data: Dict, members: List[Dict], config: Dict) -> Dict:
     """Run simulation mode for embed widget - analyze how team would engage with this person"""
+    import concurrent.futures
+
     client = OpenAI(api_key=API_KEY)
 
     person_spec = config.get('person_specification', 'new person')
@@ -8872,9 +8884,7 @@ LinkedIn: {user_data.get('linkedin_url', 'N/A')}
 - Future Values: {user_data.get('future_values', 'N/A')}
 """
 
-    results = {'members': []}
-
-    for member in members:
+    def analyze_member_engagement(member):
         member_name = f"{member['first_name']} {member['last_name']}"
         member_profile = {}
 
@@ -8915,21 +8925,24 @@ Return your analysis as JSON with this structure:
 """
 
         try:
+            print(f"Analyzing engagement for {member_name}...")
             response = client.chat.completions.create(
-                model="gpt-4",
+                model="gpt-4o-mini",  # Using faster model
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.7
+                temperature=0.7,
+                timeout=20
             )
 
             analysis = json.loads(response.choices[0].message.content)
-            results['members'].append({
+            print(f"Completed analysis for {member_name}")
+            return {
                 'name': member_name,
                 'analysis': analysis
-            })
+            }
 
         except Exception as e:
             print(f"Error analyzing engagement for {member_name}: {e}")
-            results['members'].append({
+            return {
                 'name': member_name,
                 'analysis': {
                     'engagement_style': 'Analysis unavailable',
@@ -8939,9 +8952,14 @@ Return your analysis as JSON with this structure:
                     'effectiveness_score': 50,
                     'recommendation': 'Unable to complete analysis'
                 }
-            })
+            }
 
-    return results
+    # Process all members in parallel
+    print(f"Processing {len(members)} team members in parallel (simulation mode)...")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(5, len(members))) as executor:
+        member_results = list(executor.map(analyze_member_engagement, members))
+
+    return {'members': member_results}
 
 
 def render_applicants_dashboard(org: Dict, applicants: List[Dict], user_info: Dict) -> str:
