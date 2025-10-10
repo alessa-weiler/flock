@@ -8782,7 +8782,11 @@ LinkedIn: {user_data.get('linkedin_url', 'N/A')}
 
     def analyze_member_compatibility(member):
         """Analyze compatibility for a single member"""
-        member_name = f"{member['first_name']} {member['last_name']}"
+        # Handle None values for first_name and last_name
+        first_name = member.get('first_name') or 'Team'
+        last_name = member.get('last_name') or 'Member'
+        member_name = f"{first_name} {last_name}"
+
         member_profile = {}
 
         if member.get('profile_data'):
@@ -8826,23 +8830,42 @@ Return your analysis as JSON with this structure:
                 model="gpt-4o-mini",  # Using faster model
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.7,
-                timeout=20  # Add timeout
+                timeout=20,  # Add timeout
+                response_format={"type": "json_object"}  # Force JSON response
             )
 
-            analysis = json.loads(response.choices[0].message.content)
+            response_text = response.choices[0].message.content
+            print(f"Raw response for {member_name}: {response_text[:200]}...")
+
+            analysis = json.loads(response_text)
             print(f"Completed analysis for {member_name}")
             return {
                 'name': member_name,
                 'analysis': analysis
             }
 
-        except Exception as e:
-            print(f"Error analyzing compatibility for {member_name}: {e}")
+        except json.JSONDecodeError as e:
+            print(f"JSON parsing error for {member_name}: {e}")
+            print(f"Response was: {response_text if 'response_text' in locals() else 'No response'}")
             return {
                 'name': member_name,
                 'analysis': {
                     'compatibility_score': 50,
-                    'summary': 'Analysis unavailable',
+                    'summary': 'Analysis unavailable - JSON parsing error',
+                    'strengths': [],
+                    'challenges': [],
+                    'recommendation': 'Unable to complete analysis'
+                }
+            }
+        except Exception as e:
+            print(f"Error analyzing compatibility for {member_name}: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'name': member_name,
+                'analysis': {
+                    'compatibility_score': 50,
+                    'summary': f'Analysis unavailable - {str(e)}',
                     'strengths': [],
                     'challenges': [],
                     'recommendation': 'Unable to complete analysis'
@@ -8853,6 +8876,10 @@ Return your analysis as JSON with this structure:
     print(f"Processing {len(members)} team members in parallel...")
     with concurrent.futures.ThreadPoolExecutor(max_workers=min(5, len(members))) as executor:
         member_results = list(executor.map(analyze_member_compatibility, members))
+
+    # Sort by compatibility score (highest first)
+    member_results.sort(key=lambda x: x['analysis'].get('compatibility_score', 0), reverse=True)
+    print(f"Sorted results by compatibility score")
 
     return {'members': member_results}
 
@@ -8885,7 +8912,10 @@ LinkedIn: {user_data.get('linkedin_url', 'N/A')}
 """
 
     def analyze_member_engagement(member):
-        member_name = f"{member['first_name']} {member['last_name']}"
+        # Handle None values for first_name and last_name
+        first_name = member.get('first_name') or 'Team'
+        last_name = member.get('last_name') or 'Member'
+        member_name = f"{first_name} {last_name}"
         member_profile = {}
 
         if member.get('profile_data'):
@@ -8930,22 +8960,42 @@ Return your analysis as JSON with this structure:
                 model="gpt-4o-mini",  # Using faster model
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.7,
-                timeout=20
+                timeout=20,
+                response_format={"type": "json_object"}  # Force JSON response
             )
 
-            analysis = json.loads(response.choices[0].message.content)
+            response_text = response.choices[0].message.content
+            print(f"Raw response for {member_name}: {response_text[:200]}...")
+
+            analysis = json.loads(response_text)
             print(f"Completed analysis for {member_name}")
             return {
                 'name': member_name,
                 'analysis': analysis
             }
 
-        except Exception as e:
-            print(f"Error analyzing engagement for {member_name}: {e}")
+        except json.JSONDecodeError as e:
+            print(f"JSON parsing error for {member_name}: {e}")
+            print(f"Response was: {response_text if 'response_text' in locals() else 'No response'}")
             return {
                 'name': member_name,
                 'analysis': {
-                    'engagement_style': 'Analysis unavailable',
+                    'engagement_style': 'Analysis unavailable - JSON parsing error',
+                    'strengths': [],
+                    'challenges': [],
+                    'relationship_quality': 'Unable to assess',
+                    'effectiveness_score': 50,
+                    'recommendation': 'Unable to complete analysis'
+                }
+            }
+        except Exception as e:
+            print(f"Error analyzing engagement for {member_name}: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'name': member_name,
+                'analysis': {
+                    'engagement_style': f'Analysis unavailable - {str(e)}',
                     'strengths': [],
                     'challenges': [],
                     'relationship_quality': 'Unable to assess',
@@ -9644,6 +9694,10 @@ def render_embed_onboarding(config: Dict) -> str:
         }}
 
         /* Voice Input Styles */
+        .input-container {{
+            width: 100%;
+        }}
+
         .input-mode-toggle {{
             display: flex;
             gap: 0.5rem;
@@ -10038,9 +10092,14 @@ def render_embed_onboarding(config: Dict) -> str:
         // Event delegation for input mode toggle buttons
         document.addEventListener('click', function(e) {{
             if (e.target.closest('.input-mode-btn')) {{
+                e.preventDefault();
+                e.stopPropagation();
+
                 const btn = e.target.closest('.input-mode-btn');
                 const mode = btn.getAttribute('data-mode');
                 const fieldName = btn.getAttribute('data-field');
+
+                console.log('Toggle button clicked:', mode, fieldName);
 
                 if (mode && fieldName) {{
                     switchInputMode(mode, fieldName);
@@ -10049,8 +10108,14 @@ def render_embed_onboarding(config: Dict) -> str:
 
             // Handle record button clicks
             if (e.target.closest('.record-btn')) {{
+                e.preventDefault();
+                e.stopPropagation();
+
                 const btn = e.target.closest('.record-btn');
                 const fieldName = btn.getAttribute('data-field');
+
+                console.log('Record button clicked:', fieldName);
+
                 if (fieldName) {{
                     toggleRecording(fieldName);
                 }}
@@ -10060,11 +10125,29 @@ def render_embed_onboarding(config: Dict) -> str:
         function switchInputMode(mode, fieldName) {{
             console.log('switchInputMode called:', mode, fieldName);
 
+            // Get input containers
+            const textInput = document.getElementById(`text-input-${{fieldName}}`);
+            const voiceInput = document.getElementById(`voice-input-${{fieldName}}`);
+
+            if (!textInput || !voiceInput) {{
+                console.error('Could not find input containers for:', fieldName);
+                return;
+            }}
+
             // Get the parent question div
-            const questionDiv = document.getElementById(`text-input-${{fieldName}}`).closest('.question');
+            const questionDiv = textInput.closest('.question');
+            if (!questionDiv) {{
+                console.error('Could not find parent question div for:', fieldName);
+                return;
+            }}
 
             // Get all buttons for this field within this question
             const buttons = questionDiv.querySelectorAll('.input-mode-btn');
+            if (buttons.length < 2) {{
+                console.error('Could not find toggle buttons for:', fieldName);
+                return;
+            }}
+
             const textBtn = buttons[0];
             const voiceBtn = buttons[1];
 
@@ -10078,21 +10161,24 @@ def render_embed_onboarding(config: Dict) -> str:
             }}
 
             // Toggle input containers
-            const textInput = document.getElementById(`text-input-${{fieldName}}`);
-            const voiceInput = document.getElementById(`voice-input-${{fieldName}}`);
-
             if (mode === 'text') {{
                 textInput.style.display = 'block';
                 voiceInput.style.display = 'none';
                 // Enable textarea required attribute
                 const textarea = document.getElementById(`${{fieldName}}_text`);
-                if (textarea) textarea.required = true;
+                if (textarea) {{
+                    textarea.required = true;
+                    console.log('Switched to text mode, textarea required:', textarea.required);
+                }}
             }} else {{
                 textInput.style.display = 'none';
                 voiceInput.style.display = 'block';
                 // Disable textarea required attribute when using voice
                 const textarea = document.getElementById(`${{fieldName}}_text`);
-                if (textarea) textarea.required = false;
+                if (textarea) {{
+                    textarea.required = false;
+                    console.log('Switched to voice mode, textarea required:', textarea.required);
+                }}
             }}
 
             console.log('Mode switched to:', mode, 'for field:', fieldName);
