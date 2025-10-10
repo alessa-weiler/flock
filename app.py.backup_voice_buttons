@@ -9792,8 +9792,8 @@ def render_embed_onboarding(config: Dict) -> str:
                     <p class="question-description">If you received an unexpected $10,000 windfall, how would you allocate it?</p>
 
                     <div class="input-mode-toggle">
-                        <button type="button" class="input-mode-btn active" data-mode="text" data-field="resource_allocation">Text</button>
-                        <button type="button" class="input-mode-btn" data-mode="voice" data-field="resource_allocation">Voice</button>
+                        <button type="button" class="input-mode-btn active" onclick="switchInputMode('text', 'resource_allocation')">Text</button>
+                        <button type="button" class="input-mode-btn" onclick="switchInputMode('voice', 'resource_allocation')">Voice</button>
                     </div>
 
                     <div id="text-input-resource_allocation" class="input-container">
@@ -9802,7 +9802,7 @@ def render_embed_onboarding(config: Dict) -> str:
 
                     <div id="voice-input-resource_allocation" class="input-container" style="display: none;">
                         <div class="audio-recorder">
-                            <button type="button" class="record-btn" id="record-btn-resource_allocation" data-field="resource_allocation">
+                            <button type="button" class="record-btn" id="record-btn-resource_allocation" onclick="toggleRecording('resource_allocation')">
                                 <span class="record-icon">🎤</span>
                                 <span class="record-text">Start Recording</span>
                             </button>
@@ -9818,8 +9818,8 @@ def render_embed_onboarding(config: Dict) -> str:
                     <p class="question-description">Describe a time when you had a significant disagreement with someone. How did you navigate it?</p>
 
                     <div class="input-mode-toggle">
-                        <button type="button" class="input-mode-btn active" data-mode="text" data-field="conflict_response">Text</button>
-                        <button type="button" class="input-mode-btn" data-mode="voice" data-field="conflict_response">Voice</button>
+                        <button type="button" class="input-mode-btn active" onclick="switchInputMode('text', 'conflict_response')">Text</button>
+                        <button type="button" class="input-mode-btn" onclick="switchInputMode('voice', 'conflict_response')">Voice</button>
                     </div>
 
                     <div id="text-input-conflict_response" class="input-container">
@@ -9828,7 +9828,7 @@ def render_embed_onboarding(config: Dict) -> str:
 
                     <div id="voice-input-conflict_response" class="input-container" style="display: none;">
                         <div class="audio-recorder">
-                            <button type="button" class="record-btn" id="record-btn-conflict_response" data-field="conflict_response">
+                            <button type="button" class="record-btn" id="record-btn-conflict_response" onclick="toggleRecording('conflict_response')">
                                 <span class="record-icon">🎤</span>
                                 <span class="record-text">Start Recording</span>
                             </button>
@@ -9844,8 +9844,8 @@ def render_embed_onboarding(config: Dict) -> str:
                     <p class="question-description">Would you prefer a high-paying job you find meaningless, or meaningful work with lower pay? Why?</p>
 
                     <div class="input-mode-toggle">
-                        <button type="button" class="input-mode-btn active" data-mode="text" data-field="trade_off">Text</button>
-                        <button type="button" class="input-mode-btn" data-mode="voice" data-field="trade_off">Voice</button>
+                        <button type="button" class="input-mode-btn active" onclick="switchInputMode('text', 'trade_off')">Text</button>
+                        <button type="button" class="input-mode-btn" onclick="switchInputMode('voice', 'trade_off')">Voice</button>
                     </div>
 
                     <div id="text-input-trade_off" class="input-container">
@@ -9854,7 +9854,7 @@ def render_embed_onboarding(config: Dict) -> str:
 
                     <div id="voice-input-trade_off" class="input-container" style="display: none;">
                         <div class="audio-recorder">
-                            <button type="button" class="record-btn" id="record-btn-trade_off" data-field="trade_off">
+                            <button type="button" class="record-btn" id="record-btn-trade_off" onclick="toggleRecording('trade_off')">
                                 <span class="record-icon">🎤</span>
                                 <span class="record-text">Start Recording</span>
                             </button>
@@ -9870,8 +9870,8 @@ def render_embed_onboarding(config: Dict) -> str:
                     <p class="question-description">What communities or groups are most important to your identity?</p>
 
                     <div class="input-mode-toggle">
-                        <button type="button" class="input-mode-btn active" data-mode="text" data-field="social_identity">Text</button>
-                        <button type="button" class="input-mode-btn" data-mode="voice" data-field="social_identity">Voice</button>
+                        <button type="button" class="input-mode-btn active" onclick="switchInputMode('text', 'social_identity')">Text</button>
+                        <button type="button" class="input-mode-btn" onclick="switchInputMode('voice', 'social_identity')">Voice</button>
                     </div>
 
                     <div id="text-input-social_identity" class="input-container">
@@ -9880,7 +9880,7 @@ def render_embed_onboarding(config: Dict) -> str:
 
                     <div id="voice-input-social_identity" class="input-container" style="display: none;">
                         <div class="audio-recorder">
-                            <button type="button" class="record-btn" id="record-btn-social_identity" data-field="social_identity">
+                            <button type="button" class="record-btn" id="record-btn-social_identity" onclick="toggleRecording('social_identity')">
                                 <span class="record-icon">🎤</span>
                                 <span class="record-text">Start Recording</span>
                             </button>
@@ -9896,8 +9896,8 @@ def render_embed_onboarding(config: Dict) -> str:
                     <p class="question-description">A close friend does something unethical at work. Do you report it or stay loyal? Why?</p>
 
                     <div class="input-mode-toggle">
-                        <button type="button" class="input-mode-btn active" data-mode="text" data-field="moral_dilemma">Text</button>
-                        <button type="button" class="input-mode-btn" data-mode="voice" data-field="moral_dilemma">Voice</button>
+                        <button type="button" class="input-mode-btn active" onclick="switchInputMode('text', 'moral_dilemma')">Text</button>
+                        <button type="button" class="input-mode-btn" onclick="switchInputMode('voice', 'moral_dilemma')">Voice</button>
                     </div>
 
                     <div id="text-input-moral_dilemma" class="input-container">
@@ -9906,7 +9906,7 @@ def render_embed_onboarding(config: Dict) -> str:
 
                     <div id="voice-input-moral_dilemma" class="input-container" style="display: none;">
                         <div class="audio-recorder">
-                            <button type="button" class="record-btn" id="record-btn-moral_dilemma" data-field="moral_dilemma">
+                            <button type="button" class="record-btn" id="record-btn-moral_dilemma" onclick="toggleRecording('moral_dilemma')">
                                 <span class="record-icon">🎤</span>
                                 <span class="record-text">Start Recording</span>
                             </button>
@@ -9922,8 +9922,8 @@ def render_embed_onboarding(config: Dict) -> str:
                     <p class="question-description">How much do you trust institutions (government, corporations, media)? Why?</p>
 
                     <div class="input-mode-toggle">
-                        <button type="button" class="input-mode-btn active" data-mode="text" data-field="system_trust">Text</button>
-                        <button type="button" class="input-mode-btn" data-mode="voice" data-field="system_trust">Voice</button>
+                        <button type="button" class="input-mode-btn active" onclick="switchInputMode('text', 'system_trust')">Text</button>
+                        <button type="button" class="input-mode-btn" onclick="switchInputMode('voice', 'system_trust')">Voice</button>
                     </div>
 
                     <div id="text-input-system_trust" class="input-container">
@@ -9932,7 +9932,7 @@ def render_embed_onboarding(config: Dict) -> str:
 
                     <div id="voice-input-system_trust" class="input-container" style="display: none;">
                         <div class="audio-recorder">
-                            <button type="button" class="record-btn" id="record-btn-system_trust" data-field="system_trust">
+                            <button type="button" class="record-btn" id="record-btn-system_trust" onclick="toggleRecording('system_trust')">
                                 <span class="record-icon">🎤</span>
                                 <span class="record-text">Start Recording</span>
                             </button>
@@ -9948,8 +9948,8 @@ def render_embed_onboarding(config: Dict) -> str:
                     <p class="question-description">Describe a highly stressful situation and how you coped with it.</p>
 
                     <div class="input-mode-toggle">
-                        <button type="button" class="input-mode-btn active" data-mode="text" data-field="stress_response">Text</button>
-                        <button type="button" class="input-mode-btn" data-mode="voice" data-field="stress_response">Voice</button>
+                        <button type="button" class="input-mode-btn active" onclick="switchInputMode('text', 'stress_response')">Text</button>
+                        <button type="button" class="input-mode-btn" onclick="switchInputMode('voice', 'stress_response')">Voice</button>
                     </div>
 
                     <div id="text-input-stress_response" class="input-container">
@@ -9958,7 +9958,7 @@ def render_embed_onboarding(config: Dict) -> str:
 
                     <div id="voice-input-stress_response" class="input-container" style="display: none;">
                         <div class="audio-recorder">
-                            <button type="button" class="record-btn" id="record-btn-stress_response" data-field="stress_response">
+                            <button type="button" class="record-btn" id="record-btn-stress_response" onclick="toggleRecording('stress_response')">
                                 <span class="record-icon">🎤</span>
                                 <span class="record-text">Start Recording</span>
                             </button>
@@ -9974,8 +9974,8 @@ def render_embed_onboarding(config: Dict) -> str:
                     <p class="question-description">What are your most important goals for the next 5 years?</p>
 
                     <div class="input-mode-toggle">
-                        <button type="button" class="input-mode-btn active" data-mode="text" data-field="future_values">Text</button>
-                        <button type="button" class="input-mode-btn" data-mode="voice" data-field="future_values">Voice</button>
+                        <button type="button" class="input-mode-btn active" onclick="switchInputMode('text', 'future_values')">Text</button>
+                        <button type="button" class="input-mode-btn" onclick="switchInputMode('voice', 'future_values')">Voice</button>
                     </div>
 
                     <div id="text-input-future_values" class="input-container">
@@ -9984,7 +9984,7 @@ def render_embed_onboarding(config: Dict) -> str:
 
                     <div id="voice-input-future_values" class="input-container" style="display: none;">
                         <div class="audio-recorder">
-                            <button type="button" class="record-btn" id="record-btn-future_values" data-field="future_values">
+                            <button type="button" class="record-btn" id="record-btn-future_values" onclick="toggleRecording('future_values')">
                                 <span class="record-icon">🎤</span>
                                 <span class="record-text">Start Recording</span>
                             </button>
