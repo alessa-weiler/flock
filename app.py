@@ -10004,9 +10004,15 @@ def render_embed_onboarding(config: Dict) -> str:
         let currentField = null;
 
         function switchInputMode(mode, fieldName) {{
-            // Get all buttons for this field
-            const textBtn = document.querySelector(`[onclick*="switchInputMode('text', '${{fieldName}}')"]`);
-            const voiceBtn = document.querySelector(`[onclick*="switchInputMode('voice', '${{fieldName}}')"]`);
+            console.log('switchInputMode called:', mode, fieldName);
+
+            // Get the parent question div
+            const questionDiv = document.getElementById(`text-input-${{fieldName}}`).closest('.question');
+
+            // Get all buttons for this field within this question
+            const buttons = questionDiv.querySelectorAll('.input-mode-btn');
+            const textBtn = buttons[0];
+            const voiceBtn = buttons[1];
 
             // Toggle button states
             if (mode === 'text') {{
@@ -10034,6 +10040,8 @@ def render_embed_onboarding(config: Dict) -> str:
                 const textarea = document.getElementById(`${{fieldName}}_text`);
                 if (textarea) textarea.required = false;
             }}
+
+            console.log('Mode switched to:', mode, 'for field:', fieldName);
         }}
 
         async function toggleRecording(fieldName) {{
