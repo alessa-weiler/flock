@@ -8564,6 +8564,9 @@ def embed_transcribe_audio(embed_token):
 def embed_process(embed_token):
     """Process embed widget submission and return results"""
     try:
+        print(f"=== Embed widget processing started for token: {embed_token} ===")
+        print(f"Request form data keys: {list(request.form.keys())}")
+
         conn = get_db_connection()
         cursor = conn.cursor()
 
@@ -8578,8 +8581,11 @@ def embed_process(embed_token):
         config = cursor.fetchone()
 
         if not config:
+            print("ERROR: Invalid or inactive embed widget")
             conn.close()
             return jsonify({'success': False, 'error': 'Invalid widget'}), 404
+
+        print(f"Config found: org_id={config['org_id']}, mode={config['mode']}")
 
         # Get organization members and their profiles
         cursor.execute('''
@@ -8593,6 +8599,7 @@ def embed_process(embed_token):
         ''', (config['org_id'],))
 
         members = cursor.fetchall()
+        print(f"Found {len(members)} team members")
 
         # Collect onboarding data from form
         onboarding_data = {
@@ -8611,6 +8618,11 @@ def embed_process(embed_token):
             'stress_response': request.form.get('stress_response', ''),
             'future_values': request.form.get('future_values', '')
         }
+
+        print(f"Onboarding data collected:")
+        print(f"  full_name: {onboarding_data['full_name']}")
+        print(f"  email: {onboarding_data['email']}")
+        print(f"  defining_moment length: {len(onboarding_data['defining_moment'])}")
 
         # Create session token
         session_token = secrets.token_urlsafe(32)
@@ -9999,6 +10011,8 @@ def render_embed_onboarding(config: Dict) -> str:
     </div>
 
     <script>
+        console.log('Script loaded');
+
         let mediaRecorder = null;
         let audioChunks = [];
         let currentField = null;
@@ -10119,10 +10133,27 @@ def render_embed_onboarding(config: Dict) -> str:
             }}
         }}
 
-        document.getElementById('onboardingForm').addEventListener('submit', async (e) => {{
-            e.preventDefault();
+        // Wait for DOM to be ready
+        document.addEventListener('DOMContentLoaded', function() {{
+            console.log('DOM loaded, attaching form listener');
+            const form = document.getElementById('onboardingForm');
+            if (!form) {{
+                console.error('Form not found!');
+                return;
+            }}
 
-            const formData = new FormData(e.target);
+            form.addEventListener('submit', async (e) => {{
+                e.preventDefault();
+                console.log('Form submitted');
+
+                const formData = new FormData(e.target);
+
+            // Debug: log all form data
+            console.log('Form data:');
+            for (let [key, value] of formData.entries()) {{
+                console.log(key + ':', value);
+            }}
+
             const submitBtn = document.getElementById('submitBtn');
             const questionnaire = document.getElementById('questionnaire');
             const loading = document.getElementById('loading');
@@ -10134,12 +10165,15 @@ def render_embed_onboarding(config: Dict) -> str:
             submitBtn.disabled = true;
 
             try {{
+                console.log('Sending request to:', '/embed/{config['embed_token']}/process');
                 const response = await fetch('/embed/{config['embed_token']}/process', {{
                     method: 'POST',
                     body: formData
                 }});
 
+                console.log('Response status:', response.status);
                 const data = await response.json();
+                console.log('Response data:', data);
 
                 if (data.success) {{
                     displayResults(data.results, '{config['mode']}');
@@ -10152,12 +10186,13 @@ def render_embed_onboarding(config: Dict) -> str:
                     submitBtn.disabled = false;
                 }}
             }} catch (error) {{
-                console.error('Error:', error);
-                alert('An error occurred. Please try again.');
+                console.error('Error submitting form:', error);
+                alert('An error occurred. Please try again. Check console for details.');
                 loading.classList.remove('show');
                 questionnaire.style.display = 'block';
                 submitBtn.disabled = false;
             }}
+            }});
         }});
 
         function displayResults(results, mode) {{
