@@ -8122,24 +8122,30 @@ def organization_patients(org_id):
             SELECT
                 a.id, a.full_name, a.email, a.linkedin_url,
                 a.compatibility_results, a.behavioral_fit_analysis,
-                a.status, a.created_at, a.application_token
+                a.status, a.created_at, a.application_token, a.onboarding_data
             FROM applicants a
             WHERE a.organization_id = %s
             ORDER BY a.created_at DESC
         ''', (org_id,))
 
-        patients = cursor.fetchall()
+        all_patients = cursor.fetchall()
 
-        # Parse compatibility results and get feedback for each patient
-        for patient in patients:
+        # Filter patients to only show those matched with the current therapist
+        patients = []
+        for patient in all_patients:
             if patient['compatibility_results']:
                 try:
                     patient['compatibility_data'] = json.loads(patient['compatibility_results'])
 
-                    # Get feedback for each matched member
+                    # Find if this therapist is matched with this patient
+                    therapist_match = None
                     for member in patient['compatibility_data'].get('members', []):
                         member_id = member.get('id')
-                        if member_id:
+                        if member_id == user_id:
+                            # This therapist is matched with this patient
+                            therapist_match = member
+
+                            # Get feedback
                             cursor.execute('''
                                 SELECT feedback
                                 FROM match_feedback
@@ -8148,19 +8154,51 @@ def organization_patients(org_id):
 
                             feedback_result = cursor.fetchone()
                             member['feedback'] = feedback_result['feedback'] if feedback_result else None
+                            break
 
-                    # Calculate average score
-                    scores = [m.get('compatibility_score', 0) for m in patient['compatibility_data'].get('members', [])]
-                    patient['avg_score'] = sum(scores) / len(scores) if scores else 0
+                    # Only include this patient if they're matched with this therapist
+                    if therapist_match:
+                        # Extract match details
+                        if 'analysis' in therapist_match:
+                            patient['match_score'] = therapist_match.get('analysis', {}).get('compatibility_score', 0)
+                            patient['match_summary'] = therapist_match.get('analysis', {}).get('summary', '')
+                            patient['match_strengths'] = therapist_match.get('analysis', {}).get('strengths', [])
+                            patient['match_challenges'] = therapist_match.get('analysis', {}).get('challenges', [])
+                        else:
+                            patient['match_score'] = therapist_match.get('compatibility_score', 0)
+                            patient['match_summary'] = therapist_match.get('summary', '')
+                            patient['match_strengths'] = therapist_match.get('strengths', [])
+                            patient['match_challenges'] = therapist_match.get('challenges', [])
+
+                        patient['therapist_match'] = therapist_match
+
+                        # Generate first session insights for therapy organizations
+                        if org.get('use_case') == 'therapy_matching':
+                            # Get therapist profile
+                            cursor.execute('SELECT profile_data FROM user_profiles WHERE user_id = %s', (user_id,))
+                            profile_result = cursor.fetchone()
+                            therapist_profile = {}
+                            if profile_result and profile_result.get('profile_data'):
+                                try:
+                                    therapist_profile = json.loads(profile_result['profile_data'])
+                                except:
+                                    pass
+
+                            patient['first_session_insights'] = generate_first_session_insights(
+                                patient, therapist_match, therapist_profile
+                            )
+
+                        patients.append(patient)
+
                 except Exception as e:
                     print(f"Error parsing patient compatibility data: {e}")
-                    patient['compatibility_data'] = {}
-                    patient['avg_score'] = 0
+                    import traceback
+                    traceback.print_exc()
 
         conn.close()
 
         # Render patients dashboard
-        content = render_patients_dashboard(org, patients, user_info)
+        content = render_patients_dashboard(org, patients, user_info, user_id)
         return render_template_with_header(f"Patients - {org['name']}", content, user_info)
 
     except Exception as e:
@@ -8597,7 +8635,9 @@ def embed_process(embed_token):
         # Get organization members and their profiles
         cursor.execute('''
             SELECT
-                u.id, u.first_name, u.last_name, u.email,
+                u.id,
+                u.first_name_encrypted, u.last_name_encrypted, u.email_encrypted,
+                u.first_name, u.last_name, u.email,
                 up.profile_data
             FROM organization_members om
             INNER JOIN users u ON om.user_id = u.id
@@ -8605,7 +8645,38 @@ def embed_process(embed_token):
             WHERE om.organization_id = %s AND om.is_active = TRUE
         ''', (config['org_id'],))
 
-        members = cursor.fetchall()
+        members_raw = cursor.fetchall()
+
+        # Decrypt member data
+        members = []
+        for member in members_raw:
+            # Decrypt encrypted fields with fallback to plain text
+            try:
+                first_name = data_encryption.decrypt_sensitive_data(member['first_name_encrypted']) if member.get('first_name_encrypted') else member.get('first_name')
+            except Exception as e:
+                print(f"Error decrypting first_name for member {member['id']}: {e}")
+                first_name = member.get('first_name')
+
+            try:
+                last_name = data_encryption.decrypt_sensitive_data(member['last_name_encrypted']) if member.get('last_name_encrypted') else member.get('last_name')
+            except Exception as e:
+                print(f"Error decrypting last_name for member {member['id']}: {e}")
+                last_name = member.get('last_name')
+
+            try:
+                email = data_encryption.decrypt_sensitive_data(member['email_encrypted']) if member.get('email_encrypted') else member.get('email')
+            except Exception as e:
+                print(f"Error decrypting email for member {member['id']}: {e}")
+                email = member.get('email')
+
+            members.append({
+                'id': member['id'],
+                'first_name': first_name,
+                'last_name': last_name,
+                'email': email,
+                'profile_data': member.get('profile_data')
+            })
+
         print(f"Found {len(members)} team members")
         for member in members:
             print(f"  Member: id={member.get('id')}, first_name={member.get('first_name')}, last_name={member.get('last_name')}, email={member.get('email')}")
@@ -8762,6 +8833,76 @@ Write a detailed analysis (300-500 words) that helps the team understand if this
     except Exception as e:
         print(f"Error generating behavioral fit analysis: {e}")
         return f"Behavioral fit analysis unavailable. Average compatibility score: {avg_score:.1f}/100"
+
+
+def generate_first_session_insights(patient_data: Dict, therapist_match: Dict, therapist_profile: Dict) -> str:
+    """Generate insights for therapist on how to make patient comfortable in first session"""
+    client = OpenAI(api_key=API_KEY)
+
+    # Extract patient onboarding responses
+    if isinstance(patient_data.get('onboarding_data'), str):
+        onboarding = json.loads(patient_data['onboarding_data'])
+    else:
+        onboarding = patient_data.get('onboarding_data', {})
+
+    # Extract match analysis
+    if 'analysis' in therapist_match:
+        match_summary = therapist_match['analysis'].get('summary', '')
+        strengths = therapist_match['analysis'].get('strengths', [])
+        challenges = therapist_match['analysis'].get('challenges', [])
+        compatibility_score = therapist_match['analysis'].get('compatibility_score', 0)
+    else:
+        match_summary = therapist_match.get('summary', '')
+        strengths = therapist_match.get('strengths', [])
+        challenges = therapist_match.get('challenges', [])
+        compatibility_score = therapist_match.get('compatibility_score', 0)
+
+    prompt = f"""You are an expert clinical psychologist providing guidance to a therapist preparing for their first session with a new patient.
+
+Patient Profile:
+- Name: {patient_data.get('full_name', 'Patient')}
+- Age: {onboarding.get('age', 'N/A')}
+- Location: {onboarding.get('location', 'N/A')}
+
+Patient's Responses:
+- Defining Moment: {onboarding.get('defining_moment', 'N/A')}
+- Resource Allocation: {onboarding.get('resource_allocation', 'N/A')}
+- Conflict Response: {onboarding.get('conflict_response', 'N/A')}
+- Trade-off Decisions: {onboarding.get('trade_off', 'N/A')}
+- Social Identity: {onboarding.get('social_identity', 'N/A')}
+- Moral Dilemma Response: {onboarding.get('moral_dilemma', 'N/A')}
+- System Trust: {onboarding.get('system_trust', 'N/A')}
+- Stress Response: {onboarding.get('stress_response', 'N/A')}
+- Future Values: {onboarding.get('future_values', 'N/A')}
+
+Match Analysis:
+- Compatibility Score: {compatibility_score}/100
+- Summary: {match_summary}
+- Strengths: {', '.join(strengths)}
+- Potential Challenges: {', '.join(challenges)}
+
+Provide practical, actionable guidance in 3 sections:
+
+1. **Patient Overview** (2-3 sentences): What type of person is this patient based on their responses? What are their core values and tendencies?
+
+2. **Building Rapport** (3-4 bullet points): Specific strategies to help this patient feel comfortable and safe in the first session, considering their personality and communication style.
+
+3. **Approach Recommendations** (3-4 bullet points): How to frame conversations, what topics to be mindful of, and how to leverage your compatibility strengths while navigating potential challenges.
+
+Keep the tone warm, professional, and focused on practical therapeutic guidance."""
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            timeout=20
+        )
+
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"Error generating first session insights: {e}")
+        return "First session insights unavailable."
 
 
 def run_embed_party_mode(user_data: Dict, members: List[Dict], config: Dict) -> Dict:
@@ -9149,55 +9290,50 @@ def render_applicants_dashboard(org: Dict, applicants: List[Dict], user_info: Di
     return content
 
 
-def render_patients_dashboard(org: Dict, patients: List[Dict], user_info: Dict) -> str:
-    """Render the patients dashboard for therapy matching organizations with match feedback"""
+def render_patients_dashboard(org: Dict, patients: List[Dict], user_info: Dict, current_user_id: int = None) -> str:
+    """Render the patients dashboard for therapy matching organizations with personalized insights"""
 
     patients_html = ''
     if patients:
         for patient in patients:
-            avg_score = patient.get('avg_score', 0)
+            match_score = patient.get('match_score', 0)
 
-            # Build matched members HTML with thumbs up/down
-            matched_members_html = ''
-            if patient.get('compatibility_data'):
-                for idx, member in enumerate(patient['compatibility_data'].get('members', [])):
-                    # Handle both old and new result structures
-                    if 'analysis' in member:
-                        # New structure: {'name': '...', 'analysis': {'compatibility_score': ...}}
-                        member_name = member.get('name', 'Team Member')
-                        score = member.get('analysis', {}).get('compatibility_score', 0)
-                    else:
-                        # Old structure: {'member_name': '...', 'compatibility_score': ...}
-                        member_name = member.get('member_name', 'Team Member')
-                        score = member.get('compatibility_score', 0)
+            # Build match summary section
+            match_summary_html = ''
+            if patient.get('match_summary'):
+                match_summary_html = f'''
+                <div style="background: #f0f9ff; border-left: 4px solid #3b82f6; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+                    <h4 style="font-family: 'Satoshi', sans-serif; font-weight: 600; font-size: 0.875rem; color: #1e40af; margin-bottom: 0.5rem;">
+                        Match Analysis (Compatibility: {int(match_score)}/100)
+                    </h4>
+                    <p style="font-family: 'Satoshi', sans-serif; font-size: 0.875rem; color: #1e3a8a; margin: 0;">
+                        {patient['match_summary']}
+                    </p>
+                </div>
+                '''
 
-                    feedback = member.get('feedback')
-                    member_id = member.get('id', idx)  # Use index as fallback
+            # Build first session insights section
+            insights_html = ''
+            if patient.get('first_session_insights'):
+                # Convert markdown-style formatting to HTML
+                insights_text = patient['first_session_insights']
+                insights_text = insights_text.replace('**', '<strong>').replace('**', '</strong>')
+                insights_text = insights_text.replace('\n\n', '</p><p style="font-family: \'Satoshi\', sans-serif; font-size: 0.875rem; line-height: 1.6; margin-bottom: 0.75rem;">')
+                insights_text = insights_text.replace('\n- ', '<br>• ')
 
-                    # Thumbs styling based on feedback
-                    thumbs_up_style = 'font-size: 1.5rem; cursor: pointer; opacity: 0.3; transition: opacity 0.2s;'
-                    thumbs_down_style = 'font-size: 1.5rem; cursor: pointer; opacity: 0.3; transition: opacity 0.2s;'
-
-                    if feedback == 'up':
-                        thumbs_up_style = 'font-size: 1.5rem; cursor: pointer; opacity: 1;'
-                    elif feedback == 'down':
-                        thumbs_down_style = 'font-size: 1.5rem; cursor: pointer; opacity: 1;'
-
-                    matched_members_html += f'''
-                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; background: #f9fafb; border-radius: 8px; margin-bottom: 0.5rem;">
-                        <div style="flex-grow: 1;">
-                            <span style="font-family: 'Satoshi', sans-serif; font-weight: 600;">{member_name}</span>
-                            <span style="font-family: 'Satoshi', sans-serif; color: #6b7280; margin-left: 0.5rem;">({int(score)}/100)</span>
-                        </div>
-                        <div style="display: flex; gap: 1rem; align-items: center;" id="feedback-{patient['id']}-{member_id}">
-                            <span onclick="updateFeedback({patient['id']}, {member_id}, 'up')" style="{thumbs_up_style}" id="thumbs-up-{patient['id']}-{member_id}">👍</span>
-                            <span onclick="updateFeedback({patient['id']}, {member_id}, 'down')" style="{thumbs_down_style}" id="thumbs-down-{patient['id']}-{member_id}">👎</span>
-                        </div>
+                insights_html = f'''
+                <div style="background: #f0fdf4; border-left: 4px solid #10b981; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+                    <h4 style="font-family: 'Satoshi', sans-serif; font-weight: 600; font-size: 0.875rem; color: #065f46; margin-bottom: 0.75rem;">
+                        First Session Guidance
+                    </h4>
+                    <div style="font-family: 'Satoshi', sans-serif; font-size: 0.875rem; color: #064e3b; line-height: 1.6;">
+                        <p style="font-family: 'Satoshi', sans-serif; font-size: 0.875rem; line-height: 1.6; margin-bottom: 0.75rem;">{insights_text}</p>
                     </div>
-                    '''
+                </div>
+                '''
 
             patients_html += f'''
-            <div style="background: white; border: 1px solid #e5e7eb; border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem;">
+            <div style="background: white; border: 1px solid #e5e7eb; border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem;">
                 <div style="margin-bottom: 1rem;">
                     <h3 style="font-family: 'Satoshi', sans-serif; font-weight: 600; font-size: 1.25rem; margin-bottom: 0.5rem;">
                         {patient['full_name']}
@@ -9206,29 +9342,23 @@ def render_patients_dashboard(org: Dict, patients: List[Dict], user_info: Dict) 
                         {patient['email']}
                     </p>
                     <p style="font-family: 'Satoshi', sans-serif; color: #9ca3af; font-size: 0.75rem; margin-top: 0.25rem;">
-                        Submitted {patient['created_at'].strftime('%b %d, %Y') if hasattr(patient['created_at'], 'strftime') else patient['created_at']}
+                        Matched on {patient['created_at'].strftime('%b %d, %Y') if hasattr(patient['created_at'], 'strftime') else patient['created_at']}
                     </p>
                 </div>
 
-                <div style="margin-bottom: 1rem;">
-                    <h4 style="font-family: 'Satoshi', sans-serif; font-weight: 600; font-size: 1rem; margin-bottom: 0.75rem;">Matched With:</h4>
-                    {matched_members_html if matched_members_html else '<p style="font-family: &quot;Satoshi&quot;, sans-serif; color: #9ca3af; font-size: 0.875rem;">No matches yet</p>'}
-                </div>
+                {match_summary_html}
+                {insights_html}
             </div>
             '''
     else:
         patients_html = f'''
         <div style="text-align: center; padding: 4rem 2rem; background: #f9fafb; border-radius: 12px; border: 2px dashed #d1d5db;">
             <p style="font-family: 'Satoshi', sans-serif; font-size: 1.125rem; color: #6b7280; margin-bottom: 1rem;">
-                No patients yet
+                No matched patients yet
             </p>
             <p style="font-family: 'Satoshi', sans-serif; color: #9ca3af; font-size: 0.875rem;">
-                Share your widget to start receiving patient assessments
+                Patients will appear here when they complete the assessment and match with you
             </p>
-            <a href="/organization/{org['id']}/embed-settings"
-               style="display: inline-block; margin-top: 1.5rem; padding: 0.75rem 1.5rem; background: black; color: white; text-decoration: none; border-radius: 8px; font-family: 'Satoshi', sans-serif; font-weight: 600;">
-                Configure Widget
-            </a>
         </div>
         '''
 
@@ -9240,63 +9370,16 @@ def render_patients_dashboard(org: Dict, patients: List[Dict], user_info: Dict) 
                     ← Back to {org['name']}
                 </a>
                 <h2 style="font-family: 'Sentient', sans-serif; font-size: 2rem; margin: 0;">
-                    Patients
+                    Your Matched Patients
                 </h2>
-            </div>
-            <div>
-                <a href="/organization/{org['id']}/embed-settings"
-                   style="display: inline-block; padding: 0.75rem 1.5rem; background: white; border: 2px solid black; color: black; text-decoration: none; border-radius: 8px; font-family: 'Satoshi', sans-serif; font-weight: 600; margin-right: 1rem;">
-                    Widget Settings
-                </a>
+                <p style="font-family: 'Satoshi', sans-serif; color: #6b7280; font-size: 0.875rem; margin-top: 0.5rem;">
+                    Patients you've been matched with based on compatibility
+                </p>
             </div>
         </div>
 
         {patients_html}
     </div>
-
-    <script>
-    async function updateFeedback(patientId, memberId, feedback) {{
-        try {{
-            // Update UI immediately
-            const thumbsUp = document.getElementById(`thumbs-up-${{patientId}}-${{memberId}}`);
-            const thumbsDown = document.getElementById(`thumbs-down-${{patientId}}-${{memberId}}`);
-
-            if (feedback === 'up') {{
-                thumbsUp.style.opacity = '1';
-                thumbsDown.style.opacity = '0.3';
-            }} else {{
-                thumbsUp.style.opacity = '0.3';
-                thumbsDown.style.opacity = '1';
-            }}
-
-            const response = await fetch(`/organization/{org['id']}/patient/${{patientId}}/feedback`, {{
-                method: 'POST',
-                headers: {{
-                    'Content-Type': 'application/json',
-                }},
-                body: JSON.stringify({{
-                    matched_member_id: memberId,
-                    feedback: feedback
-                }})
-            }});
-
-            if (!response.ok) {{
-                throw new Error('Failed to update feedback');
-            }}
-
-            // Hide the thumbs after a moment
-            setTimeout(() => {{
-                const feedbackDiv = document.getElementById(`feedback-${{patientId}}-${{memberId}}`);
-                if (feedbackDiv) {{
-                    feedbackDiv.style.display = 'none';
-                }}
-            }}, 500);
-        }} catch (error) {{
-            console.error('Error updating feedback:', error);
-            alert('Failed to update feedback. Please try again.');
-        }}
-    }}
-    </script>
     '''
 
     return content
