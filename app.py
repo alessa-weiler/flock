@@ -9332,18 +9332,42 @@ def render_patients_dashboard(org: Dict, patients: List[Dict], user_info: Dict, 
                 </div>
                 '''
 
+            # Get feedback status if available
+            feedback = patient.get('therapist_match', {}).get('feedback')
+
+            # Thumbs styling based on feedback
+            thumbs_up_style = 'font-size: 1.5rem; cursor: pointer; opacity: 0.3; transition: opacity 0.2s;'
+            thumbs_down_style = 'font-size: 1.5rem; cursor: pointer; opacity: 0.3; transition: opacity 0.2s;'
+
+            if feedback == 'up':
+                thumbs_up_style = 'font-size: 1.5rem; cursor: pointer; opacity: 1; color: #10b981;'
+            elif feedback == 'down':
+                thumbs_down_style = 'font-size: 1.5rem; cursor: pointer; opacity: 1; color: #ef4444;'
+
             patients_html += f'''
             <div style="background: white; border: 1px solid #e5e7eb; border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem;">
-                <div style="margin-bottom: 1rem;">
-                    <h3 style="font-family: 'Satoshi', sans-serif; font-weight: 600; font-size: 1.25rem; margin-bottom: 0.5rem;">
-                        {patient['full_name']}
-                    </h3>
-                    <p style="font-family: 'Satoshi', sans-serif; color: #6b7280; font-size: 0.875rem;">
-                        {patient['email']}
-                    </p>
-                    <p style="font-family: 'Satoshi', sans-serif; color: #9ca3af; font-size: 0.75rem; margin-top: 0.25rem;">
-                        Matched on {patient['created_at'].strftime('%b %d, %Y') if hasattr(patient['created_at'], 'strftime') else patient['created_at']}
-                    </p>
+                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 1rem;">
+                    <div style="flex-grow: 1;">
+                        <h3 style="font-family: 'Satoshi', sans-serif; font-weight: 600; font-size: 1.25rem; margin-bottom: 0.5rem;">
+                            {patient['full_name']}
+                        </h3>
+                        <p style="font-family: 'Satoshi', sans-serif; color: #6b7280; font-size: 0.875rem;">
+                            {patient['email']}
+                        </p>
+                        <p style="font-family: 'Satoshi', sans-serif; color: #9ca3af; font-size: 0.75rem; margin-top: 0.25rem;">
+                            Matched on {patient['created_at'].strftime('%b %d, %Y') if hasattr(patient['created_at'], 'strftime') else patient['created_at']}
+                        </p>
+                    </div>
+                    <div style="display: flex; gap: 1rem; align-items: center;" id="feedback-{patient['id']}-{current_user_id}">
+                        <span onclick="updateFeedback({patient['id']}, {current_user_id}, 'up')"
+                              style="{thumbs_up_style}"
+                              id="thumbs-up-{patient['id']}-{current_user_id}"
+                              title="Accept this match">👍</span>
+                        <span onclick="updateFeedback({patient['id']}, {current_user_id}, 'down')"
+                              style="{thumbs_down_style}"
+                              id="thumbs-down-{patient['id']}-{current_user_id}"
+                              title="Decline this match">👎</span>
+                    </div>
                 </div>
 
                 {match_summary_html}
@@ -9380,6 +9404,48 @@ def render_patients_dashboard(org: Dict, patients: List[Dict], user_info: Dict, 
 
         {patients_html}
     </div>
+
+    <script>
+    async function updateFeedback(patientId, memberId, feedback) {{
+        try {{
+            // Update UI immediately
+            const thumbsUp = document.getElementById(`thumbs-up-${{patientId}}-${{memberId}}`);
+            const thumbsDown = document.getElementById(`thumbs-down-${{patientId}}-${{memberId}}`);
+
+            if (feedback === 'up') {{
+                thumbsUp.style.opacity = '1';
+                thumbsUp.style.color = '#10b981';
+                thumbsDown.style.opacity = '0.3';
+                thumbsDown.style.color = '';
+            }} else {{
+                thumbsUp.style.opacity = '0.3';
+                thumbsUp.style.color = '';
+                thumbsDown.style.opacity = '1';
+                thumbsDown.style.color = '#ef4444';
+            }}
+
+            const response = await fetch(`/organization/{org['id']}/patient/${{patientId}}/feedback`, {{
+                method: 'POST',
+                headers: {{
+                    'Content-Type': 'application/json',
+                }},
+                body: JSON.stringify({{
+                    matched_member_id: memberId,
+                    feedback: feedback
+                }})
+            }});
+
+            if (!response.ok) {{
+                throw new Error('Failed to update feedback');
+            }}
+
+            console.log('Feedback saved successfully');
+        }} catch (error) {{
+            console.error('Error updating feedback:', error);
+            alert('Failed to save feedback. Please try again.');
+        }}
+    }}
+    </script>
     '''
 
     return content
