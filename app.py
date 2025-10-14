@@ -6041,8 +6041,12 @@ def profile_settings():
         }}
         
         .btn-cancel {{
-            background: rgba(45, 45, 45, 0.6);
+            background: black;
             color: white;
+        }}
+
+        .btn-cancel:hover {{
+            background: #1a1a1a;
         }}
         
         .btn-verify {{
@@ -8752,6 +8756,18 @@ def embed_process(embed_token):
             SET results_data = %s
             WHERE id = %s
         ''', (json.dumps(results), session_id))
+
+        # Increment simulation count for all organization members
+        for member in members:
+            member_id = member.get('id')
+            if member_id:
+                cursor.execute('''
+                    UPDATE users
+                    SET free_matches_used = COALESCE(free_matches_used, 0) + 1,
+                        last_free_match_date = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                ''', (member_id,))
+                print(f"Incremented simulation count for user {member_id}")
 
         # If in party mode (applicant assessment), also create an applicant record
         applicant_id = None
@@ -15584,7 +15600,7 @@ def subscription_plans():
         }}
         
         .btn-subscribe {{
-            background: white;
+            background: black;
             color: white;
             padding: 1rem 2rem;
             border-radius: 50px;
@@ -15598,10 +15614,11 @@ def subscription_plans():
             width: 100%;
             text-align: center;
         }}
-        
+
         .btn-subscribe:hover {{
             transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(22, 122, 96, 0.3);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+            background: #1a1a1a;
         }}
         
         .btn-current {{
