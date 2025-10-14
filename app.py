@@ -9351,6 +9351,10 @@ def render_applicants_dashboard(org: Dict, applicants: List[Dict], user_info: Di
 def render_patients_dashboard(org: Dict, patients: List[Dict], user_info: Dict, current_user_id: int = None) -> str:
     """Render the patients dashboard for therapy matching organizations with personalized insights"""
 
+    # Ensure current_user_id is set
+    if current_user_id is None:
+        current_user_id = user_info.get('id', 0)
+
     patients_html = ''
     if patients:
         for patient in patients:
@@ -9465,10 +9469,16 @@ def render_patients_dashboard(org: Dict, patients: List[Dict], user_info: Dict, 
 
     <script>
     async function updateFeedback(patientId, memberId, feedback) {{
+        console.log('updateFeedback called:', patientId, memberId, feedback);
         try {{
             // Update UI immediately
             const thumbsUp = document.getElementById(`thumbs-up-${{patientId}}-${{memberId}}`);
             const thumbsDown = document.getElementById(`thumbs-down-${{patientId}}-${{memberId}}`);
+
+            if (!thumbsUp || !thumbsDown) {{
+                console.error('Could not find thumbs elements:', `thumbs-up-${{patientId}}-${{memberId}}`);
+                return;
+            }}
 
             if (feedback === 'up') {{
                 thumbsUp.style.opacity = '1';
@@ -9482,7 +9492,10 @@ def render_patients_dashboard(org: Dict, patients: List[Dict], user_info: Dict, 
                 thumbsDown.style.color = '#ef4444';
             }}
 
-            const response = await fetch(`/organization/{org['id']}/patient/${{patientId}}/feedback`, {{
+            const url = `/organization/{org['id']}/patient/${{patientId}}/feedback`;
+            console.log('Fetching:', url);
+
+            const response = await fetch(url, {{
                 method: 'POST',
                 headers: {{
                     'Content-Type': 'application/json',
@@ -9493,14 +9506,19 @@ def render_patients_dashboard(org: Dict, patients: List[Dict], user_info: Dict, 
                 }})
             }});
 
+            console.log('Response status:', response.status);
+
             if (!response.ok) {{
-                throw new Error('Failed to update feedback');
+                const errorData = await response.json();
+                console.error('Server error:', errorData);
+                throw new Error('Failed to update feedback: ' + (errorData.error || response.statusText));
             }}
 
-            console.log('Feedback saved successfully');
+            const data = await response.json();
+            console.log('Feedback saved successfully:', data);
         }} catch (error) {{
             console.error('Error updating feedback:', error);
-            alert('Failed to save feedback. Please try again.');
+            alert('Failed to save feedback: ' + error.message);
         }}
     }}
     </script>
