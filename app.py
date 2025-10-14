@@ -662,6 +662,20 @@ class UserAuthSystem:
             )
         ''')
 
+        # Migration: Add first_session_insights_json column to applicants table
+        cursor.execute('''
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'applicants'
+                    AND column_name = 'first_session_insights_json'
+                ) THEN
+                    ALTER TABLE applicants ADD COLUMN first_session_insights_json TEXT;
+                END IF;
+            END $$;
+        ''')
+
         # Events table - stores upcoming events for matching
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS events (
@@ -8122,7 +8136,8 @@ def organization_patients(org_id):
             SELECT
                 a.id, a.full_name, a.email, a.linkedin_url,
                 a.compatibility_results, a.behavioral_fit_analysis,
-                a.status, a.created_at, a.application_token, a.onboarding_data
+                a.status, a.created_at, a.application_token, a.onboarding_data,
+                a.first_session_insights_json
             FROM applicants a
             WHERE a.organization_id = %s
             ORDER BY a.created_at DESC
@@ -8172,21 +8187,27 @@ def organization_patients(org_id):
 
                         patient['therapist_match'] = therapist_match
 
-                        # Generate first session insights for therapy organizations
+                        # Load pre-generated first session insights from database
                         if org.get('use_case') == 'therapy_matching':
-                            # Get therapist profile
-                            cursor.execute('SELECT profile_data FROM user_profiles WHERE user_id = %s', (user_id,))
-                            profile_result = cursor.fetchone()
-                            therapist_profile = {}
-                            if profile_result and profile_result.get('profile_data'):
+                            if patient.get('first_session_insights_json'):
                                 try:
-                                    therapist_profile = json.loads(profile_result['profile_data'])
+                                    insights_map = json.loads(patient['first_session_insights_json'])
+                                    patient['first_session_insights'] = insights_map.get(str(user_id), 'Insights not available for this match.')
                                 except:
-                                    pass
-
-                            patient['first_session_insights'] = generate_first_session_insights(
-                                patient, therapist_match, therapist_profile
-                            )
+                                    patient['first_session_insights'] = 'Insights not available.'
+                            else:
+                                # Fallback: generate if not saved (for old records)
+                                cursor.execute('SELECT profile_data FROM user_profiles WHERE user_id = %s', (user_id,))
+                                profile_result = cursor.fetchone()
+                                therapist_profile = {}
+                                if profile_result and profile_result.get('profile_data'):
+                                    try:
+                                        therapist_profile = json.loads(profile_result['profile_data'])
+                                    except:
+                                        pass
+                                patient['first_session_insights'] = generate_first_session_insights(
+                                    patient, therapist_match, therapist_profile
+                                )
 
                         patients.append(patient)
 
@@ -8738,20 +8759,54 @@ def embed_process(embed_token):
             # Generate behavioral fit analysis
             behavioral_fit = generate_behavioral_fit_analysis(onboarding_data, results, members)
 
+            # Generate first session insights for top 3 matches (if therapy matching)
+            first_session_insights = {}
+            if config.get('use_case') == 'therapy_matching' and results.get('members'):
+                # Sort members by compatibility score
+                sorted_members = sorted(
+                    results['members'],
+                    key=lambda x: x.get('analysis', {}).get('compatibility_score', 0),
+                    reverse=True
+                )
+
+                # Generate insights for top 3
+                for member_result in sorted_members[:3]:
+                    member_id = member_result.get('id')
+                    if member_id:
+                        # Get therapist profile
+                        cursor.execute('SELECT profile_data FROM user_profiles WHERE user_id = %s', (member_id,))
+                        profile_result = cursor.fetchone()
+                        therapist_profile = {}
+                        if profile_result and profile_result.get('profile_data'):
+                            try:
+                                therapist_profile = json.loads(profile_result['profile_data'])
+                            except:
+                                pass
+
+                        # Generate insights
+                        patient_data = {
+                            'full_name': onboarding_data.get('full_name'),
+                            'onboarding_data': onboarding_data
+                        }
+                        insights = generate_first_session_insights(patient_data, member_result, therapist_profile)
+                        first_session_insights[str(member_id)] = insights
+                        print(f"Generated first session insights for therapist {member_id}")
+
             # Create applicant record
             application_token = secrets.token_urlsafe(32)
             cursor.execute('''
                 INSERT INTO applicants (
                     organization_id, embed_session_id, full_name, email, linkedin_url,
-                    application_token, onboarding_data, compatibility_results, behavioral_fit_analysis
+                    application_token, onboarding_data, compatibility_results, behavioral_fit_analysis,
+                    first_session_insights_json
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
             ''', (
                 config['org_id'], session_id, onboarding_data['full_name'],
                 onboarding_data['email'], onboarding_data.get('linkedin_url', ''),
                 application_token, json.dumps(onboarding_data), json.dumps(results),
-                behavioral_fit
+                behavioral_fit, json.dumps(first_session_insights) if first_session_insights else None
             ))
             applicant_id = cursor.fetchone()['id']
 
