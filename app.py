@@ -8823,10 +8823,11 @@ Write a detailed analysis (300-500 words) that helps the team understand if this
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o-mini",  # Using faster model
+            model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7,
-            timeout=20
+            timeout=15,
+            max_tokens=400  # Faster with token limit
         )
 
         return response.choices[0].message.content.strip()
@@ -8993,11 +8994,12 @@ Return your analysis as JSON with this structure:
         try:
             print(f"Analyzing compatibility with {member_name}...")
             response = client.chat.completions.create(
-                model="gpt-4o-mini",  # Using faster model
+                model="gpt-4o-mini",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.7,
-                timeout=20,  # Add timeout
-                response_format={"type": "json_object"}  # Force JSON response
+                timeout=15,
+                max_tokens=300,  # Limit response length for speed
+                response_format={"type": "json_object"}
             )
 
             response_text = response.choices[0].message.content
@@ -9137,11 +9139,12 @@ Return your analysis as JSON with this structure:
         try:
             print(f"Analyzing engagement for {member_name}...")
             response = client.chat.completions.create(
-                model="gpt-4o-mini",  # Using faster model
+                model="gpt-4o-mini",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.7,
-                timeout=20,
-                response_format={"type": "json_object"}  # Force JSON response
+                timeout=15,
+                max_tokens=300,  # Limit response length for speed
+                response_format={"type": "json_object"}
             )
 
             response_text = response.choices[0].message.content
