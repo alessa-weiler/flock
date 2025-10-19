@@ -1,0 +1,22 @@
+Sample Text Document for Testing
+
+This is a sample text file used for testing the document upload and processing functionality of the Flock Knowledge Platform.
+
+Key Features:
+- Document upload via API
+- Text extraction from multiple formats
+- Background job processing with Celery
+- Cloud storage with DigitalOcean Spaces
+
+Testing Scenarios:
+1. Upload text file
+2. Extract content
+3. Chunk text appropriately
+4. Store in database
+5. Verify metadata extraction
+
+This file should be successfully processed by the document_processor.py extract_text() method.
+
+The system handles plain text files with various encodings (UTF-8, Latin-1, CP1252).
+
+End of sample document.

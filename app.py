@@ -719,7 +719,191 @@ class UserAuthSystem:
             )
         ''')
 
+        # ============================================================================
+        # KNOWLEDGE PLATFORM TABLES (for non-therapy organizations)
+        # ============================================================================
+
+        # Documents table - stores uploaded files metadata
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS documents (
+                id SERIAL PRIMARY KEY,
+                organization_id INTEGER NOT NULL,
+                filename TEXT NOT NULL,
+                file_type TEXT NOT NULL CHECK (file_type IN ('pdf', 'docx', 'txt', 'md', 'csv')),
+                file_size INTEGER NOT NULL,
+                storage_url TEXT NOT NULL,
+                upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                uploaded_by INTEGER NOT NULL,
+                processing_status TEXT DEFAULT 'pending' CHECK (processing_status IN ('pending', 'processing', 'completed', 'failed')),
+                metadata_json TEXT,
+                is_deleted BOOLEAN DEFAULT FALSE,
+                deleted_at TIMESTAMP,
+                FOREIGN KEY (organization_id) REFERENCES organizations (id) ON DELETE CASCADE,
+                FOREIGN KEY (uploaded_by) REFERENCES users (id)
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_documents_org_id ON documents(organization_id)
+        ''')
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(processing_status)
+        ''')
+
+        # Document chunks - stores text chunks with embedding references
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS document_chunks (
+                id SERIAL PRIMARY KEY,
+                document_id INTEGER NOT NULL,
+                chunk_text TEXT NOT NULL,
+                chunk_index INTEGER NOT NULL,
+                token_count INTEGER,
+                embedding_id TEXT,
+                metadata_json TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (document_id) REFERENCES documents (id) ON DELETE CASCADE
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_chunks_document_id ON document_chunks(document_id)
+        ''')
+
+        # Document classifications - auto-classification results
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS document_classifications (
+                id SERIAL PRIMARY KEY,
+                document_id INTEGER NOT NULL,
+                team TEXT,
+                project TEXT,
+                doc_type TEXT,
+                time_period TEXT,
+                confidentiality TEXT CHECK (confidentiality IN ('public', 'internal', 'confidential', 'restricted')),
+                mentioned_people TEXT[],
+                tags TEXT[],
+                confidence_scores_json TEXT,
+                classified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (document_id) REFERENCES documents (id) ON DELETE CASCADE,
+                UNIQUE(document_id)
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_classifications_team ON document_classifications(team)
+        ''')
+
+        # Employee embeddings - for semantic search
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS employee_embeddings (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                organization_id INTEGER NOT NULL,
+                embedding_id TEXT NOT NULL,
+                profile_snapshot_json TEXT,
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+                FOREIGN KEY (organization_id) REFERENCES organizations (id) ON DELETE CASCADE,
+                UNIQUE(user_id, organization_id)
+            )
+        ''')
+
+        # Chat conversations
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS chat_conversations (
+                id SERIAL PRIMARY KEY,
+                organization_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                conversation_title TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_message_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                is_archived BOOLEAN DEFAULT FALSE,
+                FOREIGN KEY (organization_id) REFERENCES organizations (id) ON DELETE CASCADE,
+                FOREIGN KEY (user_id) REFERENCES users (id)
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_conversations_org_id ON chat_conversations(organization_id)
+        ''')
+
+        # Chat messages - stores chat history with reasoning
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS chat_messages (
+                id SERIAL PRIMARY KEY,
+                conversation_id INTEGER NOT NULL,
+                role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+                content TEXT NOT NULL,
+                reasoning_json TEXT,
+                source_documents_json TEXT,
+                source_employees_json TEXT,
+                source_external_json TEXT,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (conversation_id) REFERENCES chat_conversations (id) ON DELETE CASCADE
+            )
+        ''')
+
+        # Google Drive sync configuration
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS google_drive_sync (
+                id SERIAL PRIMARY KEY,
+                organization_id INTEGER NOT NULL,
+                access_token TEXT,
+                refresh_token TEXT,
+                folder_id TEXT,
+                last_sync_at TIMESTAMP,
+                sync_status TEXT DEFAULT 'idle' CHECK (sync_status IN ('idle', 'syncing', 'error')),
+                sync_error TEXT,
+                files_synced INTEGER DEFAULT 0,
+                created_by INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                is_active BOOLEAN DEFAULT TRUE,
+                FOREIGN KEY (organization_id) REFERENCES organizations (id) ON DELETE CASCADE,
+                FOREIGN KEY (created_by) REFERENCES users (id),
+                UNIQUE(organization_id)
+            )
+        ''')
+
+        # Processing jobs tracking
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS processing_jobs (
+                id SERIAL PRIMARY KEY,
+                organization_id INTEGER NOT NULL,
+                job_type TEXT NOT NULL,
+                job_id TEXT UNIQUE NOT NULL,
+                status TEXT DEFAULT 'queued' CHECK (status IN ('queued', 'running', 'completed', 'failed')),
+                progress INTEGER DEFAULT 0 CHECK (progress >= 0 AND progress <= 100),
+                result_json TEXT,
+                error_message TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                started_at TIMESTAMP,
+                completed_at TIMESTAMP,
+                FOREIGN KEY (organization_id) REFERENCES organizations (id)
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_jobs_job_id ON processing_jobs(job_id)
+        ''')
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_jobs_status ON processing_jobs(status)
+        ''')
+
+        # Embedding usage tracking for cost management
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS embedding_usage (
+                id SERIAL PRIMARY KEY,
+                organization_id INTEGER NOT NULL,
+                date DATE DEFAULT CURRENT_DATE,
+                tokens_used INTEGER DEFAULT 0,
+                api_calls INTEGER DEFAULT 0,
+                estimated_cost FLOAT DEFAULT 0.0,
+                FOREIGN KEY (organization_id) REFERENCES organizations (id),
+                UNIQUE(organization_id, date)
+            )
+        ''')
+
         print("✓ Created V2 network and events tables")
+        print("✓ Created knowledge platform tables")
 
     def create_user(self, email: str, password: str, first_name: str = None, 
                last_name: str = None, phone: str = None, min_age: int = 18, 
@@ -16283,6 +16467,375 @@ def handle_subscription_deleted(subscription):
         
     except Exception as e:
         print(f"Error handling subscription deletion: {e}")
+
+# ============================================================================
+# KNOWLEDGE PLATFORM API ENDPOINTS
+# ============================================================================
+
+@app.route('/api/documents/upload', methods=['POST'])
+@login_required
+def upload_documents():
+    """
+    Upload multiple documents to organization knowledge base
+    Max 10 files, 50MB each, supports: PDF, DOCX, TXT, MD, CSV
+    """
+    from storage_manager import StorageManager
+    from tasks import process_document_task
+    import secrets
+
+    user_id = session['user_id']
+    org_id = request.form.get('org_id')
+
+    if not org_id:
+        return jsonify({'error': 'organization_id required'}), 400
+
+    try:
+        org_id = int(org_id)
+    except:
+        return jsonify({'error': 'Invalid organization_id'}), 400
+
+    # Verify user is member of organization
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT om.*, o.use_case FROM organization_members om
+        JOIN organizations o ON om.organization_id = o.id
+        WHERE om.organization_id = %s AND om.user_id = %s AND om.is_active = TRUE
+    ''', (org_id, user_id))
+    membership = cursor.fetchone()
+
+    if not membership:
+        conn.close()
+        return jsonify({'error': 'Not a member of this organization'}), 403
+
+    # Check if organization is therapy (knowledge platform only for non-therapy)
+    if membership['use_case'] == 'therapy_matching':
+        conn.close()
+        return jsonify({'error': 'Document upload not available for therapy organizations'}), 403
+
+    # Get uploaded files
+    files = request.files.getlist('files')
+
+    if not files or len(files) == 0:
+        conn.close()
+        return jsonify({'error': 'No files provided'}), 400
+
+    if len(files) > 10:
+        conn.close()
+        return jsonify({'error': 'Maximum 10 files allowed per upload'}), 400
+
+    # Initialize storage manager
+    storage = StorageManager()
+    uploaded_documents = []
+    failed_files = []
+
+    for file in files:
+        try:
+            # Validate file
+            is_valid, error_msg, file_type = storage.validate_file(file, file.filename)
+
+            if not is_valid:
+                failed_files.append({'filename': file.filename, 'error': error_msg})
+                continue
+
+            # Create document record
+            cursor.execute('''
+                INSERT INTO documents (organization_id, filename, file_type, file_size, uploaded_by, storage_url, processing_status)
+                VALUES (%s, %s, %s, %s, %s, %s, 'pending')
+                RETURNING id
+            ''', (org_id, file.filename, file_type, file.content_length or 0, user_id, 'pending'))
+
+            doc_id = cursor.fetchone()['id']
+            conn.commit()
+
+            # Upload to DigitalOcean Spaces
+            storage_url = storage.upload_file(file, org_id, doc_id, file.filename)
+
+            # Update storage URL
+            cursor.execute('''
+                UPDATE documents SET storage_url = %s WHERE id = %s
+            ''', (storage_url, doc_id))
+            conn.commit()
+
+            # Create processing job record
+            job_id = f"process_doc_{doc_id}_{secrets.token_hex(8)}"
+            cursor.execute('''
+                INSERT INTO processing_jobs (organization_id, job_type, job_id, status)
+                VALUES (%s, 'document_upload', %s, 'queued')
+            ''', (org_id, job_id))
+            conn.commit()
+
+            # Queue background processing task
+            task = process_document_task.apply_async(
+                args=[doc_id, org_id],
+                task_id=job_id
+            )
+
+            uploaded_documents.append({
+                'doc_id': doc_id,
+                'filename': file.filename,
+                'file_type': file_type,
+                'status': 'pending',
+                'job_id': job_id
+            })
+
+        except Exception as e:
+            print(f"Error uploading {file.filename}: {e}")
+            failed_files.append({'filename': file.filename, 'error': str(e)})
+
+    conn.close()
+
+    return jsonify({
+        'success': len(uploaded_documents) > 0,
+        'uploaded': uploaded_documents,
+        'failed': failed_files,
+        'message': f'{len(uploaded_documents)} files uploaded successfully'
+    })
+
+
+@app.route('/api/documents', methods=['GET'])
+@login_required
+def list_documents():
+    """List all documents for an organization"""
+    user_id = session['user_id']
+    org_id = request.args.get('org_id')
+
+    if not org_id:
+        return jsonify({'error': 'organization_id required'}), 400
+
+    try:
+        org_id = int(org_id)
+    except:
+        return jsonify({'error': 'Invalid organization_id'}), 400
+
+    # Verify user is member
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT * FROM organization_members
+        WHERE organization_id = %s AND user_id = %s AND is_active = TRUE
+    ''', (org_id, user_id))
+
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({'error': 'Not a member of this organization'}), 403
+
+    # Get documents
+    cursor.execute('''
+        SELECT d.*, u.first_name, u.last_name
+        FROM documents d
+        JOIN users u ON d.uploaded_by = u.id
+        WHERE d.organization_id = %s AND d.is_deleted = FALSE
+        ORDER BY d.upload_date DESC
+    ''', (org_id,))
+
+    documents = cursor.fetchall()
+    conn.close()
+
+    return jsonify({
+        'documents': [{
+            'id': doc['id'],
+            'filename': doc['filename'],
+            'file_type': doc['file_type'],
+            'file_size': doc['file_size'],
+            'upload_date': doc['upload_date'].isoformat() if doc['upload_date'] else None,
+            'uploaded_by': f"{doc['first_name']} {doc['last_name']}",
+            'processing_status': doc['processing_status'],
+            'metadata': json.loads(doc['metadata_json']) if doc['metadata_json'] else {}
+        } for doc in documents]
+    })
+
+
+@app.route('/api/documents/<int:doc_id>', methods=['GET'])
+@login_required
+def get_document(doc_id):
+    """Get document details"""
+    user_id = session['user_id']
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Get document and verify access
+    cursor.execute('''
+        SELECT d.*, u.first_name, u.last_name
+        FROM documents d
+        JOIN users u ON d.uploaded_by = u.id
+        WHERE d.id = %s AND d.is_deleted = FALSE
+    ''', (doc_id,))
+
+    doc = cursor.fetchone()
+
+    if not doc:
+        conn.close()
+        return jsonify({'error': 'Document not found'}), 404
+
+    # Verify user is member of organization
+    cursor.execute('''
+        SELECT * FROM organization_members
+        WHERE organization_id = %s AND user_id = %s AND is_active = TRUE
+    ''', (doc['organization_id'], user_id))
+
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({'error': 'Access denied'}), 403
+
+    # Get classification if available
+    cursor.execute('''
+        SELECT * FROM document_classifications WHERE document_id = %s
+    ''', (doc_id,))
+    classification = cursor.fetchone()
+
+    conn.close()
+
+    return jsonify({
+        'id': doc['id'],
+        'filename': doc['filename'],
+        'file_type': doc['file_type'],
+        'file_size': doc['file_size'],
+        'upload_date': doc['upload_date'].isoformat() if doc['upload_date'] else None,
+        'uploaded_by': f"{doc['first_name']} {doc['last_name']}",
+        'processing_status': doc['processing_status'],
+        'metadata': json.loads(doc['metadata_json']) if doc['metadata_json'] else {},
+        'classification': {
+            'team': classification['team'],
+            'project': classification['project'],
+            'doc_type': classification['doc_type'],
+            'confidentiality': classification['confidentiality'],
+            'tags': classification['tags']
+        } if classification else None
+    })
+
+
+@app.route('/api/documents/<int:doc_id>/download', methods=['GET'])
+@login_required
+def download_document(doc_id):
+    """Generate presigned download URL for document"""
+    from storage_manager import StorageManager
+
+    user_id = session['user_id']
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Get document and verify access
+    cursor.execute('''
+        SELECT d.* FROM documents d
+        WHERE d.id = %s AND d.is_deleted = FALSE
+    ''', (doc_id,))
+
+    doc = cursor.fetchone()
+
+    if not doc:
+        conn.close()
+        return jsonify({'error': 'Document not found'}), 404
+
+    # Verify user is member of organization
+    cursor.execute('''
+        SELECT * FROM organization_members
+        WHERE organization_id = %s AND user_id = %s AND is_active = TRUE
+    ''', (doc['organization_id'], user_id))
+
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({'error': 'Access denied'}), 403
+
+    conn.close()
+
+    # Generate presigned URL
+    try:
+        storage = StorageManager()
+        download_url = storage.generate_download_url(doc['storage_url'], expires_in=3600)
+
+        return jsonify({
+            'download_url': download_url,
+            'filename': doc['filename'],
+            'expires_in': 3600
+        })
+    except Exception as e:
+        return jsonify({'error': f'Failed to generate download URL: {str(e)}'}), 500
+
+
+@app.route('/api/documents/<int:doc_id>', methods=['DELETE'])
+@login_required
+def delete_document(doc_id):
+    """Soft delete a document"""
+    from storage_manager import StorageManager
+
+    user_id = session['user_id']
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Get document and verify access
+    cursor.execute('''
+        SELECT d.*, om.role FROM documents d
+        JOIN organization_members om ON d.organization_id = om.organization_id
+        WHERE d.id = %s AND om.user_id = %s AND om.is_active = TRUE
+    ''', (doc_id, user_id))
+
+    doc = cursor.fetchone()
+
+    if not doc:
+        conn.close()
+        return jsonify({'error': 'Document not found or access denied'}), 404
+
+    # Only uploader or org owner can delete
+    if doc['uploaded_by'] != user_id and doc['role'] != 'owner':
+        conn.close()
+        return jsonify({'error': 'Only document uploader or organization owner can delete'}), 403
+
+    # Soft delete
+    cursor.execute('''
+        UPDATE documents
+        SET is_deleted = TRUE, deleted_at = CURRENT_TIMESTAMP
+        WHERE id = %s
+    ''', (doc_id,))
+    conn.commit()
+
+    # Optionally delete from storage (can be done in background)
+    # try:
+    #     storage = StorageManager()
+    #     storage.delete_file(doc['storage_url'])
+    # except Exception as e:
+    #     print(f"Error deleting from storage: {e}")
+
+    conn.close()
+
+    return jsonify({'success': True, 'message': 'Document deleted successfully'})
+
+
+@app.route('/api/jobs/<job_id>/status', methods=['GET'])
+@login_required
+def get_job_status(job_id):
+    """Get processing job status"""
+    user_id = session['user_id']
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Get job and verify access
+    cursor.execute('''
+        SELECT pj.*, om.user_id FROM processing_jobs pj
+        JOIN organization_members om ON pj.organization_id = om.organization_id
+        WHERE pj.job_id = %s AND om.user_id = %s AND om.is_active = TRUE
+    ''', (job_id, user_id))
+
+    job = cursor.fetchone()
+    conn.close()
+
+    if not job:
+        return jsonify({'error': 'Job not found or access denied'}), 404
+
+    return jsonify({
+        'job_id': job['job_id'],
+        'status': job['status'],
+        'progress': job['progress'],
+        'error': job['error_message'],
+        'result': json.loads(job['result_json']) if job['result_json'] else None,
+        'created_at': job['created_at'].isoformat() if job['created_at'] else None,
+        'completed_at': job['completed_at'].isoformat() if job['completed_at'] else None
+    })
+
 
 # ============================================================================
 # MAIN APPLICATION RUNNER
