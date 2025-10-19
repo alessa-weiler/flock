@@ -61,7 +61,14 @@ if API_KEY:
 else:
     print("⚠️  WARNING: OPENAI_API_KEY not found in environment variables!")
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-change-in-production')
-app.config['SESSION_COOKIE_SECURE'] = True
+
+# Session configuration - Allow HTTP for local development
+FLASK_ENV = os.environ.get('FLASK_ENV', 'development')
+if FLASK_ENV == 'production':
+    app.config['SESSION_COOKIE_SECURE'] = True  # HTTPS only in production
+else:
+    app.config['SESSION_COOKIE_SECURE'] = False  # Allow HTTP in development
+
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
@@ -11557,6 +11564,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                     <input type="text" class="invite-link-input" id="inviteLink" value="{invite_url}" readonly>
                     <button class="copy-btn" onclick="copyInviteLink()">Copy Link</button>
                     <a href="/organization/{org_info['id']}/{applicants_link}" class="copy-btn" style="margin-left: 0.5rem; text-decoration: none;">{applicants_text}</a>
+                    {f'<a href="/organization/{org_info["id"]}/documents" class="copy-btn" style="margin-left: 0.5rem; text-decoration: none;">📄 Documents</a>' if not is_therapy else ''}
                     {f'<a href="/organization/{org_info["id"]}/embed-settings" class="copy-btn" style="margin-left: 0.5rem; text-decoration: none;">Widget Settings</a>' if org_info['is_owner'] else ''}
                 </div>
             </div>
@@ -16469,6 +16477,372 @@ def handle_subscription_deleted(subscription):
         print(f"Error handling subscription deletion: {e}")
 
 # ============================================================================
+# KNOWLEDGE PLATFORM WEB PAGES
+# ============================================================================
+
+@app.route('/organization/<int:org_id>/documents')
+@login_required
+def organization_documents(org_id):
+    """Documents page for non-therapy organizations"""
+    user_id = session['user_id']
+    user_info = user_auth.get_user_info(user_id)
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Check membership and org type
+        cursor.execute('''
+            SELECT om.role, o.* FROM organization_members om
+            JOIN organizations o ON om.organization_id = o.id
+            WHERE om.organization_id = %s AND om.user_id = %s AND om.is_active = TRUE
+        ''', (org_id, user_id))
+
+        membership = cursor.fetchone()
+
+        if not membership:
+            conn.close()
+            flash('You do not have access to this organization', 'error')
+            return redirect('/dashboard')
+
+        if membership['use_case'] == 'therapy_matching':
+            conn.close()
+            flash('Documents feature not available for therapy organizations', 'error')
+            return redirect(f'/organization/{org_id}')
+
+        org_name = membership['name']
+
+        # Get all documents for this org
+        cursor.execute('''
+            SELECT d.*, u.first_name, u.last_name
+            FROM documents d
+            JOIN users u ON d.uploaded_by = u.id
+            WHERE d.organization_id = %s AND d.is_deleted = FALSE
+            ORDER BY d.upload_date DESC
+        ''', (org_id,))
+
+        documents = cursor.fetchall()
+        conn.close()
+
+        # Render documents page
+        content = render_documents_page(org_id, org_name, documents, user_info)
+        return render_template_with_header(f"{org_name} - Documents", content, user_info)
+
+    except Exception as e:
+        print(f"Error loading documents: {e}")
+        import traceback
+        traceback.print_exc()
+        flash('Error loading documents', 'error')
+        return redirect(f'/organization/{org_id}')
+
+
+def render_documents_page(org_id: int, org_name: str, documents: List[Dict], user_info: Dict) -> str:
+    """Render the documents management page"""
+
+    # Build documents HTML
+    docs_html = ''
+    if documents:
+        for doc in documents:
+            status_icon = {
+                'pending': '⏳',
+                'processing': '🔄',
+                'completed': '✅',
+                'failed': '❌'
+            }.get(doc['processing_status'], '❓')
+
+            file_size_mb = doc['file_size'] / (1024 * 1024)
+            upload_date = doc['upload_date'].strftime('%b %d, %Y %I:%M %p') if doc['upload_date'] else 'Unknown'
+
+            docs_html += f'''
+                <div class="doc-card">
+                    <div class="doc-header">
+                        <span class="doc-icon">{status_icon}</span>
+                        <span class="doc-filename">{doc['filename']}</span>
+                    </div>
+                    <div class="doc-meta">
+                        <span>{doc['file_type'].upper()}</span>
+                        <span>{file_size_mb:.2f} MB</span>
+                        <span>{doc['first_name']} {doc['last_name']}</span>
+                    </div>
+                    <div class="doc-date">{upload_date}</div>
+                    <div class="doc-status">{doc['processing_status'].title()}</div>
+                </div>
+            '''
+    else:
+        docs_html = '<p class="no-docs">No documents uploaded yet. Upload your first document above!</p>'
+
+    content = f'''
+    <style>
+        .docs-container {{
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }}
+        .docs-header {{
+            margin-bottom: 2rem;
+        }}
+        .docs-title {{
+            font-size: 2rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }}
+        .docs-subtitle {{
+            color: #666;
+        }}
+        .upload-section {{
+            background: white;
+            border: 2px dashed #ccc;
+            border-radius: 12px;
+            padding: 3rem;
+            text-align: center;
+            margin-bottom: 3rem;
+            transition: all 0.3s;
+        }}
+        .upload-section:hover {{
+            border-color: #000;
+            background: #f9f9f9;
+        }}
+        .upload-zone {{
+            cursor: pointer;
+        }}
+        .upload-btn {{
+            background: black;
+            color: white;
+            border: none;
+            padding: 1rem 2rem;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            margin-top: 1rem;
+        }}
+        .upload-btn:hover {{
+            background: #333;
+        }}
+        .upload-info {{
+            margin-top: 1rem;
+            font-size: 0.9rem;
+            color: #666;
+        }}
+        .docs-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }}
+        .doc-card {{
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 12px;
+            padding: 1.5rem;
+            transition: all 0.3s;
+        }}
+        .doc-card:hover {{
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            transform: translateY(-2px);
+        }}
+        .doc-header {{
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }}
+        .doc-icon {{
+            font-size: 1.5rem;
+        }}
+        .doc-filename {{
+            font-weight: 600;
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }}
+        .doc-meta {{
+            display: flex;
+            gap: 1rem;
+            font-size: 0.85rem;
+            color: #666;
+            margin-bottom: 0.5rem;
+        }}
+        .doc-date {{
+            font-size: 0.85rem;
+            color: #999;
+        }}
+        .doc-status {{
+            margin-top: 0.5rem;
+            padding: 0.25rem 0.75rem;
+            background: #f0f0f0;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            display: inline-block;
+        }}
+        .no-docs {{
+            text-align: center;
+            color: #999;
+            padding: 3rem;
+        }}
+        .back-link {{
+            display: inline-block;
+            margin-bottom: 2rem;
+            color: #666;
+            text-decoration: none;
+        }}
+        .back-link:hover {{
+            color: #000;
+        }}
+        #uploadProgress {{
+            margin-top: 1rem;
+            display: none;
+        }}
+        .progress-bar {{
+            width: 100%;
+            height: 8px;
+            background: #f0f0f0;
+            border-radius: 4px;
+            overflow: hidden;
+        }}
+        .progress-fill {{
+            height: 100%;
+            background: black;
+            transition: width 0.3s;
+        }}
+        .progress-text {{
+            margin-top: 0.5rem;
+            font-size: 0.9rem;
+            color: #666;
+        }}
+    </style>
+
+    <div class="docs-container">
+        <a href="/organization/{org_id}" class="back-link">← Back to {org_name}</a>
+
+        <div class="docs-header">
+            <h1 class="docs-title">📄 Documents</h1>
+            <p class="docs-subtitle">Upload and manage your organization's documents</p>
+        </div>
+
+        <div class="upload-section">
+            <div class="upload-zone" onclick="document.getElementById('fileInput').click()">
+                <input type="file" id="fileInput" multiple accept=".pdf,.docx,.txt,.md,.csv" style="display: none">
+                <h2>Drop files here or click to upload</h2>
+                <p>Supported: PDF, DOCX, TXT, MD, CSV • Max 50MB per file • Up to 10 files</p>
+                <button class="upload-btn" type="button">Choose Files</button>
+            </div>
+            <div id="uploadProgress" style="display: none;">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <div class="progress-text" id="progressText">Uploading...</div>
+            </div>
+        </div>
+
+        <div class="docs-grid">
+            {docs_html}
+        </div>
+    </div>
+
+    <script>
+        console.log('Documents page script loaded');
+
+        const fileInput = document.getElementById('fileInput');
+        const uploadProgress = document.getElementById('uploadProgress');
+        const progressFill = document.getElementById('progressFill');
+        const progressText = document.getElementById('progressText');
+
+        console.log('File input element:', fileInput);
+
+        fileInput.addEventListener('change', async (e) => {{
+            console.log('File input change event fired!', e.target.files);
+            const files = Array.from(e.target.files);
+            console.log('Files array:', files);
+
+            if (files.length === 0) return;
+
+            if (files.length > 10) {{
+                alert('Maximum 10 files at once');
+                return;
+            }}
+
+            // Validate file sizes
+            for (const file of files) {{
+                if (file.size > 50 * 1024 * 1024) {{
+                    alert(`${{file.name}} exceeds 50MB limit`);
+                    return;
+                }}
+            }}
+
+            // Show progress
+            uploadProgress.style.display = 'block';
+            progressText.textContent = `Uploading ${{files.length}} file(s)...`;
+            progressFill.style.width = '0%';
+
+            // Create form data
+            const formData = new FormData();
+            formData.append('org_id', '{org_id}');
+            files.forEach(file => formData.append('files', file));
+
+            try {{
+                const response = await fetch('/api/documents/upload', {{
+                    method: 'POST',
+                    body: formData
+                }});
+
+                const result = await response.json();
+
+                if (result.success) {{
+                    progressFill.style.width = '100%';
+                    progressText.textContent = `✅ Uploaded ${{result.uploaded.length}} file(s) successfully!`;
+
+                    // Reload page after 1 second
+                    setTimeout(() => {{
+                        window.location.reload();
+                    }}, 1000);
+                }} else {{
+                    progressText.textContent = `❌ Upload failed: ${{result.error || 'Unknown error'}}`;
+                }}
+            }} catch (error) {{
+                console.error('Upload error:', error);
+                progressText.textContent = `❌ Upload failed: ${{error.message}}`;
+            }}
+
+            // Reset file input
+            fileInput.value = '';
+        }});
+
+        console.log('Event listener attached to file input');
+
+        // Drag and drop support
+        const uploadSection = document.querySelector('.upload-section');
+
+        uploadSection.addEventListener('dragover', (e) => {{
+            e.preventDefault();
+            uploadSection.style.borderColor = '#000';
+            uploadSection.style.background = '#f9f9f9';
+        }});
+
+        uploadSection.addEventListener('dragleave', () => {{
+            uploadSection.style.borderColor = '#ccc';
+            uploadSection.style.background = 'white';
+        }});
+
+        uploadSection.addEventListener('drop', (e) => {{
+            e.preventDefault();
+            uploadSection.style.borderColor = '#ccc';
+            uploadSection.style.background = 'white';
+
+            const files = Array.from(e.dataTransfer.files);
+            const dataTransfer = new DataTransfer();
+            files.forEach(file => dataTransfer.items.add(file));
+            fileInput.files = dataTransfer.files;
+
+            // Trigger change event
+            fileInput.dispatchEvent(new Event('change'));
+        }});
+    </script>
+    '''
+
+    return content
+
+
+# ============================================================================
 # KNOWLEDGE PLATFORM API ENDPOINTS
 # ============================================================================
 
@@ -16525,7 +16899,15 @@ def upload_documents():
         return jsonify({'error': 'Maximum 10 files allowed per upload'}), 400
 
     # Initialize storage manager
-    storage = StorageManager()
+    try:
+        storage = StorageManager()
+    except Exception as e:
+        conn.close()
+        return jsonify({
+            'error': f'Storage configuration error: {str(e)}',
+            'message': 'Please configure DigitalOcean Spaces credentials in .env file'
+        }), 500
+
     uploaded_documents = []
     failed_files = []
 

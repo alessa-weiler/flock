@@ -32,6 +32,9 @@ brew install tesseract
 
 # Install poppler (for pdf2image)
 brew install poppler
+
+# Install libmagic (for file type validation)
+brew install libmagic
 ```
 
 ### Linux Installation
@@ -39,7 +42,7 @@ brew install poppler
 ```bash
 # Ubuntu/Debian
 sudo apt-get update
-sudo apt-get install redis-server tesseract-ocr poppler-utils libmagic1
+sudo apt-get install redis-server tesseract-ocr poppler-utils libmagic1 libmagic-dev
 
 # Start Redis
 sudo systemctl start redis-server
@@ -225,7 +228,7 @@ Using curl:
 # Login first and get session cookie
 curl -X POST http://localhost:8080/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"your@email.com","password":"yourpassword"}' \
+  -d '{"email":"alessa@pont-diagnostics.com","password":"123456"}' \
   -c cookies.txt
 
 # Upload a document
@@ -371,6 +374,29 @@ sudo apt-get install tesseract-ocr
 
 # Verify installation
 tesseract --version
+```
+
+### libmagic Import Error
+
+**Error:** `ImportError: failed to find libmagic. Check your installation`
+
+**Solution:**
+```bash
+# macOS
+brew install libmagic
+
+# Linux
+sudo apt-get install libmagic1 libmagic-dev
+
+# Verify installation (should not error)
+python -c "import magic; print('libmagic installed successfully')"
+```
+
+If the error persists after installing libmagic:
+```bash
+# Reinstall python-magic
+pip uninstall python-magic
+pip install python-magic
 ```
 
 ### DigitalOcean Spaces Upload Fails
