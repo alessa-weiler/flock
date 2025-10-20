@@ -781,16 +781,19 @@ class UserAuthSystem:
             CREATE TABLE IF NOT EXISTS document_classifications (
                 id SERIAL PRIMARY KEY,
                 document_id INTEGER NOT NULL,
+                organization_id INTEGER NOT NULL,
                 team TEXT,
                 project TEXT,
                 doc_type TEXT,
                 time_period TEXT,
-                confidentiality TEXT CHECK (confidentiality IN ('public', 'internal', 'confidential', 'restricted')),
-                mentioned_people TEXT[],
-                tags TEXT[],
-                confidence_scores_json TEXT,
+                confidentiality_level TEXT CHECK (confidentiality_level IN ('public', 'internal', 'confidential', 'restricted')),
+                mentioned_people JSONB DEFAULT '[]'::jsonb,
+                tags JSONB DEFAULT '[]'::jsonb,
+                summary TEXT,
+                confidence_scores JSONB,
                 classified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (document_id) REFERENCES documents (id) ON DELETE CASCADE,
+                FOREIGN KEY (organization_id) REFERENCES organizations (id) ON DELETE CASCADE,
                 UNIQUE(document_id)
             )
         ''')
@@ -798,6 +801,75 @@ class UserAuthSystem:
         cursor.execute('''
             CREATE INDEX IF NOT EXISTS idx_classifications_team ON document_classifications(team)
         ''')
+
+        # ============================================================================
+        # SPRINT 3: Migrate existing document_classifications table
+        # ============================================================================
+        # Add new columns if they don't exist (for upgrading from Sprint 2)
+        try:
+            cursor.execute('''
+                ALTER TABLE document_classifications
+                ADD COLUMN IF NOT EXISTS organization_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE
+            ''')
+            cursor.execute('''
+                ALTER TABLE document_classifications
+                ADD COLUMN IF NOT EXISTS summary TEXT
+            ''')
+            # Populate organization_id for existing rows (from documents table)
+            cursor.execute('''
+                UPDATE document_classifications dc
+                SET organization_id = d.organization_id
+                FROM documents d
+                WHERE dc.document_id = d.id
+                  AND dc.organization_id IS NULL
+            ''')
+            # Rename confidentiality to confidentiality_level if needed
+            cursor.execute('''
+                DO $$
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM information_schema.columns
+                              WHERE table_name = 'document_classifications'
+                              AND column_name = 'confidentiality') THEN
+                        ALTER TABLE document_classifications RENAME COLUMN confidentiality TO confidentiality_level;
+                    END IF;
+                END $$;
+            ''')
+            # Rename confidence_scores_json to confidence_scores if needed
+            cursor.execute('''
+                DO $$
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM information_schema.columns
+                              WHERE table_name = 'document_classifications'
+                              AND column_name = 'confidence_scores_json') THEN
+                        ALTER TABLE document_classifications RENAME COLUMN confidence_scores_json TO confidence_scores;
+                    END IF;
+                END $$;
+            ''')
+            # Convert TEXT[] to JSONB for mentioned_people and tags (if they exist as arrays)
+            cursor.execute('''
+                DO $$
+                BEGIN
+                    -- Check if mentioned_people is TEXT[] and convert to JSONB
+                    IF EXISTS (SELECT 1 FROM information_schema.columns
+                              WHERE table_name = 'document_classifications'
+                              AND column_name = 'mentioned_people'
+                              AND data_type = 'ARRAY') THEN
+                        ALTER TABLE document_classifications
+                        ALTER COLUMN mentioned_people TYPE JSONB USING to_jsonb(mentioned_people);
+                    END IF;
+                    -- Check if tags is TEXT[] and convert to JSONB
+                    IF EXISTS (SELECT 1 FROM information_schema.columns
+                              WHERE table_name = 'document_classifications'
+                              AND column_name = 'tags'
+                              AND data_type = 'ARRAY') THEN
+                        ALTER TABLE document_classifications
+                        ALTER COLUMN tags TYPE JSONB USING to_jsonb(tags);
+                    END IF;
+                END $$;
+            ''')
+            print("✓ Migrated document_classifications table for Sprint 3")
+        except psycopg2.Error as e:
+            print(f"Migration note: {e}")
 
         # Employee embeddings - for semantic search
         cursor.execute('''
@@ -909,8 +981,99 @@ class UserAuthSystem:
             )
         ''')
 
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_embedding_usage_org_date ON embedding_usage(organization_id, date)
+        ''')
+
+        # ============================================================================
+        # SPRINT 2: Additional Performance Indexes
+        # ============================================================================
+
+        # Employee embeddings indexes
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_employee_embeddings_org_user ON employee_embeddings(organization_id, user_id)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_employee_embeddings_updated ON employee_embeddings(last_updated)
+        ''')
+
+        # Chat conversations indexes
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_conversations_user ON chat_conversations(user_id)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_conversations_last_message ON chat_conversations(last_message_at DESC)
+        ''')
+
+        # Chat messages indexes
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_messages_conversation ON chat_messages(conversation_id)
+        ''')
+
+        # Processing jobs indexes
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_jobs_org_status ON processing_jobs(organization_id, status)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_jobs_created ON processing_jobs(created_at DESC)
+        ''')
+
+        # Document chunks index for embeddings
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_chunks_embedding_id ON document_chunks(embedding_id)
+        ''')
+
+        # ============================================================================
+        # SPRINT 3: Classification Indexes
+        # ============================================================================
+
+        # Classification primary fields indexes
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_classifications_org_team ON document_classifications(organization_id, team)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_classifications_org_project ON document_classifications(organization_id, project)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_classifications_org_type ON document_classifications(organization_id, doc_type)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_classifications_org_period ON document_classifications(organization_id, time_period)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_classifications_confidentiality ON document_classifications(confidentiality_level)
+        ''')
+
+        # GIN indexes for array fields (mentioned_people, tags) - enables efficient JSONB queries
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_classifications_mentioned_people ON document_classifications USING GIN (mentioned_people)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_classifications_tags ON document_classifications USING GIN (tags)
+        ''')
+
+        # Composite index for common smart folder queries
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_classifications_org_doc ON document_classifications(organization_id, document_id)
+        ''')
+
+        # Time-based index for chronological views
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_classifications_classified_at ON document_classifications(classified_at DESC)
+        ''')
+
         print("✓ Created V2 network and events tables")
         print("✓ Created knowledge platform tables")
+        print("✓ Created performance indexes for Sprint 2")
+        print("✓ Created classification indexes for Sprint 3")
 
     def create_user(self, email: str, password: str, first_name: str = None, 
                last_name: str = None, phone: str = None, min_age: int = 18, 
@@ -14564,9 +14727,9 @@ def api_user_matches(user_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/health')
-def health_check():
-    """Health check for deployment monitoring"""
+@app.route('/health-simple')
+def health_check_simple():
+    """Simple health check for basic deployment monitoring"""
     return jsonify({
         'status': 'healthy',
         'service': 'user-matching-platform',
@@ -17217,6 +17380,980 @@ def get_job_status(job_id):
         'created_at': job['created_at'].isoformat() if job['created_at'] else None,
         'completed_at': job['completed_at'].isoformat() if job['completed_at'] else None
     })
+
+
+# ============================================================================
+# SPRINT 2: SEARCH API ENDPOINTS
+# ============================================================================
+
+@app.route('/api/documents/search', methods=['POST'])
+@login_required
+def search_documents():
+    """
+    Semantic search across documents using embeddings
+
+    Request body:
+    {
+        "query": "search query",
+        "org_id": 123,
+        "top_k": 10,  # optional, default 10
+        "doc_type": "pdf",  # optional filter
+        "min_score": 0.7  # optional, default 0.7
+    }
+    """
+    user_id = session['user_id']
+    data = request.json
+
+    if not data or 'query' not in data or 'org_id' not in data:
+        return jsonify({'error': 'Missing required fields: query, org_id'}), 400
+
+    query = data['query']
+    org_id = data['org_id']
+    top_k = data.get('top_k', 10)
+    doc_type = data.get('doc_type')
+    min_score = data.get('min_score', 0.7)
+
+    # Validate inputs
+    if not query or not query.strip():
+        return jsonify({'error': 'Query cannot be empty'}), 400
+
+    if top_k < 1 or top_k > 100:
+        return jsonify({'error': 'top_k must be between 1 and 100'}), 400
+
+    # Verify user has access to organization
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT 1 FROM organization_members
+        WHERE organization_id = %s AND user_id = %s AND is_active = TRUE
+    ''', (org_id, user_id))
+
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({'error': 'Access denied to organization'}), 403
+
+    try:
+        # Import services (lazy import to avoid circular dependencies)
+        from embedding_service import EmbeddingService
+        from vector_store import VectorStore
+
+        # Generate query embedding
+        print(f"Generating embedding for search query: {query[:100]}...")
+        embedding_service = EmbeddingService(model="text-embedding-3-large")
+        query_embedding = embedding_service.generate_single_embedding(query, org_id)
+
+        # Search in vector store
+        print(f"Searching documents for org {org_id}")
+        vector_store = VectorStore(index_name="flock-knowledge-base")
+        results = vector_store.search_documents(
+            org_id=org_id,
+            query_embedding=query_embedding,
+            top_k=top_k,
+            doc_type=doc_type,
+            min_score=min_score
+        )
+
+        # Enrich results with document information from database
+        enriched_results = []
+        for result in results:
+            # Extract doc_id from vector metadata
+            doc_id = result['metadata'].get('doc_id')
+            if doc_id:
+                cursor.execute('''
+                    SELECT id, filename, file_type, upload_date, metadata_json
+                    FROM documents
+                    WHERE id = %s AND is_deleted = FALSE
+                ''', (doc_id,))
+
+                doc = cursor.fetchone()
+                if doc:
+                    enriched_results.append({
+                        'doc_id': doc['id'],
+                        'filename': doc['filename'],
+                        'file_type': doc['file_type'],
+                        'upload_date': doc['upload_date'].isoformat() if doc['upload_date'] else None,
+                        'snippet': result['metadata'].get('text', '')[:300],
+                        'score': result['score'],
+                        'chunk_index': result['metadata'].get('chunk_index', 0)
+                    })
+
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'query': query,
+            'results_count': len(enriched_results),
+            'results': enriched_results
+        })
+
+    except Exception as e:
+        conn.close()
+        print(f"Error in document search: {e}")
+        return jsonify({'error': f'Search failed: {str(e)}'}), 500
+
+
+@app.route('/api/employees/search', methods=['POST'])
+@login_required
+def search_employees():
+    """
+    Semantic search for employees by skills, expertise, or description
+
+    Request body:
+    {
+        "query": "Who knows about machine learning?",
+        "org_id": 123,
+        "top_k": 10  # optional, default 10
+    }
+    """
+    user_id = session['user_id']
+    data = request.json
+
+    if not data or 'query' not in data or 'org_id' not in data:
+        return jsonify({'error': 'Missing required fields: query, org_id'}), 400
+
+    query = data['query']
+    org_id = data['org_id']
+    top_k = data.get('top_k', 10)
+
+    # Validate inputs
+    if not query or not query.strip():
+        return jsonify({'error': 'Query cannot be empty'}), 400
+
+    if top_k < 1 or top_k > 50:
+        return jsonify({'error': 'top_k must be between 1 and 50'}), 400
+
+    # Verify user has access to organization
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT 1 FROM organization_members
+        WHERE organization_id = %s AND user_id = %s AND is_active = TRUE
+    ''', (org_id, user_id))
+
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({'error': 'Access denied to organization'}), 403
+
+    try:
+        # Import services
+        from embedding_service import EmbeddingService
+        from vector_store import VectorStore
+
+        # Generate query embedding
+        print(f"Generating embedding for employee search: {query[:100]}...")
+        embedding_service = EmbeddingService(model="text-embedding-3-large")
+        query_embedding = embedding_service.generate_single_embedding(query, org_id)
+
+        # Search in vector store
+        print(f"Searching employees for org {org_id}")
+        vector_store = VectorStore(index_name="flock-knowledge-base")
+        results = vector_store.search_employees(
+            org_id=org_id,
+            query_embedding=query_embedding,
+            top_k=top_k
+        )
+
+        # Enrich results with full employee information
+        enriched_results = []
+        for result in results:
+            user_id_result = result['metadata'].get('user_id')
+            if user_id_result:
+                cursor.execute('''
+                    SELECT u.id, u.full_name, u.email,
+                           up.current_position, up.specialties, up.bio, up.years_experience
+                    FROM users u
+                    LEFT JOIN user_profiles up ON u.id = up.user_id
+                    WHERE u.id = %s
+                ''', (user_id_result,))
+
+                employee = cursor.fetchone()
+                if employee:
+                    enriched_results.append({
+                        'user_id': employee['id'],
+                        'name': employee['full_name'],
+                        'email': employee['email'],
+                        'title': employee.get('current_position', ''),
+                        'specialties': employee.get('specialties', ''),
+                        'bio': employee.get('bio', '')[:200] if employee.get('bio') else '',
+                        'experience': employee.get('years_experience', 0),
+                        'relevance_score': result['score']
+                    })
+
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'query': query,
+            'results_count': len(enriched_results),
+            'results': enriched_results
+        })
+
+    except Exception as e:
+        conn.close()
+        print(f"Error in employee search: {e}")
+        return jsonify({'error': f'Search failed: {str(e)}'}), 500
+
+
+@app.route('/api/embeddings/generate', methods=['POST'])
+@login_required
+def trigger_employee_embedding():
+    """
+    Trigger embedding generation for an employee
+
+    Request body:
+    {
+        "org_id": 123,
+        "user_id": 456  # optional, defaults to current user
+    }
+    """
+    current_user_id = session['user_id']
+    data = request.json
+
+    if not data or 'org_id' not in data:
+        return jsonify({'error': 'Missing required field: org_id'}), 400
+
+    org_id = data['org_id']
+    target_user_id = data.get('user_id', current_user_id)
+
+    # Verify user has access to organization
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT role FROM organization_members
+        WHERE organization_id = %s AND user_id = %s AND is_active = TRUE
+    ''', (org_id, current_user_id))
+
+    member = cursor.fetchone()
+    conn.close()
+
+    if not member:
+        return jsonify({'error': 'Access denied to organization'}), 403
+
+    # Only allow generating embeddings for self unless owner/admin
+    if target_user_id != current_user_id and member['role'] not in ['owner', 'admin']:
+        return jsonify({'error': 'Insufficient permissions'}), 403
+
+    try:
+        # Import task
+        from tasks import generate_employee_embeddings_task
+
+        # Queue background task
+        task = generate_employee_embeddings_task.delay(org_id, target_user_id)
+
+        return jsonify({
+            'success': True,
+            'message': 'Employee embedding generation started',
+            'task_id': task.id,
+            'user_id': target_user_id
+        })
+
+    except Exception as e:
+        print(f"Error triggering embedding generation: {e}")
+        return jsonify({'error': f'Failed to start task: {str(e)}'}), 500
+
+
+# ============================================================================
+# SMART FOLDERS API (SPRINT 3)
+# ============================================================================
+
+@app.route('/api/folders/by-team', methods=['GET'])
+@login_required
+def get_folders_by_team():
+    """
+    Get documents organized by team (smart folder view)
+
+    Query params:
+        org_id: Organization ID (required)
+        team: Filter by specific team (optional)
+    """
+    user_id = session['user_id']
+    org_id = request.args.get('org_id', type=int)
+
+    if not org_id:
+        return jsonify({'error': 'Missing required parameter: org_id'}), 400
+
+    # Verify user has access to organization
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+    cursor.execute('''
+        SELECT 1 FROM organization_members
+        WHERE organization_id = %s AND user_id = %s AND is_active = TRUE
+    ''', (org_id, user_id))
+
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({'error': 'Access denied to organization'}), 403
+
+    try:
+        team_filter = request.args.get('team')
+
+        # Get all documents organized by team
+        query = '''
+            SELECT
+                dc.team,
+                COUNT(DISTINCT d.id) as document_count,
+                json_agg(
+                    json_build_object(
+                        'id', d.id,
+                        'filename', d.filename,
+                        'file_type', d.file_type,
+                        'upload_date', d.upload_date,
+                        'doc_type', dc.doc_type,
+                        'project', dc.project,
+                        'confidentiality_level', dc.confidentiality_level,
+                        'tags', dc.tags,
+                        'summary', dc.summary
+                    ) ORDER BY d.upload_date DESC
+                ) as documents
+            FROM documents d
+            INNER JOIN document_classifications dc ON dc.document_id = d.id
+            WHERE d.organization_id = %s
+              AND d.is_deleted = FALSE
+              AND dc.team IS NOT NULL
+        '''
+        params = [org_id]
+
+        if team_filter:
+            query += ' AND dc.team = %s'
+            params.append(team_filter)
+
+        query += ' GROUP BY dc.team ORDER BY dc.team'
+
+        cursor.execute(query, params)
+        folders = cursor.fetchall()
+
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'org_id': org_id,
+            'view_type': 'by_team',
+            'folders': [dict(f) for f in folders]
+        })
+
+    except Exception as e:
+        print(f"Error getting team folders: {e}")
+        conn.close()
+        return jsonify({'error': f'Failed to get team folders: {str(e)}'}), 500
+
+
+@app.route('/api/folders/by-project', methods=['GET'])
+@login_required
+def get_folders_by_project():
+    """
+    Get documents organized by project (smart folder view)
+
+    Query params:
+        org_id: Organization ID (required)
+        project: Filter by specific project (optional)
+    """
+    user_id = session['user_id']
+    org_id = request.args.get('org_id', type=int)
+
+    if not org_id:
+        return jsonify({'error': 'Missing required parameter: org_id'}), 400
+
+    # Verify user has access to organization
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+    cursor.execute('''
+        SELECT 1 FROM organization_members
+        WHERE organization_id = %s AND user_id = %s AND is_active = TRUE
+    ''', (org_id, user_id))
+
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({'error': 'Access denied to organization'}), 403
+
+    try:
+        project_filter = request.args.get('project')
+
+        query = '''
+            SELECT
+                dc.project,
+                COUNT(DISTINCT d.id) as document_count,
+                json_agg(
+                    json_build_object(
+                        'id', d.id,
+                        'filename', d.filename,
+                        'file_type', d.file_type,
+                        'upload_date', d.upload_date,
+                        'doc_type', dc.doc_type,
+                        'team', dc.team,
+                        'confidentiality_level', dc.confidentiality_level,
+                        'tags', dc.tags,
+                        'summary', dc.summary
+                    ) ORDER BY d.upload_date DESC
+                ) as documents
+            FROM documents d
+            INNER JOIN document_classifications dc ON dc.document_id = d.id
+            WHERE d.organization_id = %s
+              AND d.is_deleted = FALSE
+              AND dc.project IS NOT NULL
+        '''
+        params = [org_id]
+
+        if project_filter:
+            query += ' AND dc.project = %s'
+            params.append(project_filter)
+
+        query += ' GROUP BY dc.project ORDER BY dc.project'
+
+        cursor.execute(query, params)
+        folders = cursor.fetchall()
+
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'org_id': org_id,
+            'view_type': 'by_project',
+            'folders': [dict(f) for f in folders]
+        })
+
+    except Exception as e:
+        print(f"Error getting project folders: {e}")
+        conn.close()
+        return jsonify({'error': f'Failed to get project folders: {str(e)}'}), 500
+
+
+@app.route('/api/folders/by-type', methods=['GET'])
+@login_required
+def get_folders_by_type():
+    """
+    Get documents organized by document type (smart folder view)
+
+    Query params:
+        org_id: Organization ID (required)
+        doc_type: Filter by specific document type (optional)
+    """
+    user_id = session['user_id']
+    org_id = request.args.get('org_id', type=int)
+
+    if not org_id:
+        return jsonify({'error': 'Missing required parameter: org_id'}), 400
+
+    # Verify user has access to organization
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+    cursor.execute('''
+        SELECT 1 FROM organization_members
+        WHERE organization_id = %s AND user_id = %s AND is_active = TRUE
+    ''', (org_id, user_id))
+
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({'error': 'Access denied to organization'}), 403
+
+    try:
+        doc_type_filter = request.args.get('doc_type')
+
+        query = '''
+            SELECT
+                dc.doc_type,
+                COUNT(DISTINCT d.id) as document_count,
+                json_agg(
+                    json_build_object(
+                        'id', d.id,
+                        'filename', d.filename,
+                        'file_type', d.file_type,
+                        'upload_date', d.upload_date,
+                        'team', dc.team,
+                        'project', dc.project,
+                        'confidentiality_level', dc.confidentiality_level,
+                        'tags', dc.tags,
+                        'summary', dc.summary
+                    ) ORDER BY d.upload_date DESC
+                ) as documents
+            FROM documents d
+            INNER JOIN document_classifications dc ON dc.document_id = d.id
+            WHERE d.organization_id = %s
+              AND d.is_deleted = FALSE
+              AND dc.doc_type IS NOT NULL
+        '''
+        params = [org_id]
+
+        if doc_type_filter:
+            query += ' AND dc.doc_type = %s'
+            params.append(doc_type_filter)
+
+        query += ' GROUP BY dc.doc_type ORDER BY dc.doc_type'
+
+        cursor.execute(query, params)
+        folders = cursor.fetchall()
+
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'org_id': org_id,
+            'view_type': 'by_type',
+            'folders': [dict(f) for f in folders]
+        })
+
+    except Exception as e:
+        print(f"Error getting type folders: {e}")
+        conn.close()
+        return jsonify({'error': f'Failed to get type folders: {str(e)}'}), 500
+
+
+@app.route('/api/folders/by-date', methods=['GET'])
+@login_required
+def get_folders_by_date():
+    """
+    Get documents organized by time period (smart folder view)
+
+    Query params:
+        org_id: Organization ID (required)
+        time_period: Filter by specific period like "2024-Q1", "2024-03" (optional)
+    """
+    user_id = session['user_id']
+    org_id = request.args.get('org_id', type=int)
+
+    if not org_id:
+        return jsonify({'error': 'Missing required parameter: org_id'}), 400
+
+    # Verify user has access to organization
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+    cursor.execute('''
+        SELECT 1 FROM organization_members
+        WHERE organization_id = %s AND user_id = %s AND is_active = TRUE
+    ''', (org_id, user_id))
+
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({'error': 'Access denied to organization'}), 403
+
+    try:
+        time_period_filter = request.args.get('time_period')
+
+        query = '''
+            SELECT
+                dc.time_period,
+                COUNT(DISTINCT d.id) as document_count,
+                json_agg(
+                    json_build_object(
+                        'id', d.id,
+                        'filename', d.filename,
+                        'file_type', d.file_type,
+                        'upload_date', d.upload_date,
+                        'doc_type', dc.doc_type,
+                        'team', dc.team,
+                        'project', dc.project,
+                        'confidentiality_level', dc.confidentiality_level,
+                        'tags', dc.tags,
+                        'summary', dc.summary
+                    ) ORDER BY d.upload_date DESC
+                ) as documents
+            FROM documents d
+            INNER JOIN document_classifications dc ON dc.document_id = d.id
+            WHERE d.organization_id = %s
+              AND d.is_deleted = FALSE
+              AND dc.time_period IS NOT NULL
+        '''
+        params = [org_id]
+
+        if time_period_filter:
+            query += ' AND dc.time_period = %s'
+            params.append(time_period_filter)
+
+        query += ' GROUP BY dc.time_period ORDER BY dc.time_period DESC'
+
+        cursor.execute(query, params)
+        folders = cursor.fetchall()
+
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'org_id': org_id,
+            'view_type': 'by_date',
+            'folders': [dict(f) for f in folders]
+        })
+
+    except Exception as e:
+        print(f"Error getting date folders: {e}")
+        conn.close()
+        return jsonify({'error': f'Failed to get date folders: {str(e)}'}), 500
+
+
+@app.route('/api/folders/by-person', methods=['GET'])
+@login_required
+def get_folders_by_person():
+    """
+    Get documents organized by mentioned people (smart folder view)
+
+    Query params:
+        org_id: Organization ID (required)
+        person: Filter by specific person name (optional)
+    """
+    user_id = session['user_id']
+    org_id = request.args.get('org_id', type=int)
+
+    if not org_id:
+        return jsonify({'error': 'Missing required parameter: org_id'}), 400
+
+    # Verify user has access to organization
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+    cursor.execute('''
+        SELECT 1 FROM organization_members
+        WHERE organization_id = %s AND user_id = %s AND is_active = TRUE
+    ''', (org_id, user_id))
+
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({'error': 'Access denied to organization'}), 403
+
+    try:
+        person_filter = request.args.get('person')
+
+        # Unnest the mentioned_people array to create folders for each person
+        query = '''
+            SELECT
+                person,
+                COUNT(DISTINCT d.id) as document_count,
+                json_agg(
+                    json_build_object(
+                        'id', d.id,
+                        'filename', d.filename,
+                        'file_type', d.file_type,
+                        'upload_date', d.upload_date,
+                        'doc_type', dc.doc_type,
+                        'team', dc.team,
+                        'project', dc.project,
+                        'confidentiality_level', dc.confidentiality_level,
+                        'tags', dc.tags,
+                        'summary', dc.summary
+                    ) ORDER BY d.upload_date DESC
+                ) as documents
+            FROM documents d
+            INNER JOIN document_classifications dc ON dc.document_id = d.id,
+            jsonb_array_elements_text(dc.mentioned_people) as person
+            WHERE d.organization_id = %s
+              AND d.is_deleted = FALSE
+        '''
+        params = [org_id]
+
+        if person_filter:
+            query += ' AND person = %s'
+            params.append(person_filter)
+
+        query += ' GROUP BY person ORDER BY person'
+
+        cursor.execute(query, params)
+        folders = cursor.fetchall()
+
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'org_id': org_id,
+            'view_type': 'by_person',
+            'folders': [dict(f) for f in folders]
+        })
+
+    except Exception as e:
+        print(f"Error getting person folders: {e}")
+        conn.close()
+        return jsonify({'error': f'Failed to get person folders: {str(e)}'}), 500
+
+
+@app.route('/api/documents/<int:doc_id>/classification', methods=['GET'])
+@login_required
+def get_document_classification(doc_id):
+    """
+    Get classification details for a specific document
+
+    Returns full classification metadata including confidence scores
+    """
+    user_id = session['user_id']
+
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+    # Verify user has access to the document
+    cursor.execute('''
+        SELECT d.organization_id
+        FROM documents d
+        INNER JOIN organization_members om ON om.organization_id = d.organization_id
+        WHERE d.id = %s AND om.user_id = %s AND om.is_active = TRUE AND d.is_deleted = FALSE
+    ''', (doc_id, user_id))
+
+    doc = cursor.fetchone()
+    if not doc:
+        conn.close()
+        return jsonify({'error': 'Document not found or access denied'}), 404
+
+    # Get classification
+    cursor.execute('''
+        SELECT
+            document_id,
+            team,
+            project,
+            doc_type,
+            time_period,
+            confidentiality_level,
+            mentioned_people,
+            tags,
+            summary,
+            confidence_scores,
+            classified_at
+        FROM document_classifications
+        WHERE document_id = %s
+    ''', (doc_id,))
+
+    classification = cursor.fetchone()
+    conn.close()
+
+    if not classification:
+        return jsonify({'error': 'Classification not found for this document'}), 404
+
+    return jsonify({
+        'success': True,
+        'classification': dict(classification)
+    })
+
+
+@app.route('/api/documents/<int:doc_id>/reclassify', methods=['POST'])
+@login_required
+def reclassify_document(doc_id):
+    """
+    Trigger re-classification of a document
+
+    Useful when:
+    - Manual corrections are needed
+    - Organization context has changed
+    - Classification failed during initial processing
+    """
+    user_id = session['user_id']
+
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+    # Verify user has access to the document
+    cursor.execute('''
+        SELECT d.id, d.organization_id, d.processing_status
+        FROM documents d
+        INNER JOIN organization_members om ON om.organization_id = d.organization_id
+        WHERE d.id = %s AND om.user_id = %s AND om.is_active = TRUE AND d.is_deleted = FALSE
+    ''', (doc_id, user_id))
+
+    doc = cursor.fetchone()
+    conn.close()
+
+    if not doc:
+        return jsonify({'error': 'Document not found or access denied'}), 404
+
+    if doc['processing_status'] != 'completed':
+        return jsonify({'error': 'Document must be fully processed before re-classification'}), 400
+
+    try:
+        from tasks import classify_document_task
+
+        # Trigger classification task
+        task = classify_document_task.delay(doc_id)
+
+        return jsonify({
+            'success': True,
+            'message': 'Document re-classification started',
+            'task_id': task.id,
+            'doc_id': doc_id
+        })
+
+    except Exception as e:
+        print(f"Error triggering re-classification: {e}")
+        return jsonify({'error': f'Failed to start re-classification: {str(e)}'}), 500
+
+
+# ============================================================================
+# HEALTH CHECK & MONITORING ENDPOINTS
+# ============================================================================
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    """
+    Health check endpoint for load balancer / monitoring
+
+    Returns service health status and component checks
+    """
+    health_status = {
+        'status': 'healthy',
+        'timestamp': datetime.now().isoformat(),
+        'checks': {}
+    }
+
+    # Check database connection
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT 1')
+        cursor.fetchone()
+        conn.close()
+        health_status['checks']['database'] = 'healthy'
+    except Exception as e:
+        health_status['checks']['database'] = f'unhealthy: {str(e)}'
+        health_status['status'] = 'degraded'
+
+    # Check Redis connection
+    try:
+        import redis
+        redis_url = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+        r = redis.from_url(redis_url)
+        r.ping()
+        health_status['checks']['redis'] = 'healthy'
+    except Exception as e:
+        health_status['checks']['redis'] = f'unhealthy: {str(e)}'
+        health_status['status'] = 'degraded'
+
+    # Check Pinecone connection (optional, don't fail health check if missing)
+    try:
+        if os.environ.get('PINECONE_API_KEY'):
+            from vector_store import VectorStore
+            vector_store = VectorStore(index_name="flock-knowledge-base")
+            # Just checking if we can initialize
+            health_status['checks']['pinecone'] = 'healthy'
+        else:
+            health_status['checks']['pinecone'] = 'not_configured'
+    except Exception as e:
+        health_status['checks']['pinecone'] = f'degraded: {str(e)}'
+        # Don't mark overall status as degraded for Pinecone
+
+    # Check OpenAI API key
+    if os.environ.get('OPENAI_API_KEY'):
+        health_status['checks']['openai'] = 'configured'
+    else:
+        health_status['checks']['openai'] = 'not_configured'
+
+    # Determine HTTP status code
+    if health_status['status'] == 'healthy':
+        return jsonify(health_status), 200
+    elif health_status['status'] == 'degraded':
+        return jsonify(health_status), 200  # Still return 200 for degraded
+    else:
+        return jsonify(health_status), 503
+
+
+@app.route('/api/system/status', methods=['GET'])
+@login_required
+def system_status():
+    """
+    System status endpoint for admin monitoring
+
+    Requires authentication - returns detailed system metrics
+    """
+    user_id = session['user_id']
+
+    # Check if user is admin (simple check - can be enhanced)
+    # For now, any authenticated user can view system status
+
+    status = {
+        'timestamp': datetime.now().isoformat(),
+        'system': {
+            'version': '2.0-sprint2',
+            'environment': os.environ.get('FLASK_ENV', 'production')
+        },
+        'services': {},
+        'statistics': {}
+    }
+
+    # Database stats
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Count documents
+        cursor.execute('SELECT COUNT(*) as count FROM documents WHERE is_deleted = FALSE')
+        doc_count = cursor.fetchone()['count']
+
+        # Count embeddings
+        cursor.execute('SELECT COUNT(*) as count FROM employee_embeddings')
+        emp_embeddings = cursor.fetchone()['count']
+
+        # Count processing jobs
+        cursor.execute('''
+            SELECT status, COUNT(*) as count
+            FROM processing_jobs
+            WHERE created_at > NOW() - INTERVAL '24 hours'
+            GROUP BY status
+        ''')
+        job_stats = {row['status']: row['count'] for row in cursor.fetchall()}
+
+        # Get usage stats
+        cursor.execute('''
+            SELECT SUM(tokens_used) as total_tokens, SUM(estimated_cost) as total_cost
+            FROM embedding_usage
+            WHERE date >= DATE_TRUNC('month', CURRENT_DATE)
+        ''')
+        usage = cursor.fetchone()
+
+        conn.close()
+
+        status['statistics'] = {
+            'documents': doc_count,
+            'employee_embeddings': emp_embeddings,
+            'jobs_24h': job_stats,
+            'usage_this_month': {
+                'tokens': usage['total_tokens'] or 0,
+                'estimated_cost': float(usage['total_cost'] or 0)
+            }
+        }
+
+        status['services']['database'] = 'operational'
+
+    except Exception as e:
+        status['services']['database'] = f'error: {str(e)}'
+
+    # Redis / Celery stats
+    try:
+        import redis
+        redis_url = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+        r = redis.from_url(redis_url)
+
+        # Get queue lengths (approximate)
+        try:
+            from celery_config import celery_app
+            inspect = celery_app.control.inspect()
+
+            # Get active tasks
+            active = inspect.active()
+            status['services']['celery'] = {
+                'status': 'operational',
+                'active_tasks': len(active) if active else 0
+            }
+        except:
+            status['services']['celery'] = 'unknown'
+
+        status['services']['redis'] = 'operational'
+
+    except Exception as e:
+        status['services']['redis'] = f'error: {str(e)}'
+        status['services']['celery'] = 'unavailable'
+
+    # Pinecone stats
+    try:
+        if os.environ.get('PINECONE_API_KEY'):
+            from vector_store import VectorStore
+            vector_store = VectorStore(index_name="flock-knowledge-base")
+
+            # Note: Getting stats for a specific org requires org_id
+            # For system-wide stats, we'd need to aggregate
+            status['services']['pinecone'] = 'operational'
+        else:
+            status['services']['pinecone'] = 'not_configured'
+    except Exception as e:
+        status['services']['pinecone'] = f'error: {str(e)}'
+
+    return jsonify(status)
 
 
 # ============================================================================
