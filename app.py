@@ -35,9 +35,7 @@ from psycopg2.extras import RealDictCursor
 from werkzeug.security import check_password_hash, generate_password_hash
 
 # Local imports
-from enhanced_matching_system import (EnhancedMatchingSystem, InteractionTracker,
-                                       MatchingDataCollector, MatchingSystem,
-                                       integrate_enhanced_matching)
+# Removed: enhanced_matching_system (deprecated ML matching system)
 from payment import SubscriptionManager
 
 # Load environment variables
@@ -2822,7 +2820,8 @@ def process_matching_background(user_id: int):
         processing_status[user_id]['progress'] = 25
         
         # Run matching against all other users
-        matches = enhanced_matching_system.run_matching(user_id)
+        # DEPRECATED: ML matching system removed
+        matches = []  # enhanced_matching_system.run_matching(user_id)
         processing_status[user_id]['progress'] = 75
         
         print(f"✓ Found {len(matches)} matches")
@@ -2857,7 +2856,8 @@ def process_event_matching_background(user_id: int, event_id: int):
         processing_status[user_id]['progress'] = 25
 
         # Run event-based matching only against other attendees
-        matches = enhanced_matching_system.run_event_matching(user_id, event_id)
+        # DEPRECATED: ML matching system removed
+        matches = []  # enhanced_matching_system.run_event_matching(user_id, event_id)
         processing_status[user_id]['progress'] = 75
 
         print(f"✓ Found {len(matches)} event matches")
@@ -4843,21 +4843,9 @@ gdpr_compliance = GDPRCompliance(user_auth, data_encryption, get_db_connection)
 verification_system = IdentityVerificationSystem(user_auth)
 subscription_manager = SubscriptionManager(user_auth, get_db_connection)
 network_manager = NetworkManager(user_auth, data_encryption)
-try:
-    enhanced_matching_system, interaction_tracker = integrate_enhanced_matching(app, user_auth, API_KEY, db_connection_func=get_db_connection)
-    enhanced_matching_system.processing_status = processing_status
-    print("✓ Enhanced matching system initialized")
-except Exception as e:
-    from enhanced_matching_system import EnhancedMatchingSystem, InteractionTracker, MatchingSystem
-    
-    enhanced_matching_system = EnhancedMatchingSystem(API_KEY)
-    enhanced_matching_system.set_user_auth(user_auth)
-    enhanced_matching_system.set_db_connection(get_db_connection)
-    interaction_tracker = InteractionTracker(enhanced_matching_system, get_db_connection)
-    print("✓ Enhanced matching system created directly")
-    
+# Removed: enhanced_matching_system initialization (deprecated ML system)
 email_followup = EmailFollowupSystem(user_auth, get_db_connection)
-enhance_matching_with_verification()
+# Removed: enhance_matching_with_verification() (deprecated)
 
 add_onboarding_routes(app, login_required, user_auth, render_template_with_header, get_db_connection, process_matching_background)
 # ============================================================================
@@ -14755,45 +14743,12 @@ def track_interaction():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@app.route('/api/neural-network-status')
-@login_required
-def neural_network_status():
-    """Get neural network training status and performance"""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Get latest model performance
-        cursor.execute('''
-            SELECT model_version, accuracy, training_data_size, created_at
-            FROM model_performance
-            ORDER BY created_at DESC
-            LIMIT 1
-        ''')
-        latest_model = cursor.fetchone()
-        
-        # Get total interaction count
-        cursor.execute('SELECT COUNT(*) FROM user_interactions WHERE outcome IS NOT NULL')
-        total_interactions = cursor.fetchone()[0]
-        
-        conn.close()
-        
-        status = {
-            'is_trained': enhanced_matching_system.neural_predictor.is_trained,
-            'total_interactions': total_interactions,
-            'min_required': enhanced_matching_system.min_neural_data,
-            'latest_model': {
-                'version': latest_model[0] if latest_model else None,
-                'accuracy': latest_model[1] if latest_model else None,
-                'data_size': latest_model[2] if latest_model else None,
-                'created_at': latest_model[3] if latest_model else None
-            } if latest_model else None
-        }
-        
-        return jsonify(status)
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+# DEPRECATED: ML matching system removed
+# @app.route('/api/neural-network-status')
+# @login_required
+# def neural_network_status():
+#     """Get neural network training status and performance"""
+#     return jsonify({'error': 'Neural network matching system has been deprecated'}), 404
 
 # ============================================================================
 # UTILITY FUNCTIONS
