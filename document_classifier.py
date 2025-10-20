@@ -33,12 +33,12 @@ class DocumentClassifier:
     # Confidentiality levels
     CONFIDENTIALITY_LEVELS = ["public", "internal", "confidential", "restricted"]
 
-    def __init__(self, model: str = "gpt-4"):
+    def __init__(self, model: str = "gpt-4o-mini"):
         """
         Initialize classifier
 
         Args:
-            model: OpenAI model to use (default: gpt-4)
+            model: OpenAI model to use (default: gpt-4o-mini)
         """
         self.model = model
         self.api_key = os.environ.get('OPENAI_API_KEY')
@@ -386,7 +386,7 @@ Respond ONLY with valid JSON, no additional text."""
             return {'teams': [], 'projects': []}
 
 
-def get_classifier(model: str = "gpt-4") -> DocumentClassifier:
+def get_classifier(model: str = "gpt-4o-mini") -> DocumentClassifier:
     """
     Factory function to get classifier instance
 
