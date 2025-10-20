@@ -17066,10 +17066,17 @@ def upload_documents():
             conn.commit()
 
             # Queue background processing task
-            task = process_document_task.apply_async(
-                args=[doc_id, org_id],
-                task_id=job_id
-            )
+            print(f"Queueing background task for document {doc_id}")
+            try:
+                task = process_document_task.apply_async(
+                    args=[doc_id, org_id],
+                    task_id=job_id
+                )
+                print(f"✓ Task queued successfully: {task.id}")
+            except Exception as task_error:
+                print(f"❌ Error queueing task: {task_error}")
+                import traceback
+                traceback.print_exc()
 
             uploaded_documents.append({
                 'doc_id': doc_id,
