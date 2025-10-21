@@ -11204,22 +11204,22 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                 <p style="color: #666;">Documents automatically organized by team, project, type, and contributor</p>
             </div>
 
-            <div style="display: flex; gap: 1rem; margin-bottom: 2rem; align-items: center;">
-                <div style="flex: 1; border: 2px dashed #ccc; border-radius: 8px; padding: 2rem; text-align: center; cursor: pointer; transition: all 0.3s;" onclick="document.getElementById('kbFileUpload').click()">
-                    <input type="file" id="kbFileUpload" multiple accept=".pdf,.docx,.txt,.md,.csv" style="display: none">
-                    <div>📤 Drop files here or click to upload</div>
-                    <div style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">PDF, DOCX, TXT, MD, CSV • Max 50MB</div>
-                </div>
+            <div style="border: 2px dashed #ccc; border-radius: 8px; padding: 2rem; text-align: center; cursor: pointer; transition: all 0.3s; margin-bottom: 2rem;" onclick="document.getElementById('kbFileUpload').click()">
+                <input type="file" id="kbFileUpload" multiple accept=".pdf,.docx,.txt,.md,.csv" style="display: none">
+                <div style="font-size: 1.1rem; font-weight: 500;">📤 Drop files here or click to upload</div>
+                <div style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">PDF, DOCX, TXT, MD, CSV • Max 50MB</div>
+            </div>
 
-                <select id="kbFolderView" onchange="loadKBFolders()" style="padding: 0.75rem 1rem; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 0.95rem; min-width: 200px;">
-                    <option value="team">Organize by Team</option>
-                    <option value="project">Organize by Project</option>
-                    <option value="type">Organize by Type</option>
-                    <option value="date">Organize by Date</option>
-                    <option value="person">Organize by Person</option>
+            <div style="display: flex; gap: 1rem; margin-bottom: 2rem; align-items: center;">
+                <select id="kbFolderView" onchange="loadKBFolders()" style="padding: 0.75rem 1rem; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 0.95rem; width: 180px;">
+                    <option value="team">By Team</option>
+                    <option value="project">By Project</option>
+                    <option value="type">By Type</option>
+                    <option value="date">By Date</option>
+                    <option value="person">By Person</option>
                 </select>
 
-                <input type="text" id="kbSearchBox" placeholder="Search documents..." oninput="searchKBDocuments()" style="padding: 0.75rem 1rem; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 0.95rem; min-width: 300px;">
+                <input type="text" id="kbSearchBox" placeholder="Search documents..." oninput="searchKBDocuments()" style="flex: 1; padding: 0.75rem 1rem; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 0.95rem;">
             </div>
 
             <div id="kbFoldersContainer" style="margin-top: 2rem;">
@@ -11959,17 +11959,32 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                             const fileSizeMB = doc.file_size ? (doc.file_size / (1024*1024)).toFixed(2) : '?';
 
                             docCard.innerHTML = `
-                                <div style="font-size: 2rem; margin-bottom: 0.5rem;">${{statusIcon}}</div>
-                                <div style="font-weight: 600; margin-bottom: 0.5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${{doc.filename}}">${{doc.filename}}</div>
-                                <div style="font-size: 0.85rem; color: #666; display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
-                                    <span>${{doc.file_type ? doc.file_type.toUpperCase() : 'FILE'}}</span>
-                                    <span>${{fileSizeMB}} MB</span>
-                                </div>
-                                <div style="font-size: 0.85rem; color: #666;">
-                                    <span>${{new Date(doc.upload_date).toLocaleDateString()}}</span>
+                                <div style="position: relative;">
+                                    <button onclick="event.stopPropagation(); deleteDocument(${{doc.id}})" style="position: absolute; top: -0.5rem; right: -0.5rem; background: #ef4444; color: white; border: none; width: 24px; height: 24px; border-radius: 50%; cursor: pointer; font-size: 0.8rem; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s;" class="delete-doc-btn">×</button>
+                                    <div style="font-size: 2rem; margin-bottom: 0.5rem;">${{statusIcon}}</div>
+                                    <div style="font-weight: 600; margin-bottom: 0.5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${{doc.filename}}">${{doc.filename}}</div>
+                                    <div style="font-size: 0.85rem; color: #666; display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
+                                        <span>${{doc.file_type ? doc.file_type.toUpperCase() : 'FILE'}}</span>
+                                        <span>${{fileSizeMB}} MB</span>
+                                    </div>
+                                    <div style="font-size: 0.85rem; color: #666;">
+                                        <span>${{new Date(doc.upload_date).toLocaleDateString()}}</span>
+                                    </div>
                                 </div>
                             `;
                             docCard.onclick = () => window.location.href = `/api/documents/${{doc.id}}/download`;
+
+                            // Show delete button on hover
+                            docCard.onmouseover = () => {{
+                                docCard.style.transform = 'translateY(-2px)';
+                                const deleteBtn = docCard.querySelector('.delete-doc-btn');
+                                if (deleteBtn) deleteBtn.style.opacity = '1';
+                            }};
+                            docCard.onmouseout = () => {{
+                                docCard.style.transform = 'translateY(0)';
+                                const deleteBtn = docCard.querySelector('.delete-doc-btn');
+                                if (deleteBtn) deleteBtn.style.opacity = '0';
+                            }};
                             docsContainer.appendChild(docCard);
                         }});
                     }} else {{
@@ -12061,6 +12076,38 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
 
             e.target.value = '';
         }});
+
+        // Delete document
+        async function deleteDocument(docId) {{
+            if (!confirm('Are you sure you want to delete this document? This action cannot be undone.')) {{
+                return;
+            }}
+
+            try {{
+                const response = await fetch(`/api/documents/${{docId}}`, {{
+                    method: 'DELETE'
+                }});
+
+                const result = await response.json();
+
+                if (result.success) {{
+                    // Show success notification
+                    const notification = document.createElement('div');
+                    notification.style.cssText = 'position: fixed; top: 20px; right: 20px; background: #22c55e; color: white; padding: 1rem 1.5rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 10000;';
+                    notification.textContent = '✓ Document deleted';
+                    document.body.appendChild(notification);
+                    setTimeout(() => notification.remove(), 3000);
+
+                    // Reload folders
+                    loadKBFolders();
+                }} else {{
+                    alert('Failed to delete document: ' + (result.error || 'Unknown error'));
+                }}
+            }} catch (error) {{
+                console.error('Delete error:', error);
+                alert('Failed to delete document');
+            }}
+        }}
 
         // Search documents in Knowledge Base
         async function searchKBDocuments() {{
