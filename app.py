@@ -11956,12 +11956,14 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                             docCard.style.cssText = 'background: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 1.5rem; cursor: pointer; transition: all 0.3s;';
                             docCard.onmouseover = () => docCard.style.transform = 'translateY(-2px)';
                             docCard.onmouseout = () => docCard.style.transform = 'translateY(0)';
+                            const fileSizeMB = doc.file_size ? (doc.file_size / (1024*1024)).toFixed(2) : '?';
+
                             docCard.innerHTML = `
                                 <div style="font-size: 2rem; margin-bottom: 0.5rem;">${{statusIcon}}</div>
                                 <div style="font-weight: 600; margin-bottom: 0.5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${{doc.filename}}">${{doc.filename}}</div>
                                 <div style="font-size: 0.85rem; color: #666; display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
-                                    <span>${{doc.file_type.toUpperCase()}}</span>
-                                    <span>${{(doc.file_size / (1024*1024)).toFixed(2)}} MB</span>
+                                    <span>${{doc.file_type ? doc.file_type.toUpperCase() : 'FILE'}}</span>
+                                    <span>${{fileSizeMB}} MB</span>
                                 </div>
                                 <div style="font-size: 0.85rem; color: #666;">
                                     <span>${{new Date(doc.upload_date).toLocaleDateString()}}</span>
@@ -12015,6 +12017,15 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             formData.append('org_id', orgId);
             files.forEach(file => formData.append('files', file));
 
+            // Show uploading feedback
+            const uploadStatus = document.createElement('div');
+            uploadStatus.style.cssText = 'position: fixed; top: 20px; right: 20px; background: white; border: 2px solid #000; border-radius: 8px; padding: 1.5rem; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 10000;';
+            uploadStatus.innerHTML = `
+                <div style="font-weight: 600; margin-bottom: 0.5rem;">Uploading ${{files.length}} file(s)...</div>
+                <div style="color: #666; font-size: 0.9rem;">Processing and classifying documents</div>
+            `;
+            document.body.appendChild(uploadStatus);
+
             try {{
                 const response = await fetch('/api/documents/upload', {{
                     method: 'POST',
@@ -12024,14 +12035,28 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                 const result = await response.json();
 
                 if (result.success) {{
-                    alert(`Uploaded ${{result.uploaded.length}} file(s)! Processing...`);
-                    setTimeout(() => loadKBFolders(), 2000); // Reload after 2 seconds
+                    uploadStatus.innerHTML = `
+                        <div style="font-weight: 600; margin-bottom: 0.5rem; color: #22c55e;">✓ Upload Complete!</div>
+                        <div style="color: #666; font-size: 0.9rem;">${{result.uploaded.length}} file(s) uploaded. Classifying...</div>
+                    `;
+                    setTimeout(() => {{
+                        uploadStatus.remove();
+                        loadKBFolders(); // Reload folders
+                    }}, 3000);
                 }} else {{
-                    alert(`Upload failed: ${{result.error}}`);
+                    uploadStatus.innerHTML = `
+                        <div style="font-weight: 600; margin-bottom: 0.5rem; color: #ef4444;">✗ Upload Failed</div>
+                        <div style="color: #666; font-size: 0.9rem;">${{result.error}}</div>
+                    `;
+                    setTimeout(() => uploadStatus.remove(), 5000);
                 }}
             }} catch (error) {{
                 console.error('Upload error:', error);
-                alert(`Upload failed: ${{error.message}}`);
+                uploadStatus.innerHTML = `
+                    <div style="font-weight: 600; margin-bottom: 0.5rem; color: #ef4444;">✗ Upload Failed</div>
+                    <div style="color: #666; font-size: 0.9rem;">${{error.message}}</div>
+                `;
+                setTimeout(() => uploadStatus.remove(), 5000);
             }}
 
             e.target.value = '';
