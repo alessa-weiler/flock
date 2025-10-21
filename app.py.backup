@@ -11135,6 +11135,914 @@ def organization_view(org_id):
 
 
 def render_organization_view(org_info: Dict, members: List[Dict], simulations: List[Dict], user_info: Dict) -> str:
+    """Render the knowledge platform for non-therapy organizations"""
+    org_id = org_info['id']
+    org_name = org_info['name']
+    is_owner = org_info['is_owner']
+
+    # Prepare members data for Three.js (same as original)
+    members_json = []
+    for idx, member in enumerate(members):
+        members_json.append({
+            'id': member['id'],
+            'name': f"{member['first_name']} {member['last_name']}",
+            'role': member['role'],
+            'position': {
+                'x': 0,
+                'y': 0,
+                'z': 0
+            }
+        })
+
+    members_json_str = json.dumps(members_json)
+
+    return f'''
+    <style>
+        /* Knowledge Platform Layout */
+        .kp-container {{
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }}
+
+        /* Tabs */
+        .kp-tabs {{
+            display: flex;
+            gap: 0.5rem;
+            border-bottom: 2px solid #e0e0e0;
+            margin-bottom: 2rem;
+        }}
+        .kp-tab {{
+            padding: 1rem 2rem;
+            cursor: pointer;
+            border: none;
+            background: none;
+            font-size: 1rem;
+            color: #666;
+            transition: all 0.3s;
+            border-bottom: 3px solid transparent;
+            margin-bottom: -2px;
+        }}
+        .kp-tab:hover {{
+            color: #000;
+            background: #f9f9f9;
+        }}
+        .kp-tab.active {{
+            color: #000;
+            border-bottom-color: #000;
+            font-weight: 600;
+        }}
+
+        /* Tab Content */
+        .tab-content {{
+            display: none;
+        }}
+        .tab-content.active {{
+            display: block;
+        }}
+
+        /* Team Tab */
+        .team-header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }}
+        .invite-section {{
+            background: #f9f9f9;
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin-bottom: 2rem;
+        }}
+        .invite-link {{
+            display: flex;
+            gap: 1rem;
+            margin-top: 1rem;
+        }}
+        .invite-input {{
+            flex: 1;
+            padding: 0.75rem;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 0.9rem;
+        }}
+        .copy-btn {{
+            padding: 0.75rem 1.5rem;
+            background: #000;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+        }}
+        .copy-btn:hover {{
+            background: #333;
+        }}
+        .members-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 3rem;
+        }}
+        .member-card {{
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 1.5rem;
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            transition: all 0.3s;
+        }}
+        .member-card:hover {{
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }}
+        .member-avatar {{
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 1.1rem;
+        }}
+        .member-name {{
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }}
+        .member-role {{
+            font-size: 0.85rem;
+            color: #666;
+        }}
+
+        /* Simulation Modes */
+        .simulation-modes {{
+            margin-top: 3rem;
+        }}
+        .mode-buttons {{
+            display: flex;
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }}
+        .mode-btn {{
+            flex: 1;
+            padding: 1.5rem;
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.3s;
+            font-size: 1rem;
+            font-weight: 600;
+        }}
+        .mode-btn:hover {{
+            border-color: #000;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }}
+
+        /* Knowledge Base Two-Column Layout */
+        .kb-layout {{
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            gap: 2rem;
+            min-height: 600px;
+        }}
+
+        /* Sidebar */
+        .kb-sidebar {{
+            background: #f9f9f9;
+            padding: 1.5rem;
+            border-radius: 8px;
+        }}
+        .kb-sidebar h3 {{
+            margin: 0 0 1rem 0;
+            font-size: 1.1rem;
+        }}
+        .folder-view-select {{
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            margin-bottom: 1.5rem;
+            font-size: 0.95rem;
+        }}
+        .folder-tree {{
+            margin-top: 1rem;
+        }}
+        .folder-item {{
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+            cursor: pointer;
+            border-radius: 6px;
+            transition: all 0.2s;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }}
+        .folder-item:hover {{
+            background: white;
+        }}
+        .folder-item.active {{
+            background: white;
+            font-weight: 600;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }}
+        .folder-badge {{
+            background: #e0e0e0;
+            padding: 0.25rem 0.5rem;
+            border-radius: 12px;
+            font-size: 0.75rem;
+        }}
+
+        /* Main Content Area */
+        .kb-main {{
+            background: white;
+            border-radius: 8px;
+            padding: 2rem;
+        }}
+        .kb-sub-tabs {{
+            display: flex;
+            gap: 1rem;
+            border-bottom: 1px solid #e0e0e0;
+            margin-bottom: 2rem;
+        }}
+        .kb-sub-tab {{
+            padding: 0.75rem 1.5rem;
+            cursor: pointer;
+            border: none;
+            background: none;
+            font-size: 0.95rem;
+            color: #666;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -1px;
+        }}
+        .kb-sub-tab.active {{
+            color: #000;
+            border-bottom-color: #000;
+            font-weight: 600;
+        }}
+        .kb-sub-content {{
+            display: none;
+        }}
+        .kb-sub-content.active {{
+            display: block;
+        }}
+
+        /* Upload Zone */
+        .upload-zone {{
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            padding: 3rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-bottom: 2rem;
+        }}
+        .upload-zone:hover {{
+            border-color: #000;
+            background: #f9f9f9;
+        }}
+        .upload-btn {{
+            margin-top: 1rem;
+            padding: 0.75rem 2rem;
+            background: #000;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+        }}
+
+        /* Document Controls */
+        .doc-controls {{
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }}
+        .doc-search {{
+            flex: 1;
+            padding: 0.75rem;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+        }}
+        .doc-sort {{
+            padding: 0.75rem;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+        }}
+
+        /* Document Grid */
+        .docs-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1.5rem;
+        }}
+        .doc-card {{
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 1.5rem;
+            cursor: pointer;
+            transition: all 0.3s;
+        }}
+        .doc-card:hover {{
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            transform: translateY(-2px);
+        }}
+        .doc-icon {{
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+        }}
+        .doc-filename {{
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }}
+        .doc-meta {{
+            font-size: 0.85rem;
+            color: #666;
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 0.5rem;
+        }}
+        .doc-tags {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 0.75rem;
+        }}
+        .doc-tag {{
+            background: #f0f0f0;
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            font-size: 0.75rem;
+        }}
+
+        /* Chat View */
+        .chat-layout {{
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            gap: 2rem;
+            height: 600px;
+        }}
+        .chat-sidebar {{
+            background: #f9f9f9;
+            padding: 1.5rem;
+            border-radius: 8px;
+            overflow-y: auto;
+        }}
+        .new-conversation-btn {{
+            width: 100%;
+            padding: 0.75rem;
+            background: #000;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            margin-bottom: 1.5rem;
+        }}
+        .conversation-item {{
+            padding: 1rem;
+            margin-bottom: 0.5rem;
+            cursor: pointer;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }}
+        .conversation-item:hover {{
+            background: white;
+        }}
+        .conversation-item.active {{
+            background: white;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }}
+        .conversation-title {{
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }}
+        .conversation-preview {{
+            font-size: 0.85rem;
+            color: #666;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }}
+
+        /* Chat Main Area */
+        .chat-main {{
+            display: flex;
+            flex-direction: column;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+        }}
+        .messages-area {{
+            flex: 1;
+            padding: 2rem;
+            overflow-y: auto;
+        }}
+        .empty-state {{
+            text-align: center;
+            padding: 3rem;
+            color: #666;
+        }}
+        .empty-state h3 {{
+            margin-bottom: 1rem;
+        }}
+        .empty-state ul {{
+            list-style: none;
+            padding: 0;
+            margin-top: 1rem;
+        }}
+        .empty-state li {{
+            padding: 0.5rem;
+            margin: 0.5rem 0;
+            background: #f9f9f9;
+            border-radius: 6px;
+            cursor: pointer;
+        }}
+        .empty-state li:hover {{
+            background: #f0f0f0;
+        }}
+        .message {{
+            margin-bottom: 1.5rem;
+        }}
+        .message.user {{
+            display: flex;
+            justify-content: flex-end;
+        }}
+        .message-bubble {{
+            max-width: 70%;
+            padding: 1rem 1.5rem;
+            border-radius: 12px;
+        }}
+        .message.user .message-bubble {{
+            background: #f0f0f0;
+        }}
+        .message.assistant .message-bubble {{
+            background: white;
+            border: 1px solid #e0e0e0;
+        }}
+        .message-input-area {{
+            border-top: 1px solid #e0e0e0;
+            padding: 1.5rem;
+            display: flex;
+            gap: 1rem;
+        }}
+        .message-input {{
+            flex: 1;
+            padding: 0.75rem;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            resize: vertical;
+            min-height: 60px;
+        }}
+        .send-btn {{
+            padding: 0.75rem 2rem;
+            background: #000;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+        }}
+        .send-btn:disabled {{
+            background: #ccc;
+            cursor: not-allowed;
+        }}
+
+        /* Loading States */
+        .loading {{
+            text-align: center;
+            padding: 2rem;
+            color: #666;
+        }}
+        .spinner {{
+            border: 3px solid #f0f0f0;
+            border-top: 3px solid #000;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }}
+        @keyframes spin {{
+            0% {{ transform: rotate(0deg); }}
+            100% {{ transform: rotate(360deg); }}
+        }}
+    </style>
+
+    <div class="kp-container">
+        <div class="team-header">
+            <h1>{org_name}</h1>
+            {"<a href='/organization/" + str(org_id) + "/edit' class='btn btn-secondary'>Settings</a>" if is_owner else ""}
+        </div>
+
+        <!-- Main Tabs -->
+        <div class="kp-tabs">
+            <button class="kp-tab active" onclick="switchMainTab('team')">Team</button>
+            <button class="kp-tab" onclick="switchMainTab('knowledge')">Knowledge Base</button>
+        </div>
+
+        <!-- Team Tab -->
+        <div id="team-tab" class="tab-content active">
+            <div class="invite-section">
+                <h3>Invite Team Members</h3>
+                <p>Share this link with people you want to invite to your organization:</p>
+                <div class="invite-link">
+                    <input type="text" class="invite-input" id="inviteLink"
+                           value="{request.host_url}join-organization/{org_info['invite_token']}" readonly>
+                    <button class="copy-btn" onclick="copyInviteLink()">Copy Link</button>
+                </div>
+            </div>
+
+            <h2>Team Members ({len(members)})</h2>
+            <div class="members-grid">
+                {members_html}
+            </div>
+
+            <div class="simulation-modes">
+                <h2>Team Assessment Tools</h2>
+                <p>Run simulations to understand team dynamics and test scenarios</p>
+                <div class="mode-buttons">
+                    <button class="mode-btn" onclick="window.location.href='/organization/{org_id}#simulation'">
+                        <div>🎭 Simulation Mode</div>
+                        <small style="display: block; margin-top: 0.5rem; color: #666;">Test team reactions to scenarios</small>
+                    </button>
+                    <button class="mode-btn" onclick="window.location.href='/organization/{org_id}#networking'">
+                        <div>🤝 Networking Mode</div>
+                        <small style="display: block; margin-top: 0.5rem; color: #666;">Optimize conference networking</small>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Knowledge Base Tab -->
+        <div id="knowledge-tab" class="tab-content">
+            <div class="kb-layout">
+                <!-- Sidebar with Smart Folders -->
+                <div class="kb-sidebar">
+                    <h3>Smart Folders</h3>
+                    <select class="folder-view-select" id="folderViewSelect" onchange="loadSmartFolders()">
+                        <option value="team">By Team</option>
+                        <option value="project">By Project</option>
+                        <option value="type">By Type</option>
+                        <option value="date">By Date</option>
+                        <option value="person">By Person</option>
+                    </select>
+                    <div id="folderTree" class="folder-tree">
+                        <div class="loading">Loading folders...</div>
+                    </div>
+                </div>
+
+                <!-- Main Content Area -->
+                <div class="kb-main">
+                    <div class="kb-sub-tabs">
+                        <button class="kb-sub-tab active" onclick="switchKBTab('documents')">Documents</button>
+                        <button class="kb-sub-tab" onclick="switchKBTab('chat')">Ask Questions</button>
+                    </div>
+
+                    <!-- Documents View -->
+                    <div id="documents-view" class="kb-sub-content active">
+                        <div class="upload-zone" onclick="document.getElementById('fileUpload').click()">
+                            <input type="file" id="fileUpload" multiple accept=".pdf,.docx,.txt,.md,.csv" style="display: none">
+                            <h3>Drop files here or click to upload</h3>
+                            <p>Supported: PDF, DOCX, TXT, MD, CSV • Max 50MB per file</p>
+                            <button class="upload-btn" type="button">Choose Files</button>
+                        </div>
+
+                        <div class="doc-controls">
+                            <input type="text" class="doc-search" id="docSearch" placeholder="Search documents..."
+                                   oninput="searchDocuments()">
+                            <select class="doc-sort" id="docSort" onchange="sortDocuments()">
+                                <option value="date_desc">Newest First</option>
+                                <option value="date_asc">Oldest First</option>
+                                <option value="name">Name A-Z</option>
+                            </select>
+                        </div>
+
+                        <div id="docsGrid" class="docs-grid">
+                            <div class="loading">Loading documents...</div>
+                        </div>
+                    </div>
+
+                    <!-- Chat View -->
+                    <div id="chat-view" class="kb-sub-content">
+                        <div class="chat-layout">
+                            <div class="chat-sidebar">
+                                <button class="new-conversation-btn" onclick="createNewConversation()">+ New Conversation</button>
+                                <div id="conversationsList">
+                                    <!-- Conversations will be loaded here -->
+                                </div>
+                            </div>
+
+                            <div class="chat-main">
+                                <div class="messages-area" id="messagesArea">
+                                    <div class="empty-state">
+                                        <h3>Ask a question about your documents or team</h3>
+                                        <p>Examples:</p>
+                                        <ul>
+                                            <li onclick="askQuestion(this.textContent)">What are our main priorities for this quarter?</li>
+                                            <li onclick="askQuestion(this.textContent)">Who knows about machine learning on the team?</li>
+                                            <li onclick="askQuestion(this.textContent)">Summarize the latest project report</li>
+                                        </ul>
+                                    </div>
+                                </div>
+
+                                <div class="message-input-area">
+                                    <textarea class="message-input" id="messageInput"
+                                              placeholder="Ask a question..."
+                                              onkeydown="handleMessageKeydown(event)"></textarea>
+                                    <button class="send-btn" id="sendBtn" onclick="sendMessage()">Send</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const ORG_ID = {org_id};
+        let currentFolderView = 'team';
+        let currentFolder = null;
+        let allDocuments = [];
+
+        // Main tab switching
+        function switchMainTab(tabName) {{
+            document.querySelectorAll('.kp-tab').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+
+            event.target.classList.add('active');
+            document.getElementById(tabName + '-tab').classList.add('active');
+
+            if (tabName === 'knowledge') {{
+                loadSmartFolders();
+                loadDocuments();
+            }}
+        }}
+
+        // KB sub-tab switching
+        function switchKBTab(tabName) {{
+            document.querySelectorAll('.kb-sub-tab').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.kb-sub-content').forEach(content => content.classList.remove('active'));
+
+            event.target.classList.add('active');
+            document.getElementById(tabName + '-view').classList.add('active');
+        }}
+
+        // Copy invite link
+        function copyInviteLink() {{
+            const input = document.getElementById('inviteLink');
+            input.select();
+            document.execCommand('copy');
+
+            const btn = event.target;
+            const originalText = btn.textContent;
+            btn.textContent = 'Copied!';
+            setTimeout(() => btn.textContent = originalText, 2000);
+        }}
+
+        // Load smart folders
+        async function loadSmartFolders() {{
+            const viewType = document.getElementById('folderViewSelect').value;
+            currentFolderView = viewType;
+
+            const folderTree = document.getElementById('folderTree');
+            folderTree.innerHTML = '<div class="loading">Loading...</div>';
+
+            try {{
+                const response = await fetch(`/api/folders/by-${{viewType}}?org_id=${{ORG_ID}}`);
+                const data = await response.json();
+
+                if (data.error) {{
+                    folderTree.innerHTML = `<p style="color: #999; text-align: center;">${{data.error}}</p>`;
+                    return;
+                }}
+
+                if (!data.folders || data.folders.length === 0) {{
+                    folderTree.innerHTML = '<p style="color: #999; text-align: center;">No folders yet</p>';
+                    return;
+                }}
+
+                folderTree.innerHTML = '';
+                data.folders.forEach(folder => {{
+                    const folderItem = document.createElement('div');
+                    folderItem.className = 'folder-item';
+                    folderItem.innerHTML = `
+                        <span>${{folder.name || 'Uncategorized'}}</span>
+                        <span class="folder-badge">${{folder.document_count}}</span>
+                    `;
+                    folderItem.onclick = () => filterByFolder(folder.name, folderItem);
+                    folderTree.appendChild(folderItem);
+                }});
+            }} catch (error) {{
+                console.error('Error loading folders:', error);
+                folderTree.innerHTML = '<p style="color: #999;">Error loading folders</p>';
+            }}
+        }}
+
+        // Filter documents by folder
+        function filterByFolder(folderName, element) {{
+            document.querySelectorAll('.folder-item').forEach(item => item.classList.remove('active'));
+            element.classList.add('active');
+            currentFolder = folderName;
+            loadDocuments();
+        }}
+
+        // Load documents
+        async function loadDocuments() {{
+            const docsGrid = document.getElementById('docsGrid');
+            docsGrid.innerHTML = '<div class="loading">Loading documents...</div>';
+
+            try {{
+                const response = await fetch(`/api/documents?org_id=${{ORG_ID}}`);
+                const data = await response.json();
+
+                if (data.error) {{
+                    docsGrid.innerHTML = `<p style="color: #999; text-align: center;">${{data.error}}</p>`;
+                    return;
+                }}
+
+                allDocuments = data.documents || [];
+                renderDocuments(allDocuments);
+            }} catch (error) {{
+                console.error('Error loading documents:', error);
+                docsGrid.innerHTML = '<p style="color: #999;">Error loading documents</p>';
+            }}
+        }}
+
+        // Render documents
+        function renderDocuments(documents) {{
+            const docsGrid = document.getElementById('docsGrid');
+
+            if (documents.length === 0) {{
+                docsGrid.innerHTML = '<p style="color: #999; text-align: center; padding: 3rem;">No documents uploaded yet</p>';
+                return;
+            }}
+
+            docsGrid.innerHTML = '';
+            documents.forEach(doc => {{
+                const statusIcon = {{
+                    'pending': '⏳',
+                    'processing': '🔄',
+                    'completed': '✅',
+                    'failed': '❌'
+                }}[doc.processing_status] || '❓';
+
+                const docCard = document.createElement('div');
+                docCard.className = 'doc-card';
+                docCard.innerHTML = `
+                    <div class="doc-icon">${{statusIcon}}</div>
+                    <div class="doc-filename" title="${{doc.filename}}">${{doc.filename}}</div>
+                    <div class="doc-meta">
+                        <span>${{doc.file_type.toUpperCase()}}</span>
+                        <span>${{(doc.file_size / (1024 * 1024)).toFixed(2)}} MB</span>
+                    </div>
+                    <div class="doc-meta">
+                        <span>${{new Date(doc.upload_date).toLocaleDateString()}}</span>
+                    </div>
+                `;
+                docCard.onclick = () => viewDocument(doc.id);
+                docsGrid.appendChild(docCard);
+            }});
+        }}
+
+        // Search documents
+        async function searchDocuments() {{
+            const query = document.getElementById('docSearch').value.trim();
+
+            if (!query) {{
+                renderDocuments(allDocuments);
+                return;
+            }}
+
+            try {{
+                const response = await fetch('/api/documents/search', {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{
+                        query: query,
+                        org_id: ORG_ID,
+                        top_k: 20
+                    }})
+                }});
+
+                const data = await response.json();
+
+                if (data.error) {{
+                    console.error('Search error:', data.error);
+                    return;
+                }}
+
+                // Group results by document
+                const docMap = new Map();
+                (data.results || []).forEach(result => {{
+                    if (!docMap.has(result.doc_id)) {{
+                        docMap.set(result.doc_id, result);
+                    }}
+                }});
+
+                const searchResults = Array.from(docMap.values()).map(result => ({{
+                    id: result.doc_id,
+                    filename: result.filename,
+                    file_type: result.doc_type || 'unknown',
+                    file_size: 0,
+                    upload_date: new Date(),
+                    processing_status: 'completed'
+                }}));
+
+                renderDocuments(searchResults);
+            }} catch (error) {{
+                console.error('Search error:', error);
+            }}
+        }}
+
+        // View document
+        function viewDocument(docId) {{
+            window.location.href = `/api/documents/${{docId}}/download`;
+        }}
+
+        // File upload
+        document.getElementById('fileUpload').addEventListener('change', async (e) => {{
+            const files = Array.from(e.target.files);
+
+            if (files.length === 0) return;
+            if (files.length > 10) {{
+                alert('Maximum 10 files at once');
+                return;
+            }}
+
+            // Validate file sizes
+            for (const file of files) {{
+                if (file.size > 50 * 1024 * 1024) {{
+                    alert(`${{file.name}} exceeds 50MB limit`);
+                    return;
+                }}
+            }}
+
+            const formData = new FormData();
+            formData.append('org_id', ORG_ID);
+            files.forEach(file => formData.append('files', file));
+
+            try {{
+                const response = await fetch('/api/documents/upload', {{
+                    method: 'POST',
+                    body: formData
+                }});
+
+                const result = await response.json();
+
+                if (result.success) {{
+                    alert(`Uploaded ${{result.uploaded.length}} file(s) successfully!`);
+                    loadDocuments();
+                }} else {{
+                    alert(`Upload failed: ${{result.error || 'Unknown error'}}`);
+                }}
+            }} catch (error) {{
+                console.error('Upload error:', error);
+                alert(`Upload failed: ${{error.message}}`);
+            }}
+
+            e.target.value = '';
+        }});
+
+        // Chat functionality (placeholder for Sprint 4)
+        function createNewConversation() {{
+            alert('Chat feature coming soon! (Sprint 4)');
+        }}
+
+        function sendMessage() {{
+            alert('Chat feature coming soon! (Sprint 4)');
+        }}
+
+        function askQuestion(question) {{
+            document.getElementById('messageInput').value = question;
+        }}
+
+        function handleMessageKeydown(event) {{
+            if (event.key === 'Enter' && !event.shiftKey) {{
+                event.preventDefault();
+                sendMessage();
+            }}
+        }}
+    </script>
+    '''
+
+
+def render_organization_view(org_info: Dict, members: List[Dict], simulations: List[Dict], user_info: Dict) -> str:
     """Render the organization view with Three.js visualization"""
 
     # Prepare members data for Three.js
@@ -11185,48 +12093,6 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                         <button class="mode-btn" id="networkingModeBtn" onclick="switchMode('networking')">
                             Networking Mode
                         </button>
-    '''
-
-    # Tab navigation HTML (only for non-therapy orgs)
-    tabs_html = '' if is_therapy else '''
-    <div class="org-tabs">
-        <button class="org-tab active" onclick="switchOrgTab('team')">Team</button>
-        <button class="org-tab" onclick="switchOrgTab('knowledge')">Knowledge Base</button>
-    </div>
-    '''
-
-    # Knowledge Base tab HTML (only for non-therapy orgs)
-    knowledge_base_tab = '' if is_therapy else '''
-    <div id="knowledge-tab" class="tab-content">
-        <div style="padding: 2rem; max-width: 1400px; margin: 0 auto;">
-            <div style="margin-bottom: 2rem;">
-                <h2 style="font-size: 1.5rem; font-weight: 600; margin-bottom: 0.5rem;">📚 Knowledge Base</h2>
-                <p style="color: #666;">Documents automatically organized by team, project, type, and contributor</p>
-            </div>
-
-            <div style="display: flex; gap: 1rem; margin-bottom: 2rem; align-items: center;">
-                <div style="flex: 1; border: 2px dashed #ccc; border-radius: 8px; padding: 2rem; text-align: center; cursor: pointer; transition: all 0.3s;" onclick="document.getElementById('kbFileUpload').click()">
-                    <input type="file" id="kbFileUpload" multiple accept=".pdf,.docx,.txt,.md,.csv" style="display: none">
-                    <div>📤 Drop files here or click to upload</div>
-                    <div style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">PDF, DOCX, TXT, MD, CSV • Max 50MB</div>
-                </div>
-
-                <select id="kbFolderView" onchange="loadKBFolders()" style="padding: 0.75rem 1rem; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 0.95rem; min-width: 200px;">
-                    <option value="team">Organize by Team</option>
-                    <option value="project">Organize by Project</option>
-                    <option value="type">Organize by Type</option>
-                    <option value="date">Organize by Date</option>
-                    <option value="person">Organize by Person</option>
-                </select>
-
-                <input type="text" id="kbSearchBox" placeholder="Search documents..." oninput="searchKBDocuments()" style="padding: 0.75rem 1rem; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 0.95rem; min-width: 300px;">
-            </div>
-
-            <div id="kbFoldersContainer" style="margin-top: 2rem;">
-                <div style="text-align: center; padding: 3rem; color: #666;">Loading documents...</div>
-            </div>
-        </div>
-    </div>
     '''
 
     content = f'''
@@ -11734,78 +12600,35 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             color: black;
         }}
 
-        /* Tab System Styles */
-        .org-tabs {{
-            display: {'flex' if not is_therapy else 'none'};
-            background: white;
-            border-bottom: 2px solid rgba(0, 0, 0, 0.1);
-            padding: 0 2rem;
-        }}
-
-        .org-tab {{
-            padding: 1rem 2rem;
-            background: none;
-            border: none;
-            font-family: "Satoshi", sans-serif;
-            font-size: 1rem;
-            font-weight: 600;
-            color: #666;
-            cursor: pointer;
-            transition: all 0.2s;
-            border-bottom: 3px solid transparent;
-            margin-bottom: -2px;
-        }}
-
-        .org-tab:hover {{
-            color: #000;
-            background: rgba(0, 0, 0, 0.02);
-        }}
-
-        .org-tab.active {{
-            color: #000;
-            border-bottom-color: #000;
-        }}
-
-        .tab-content {{
-            display: none;
-        }}
-
-        .tab-content.active {{
-            display: block;
-        }}
     </style>
 
-    <!-- Tab Navigation (only for non-therapy orgs) -->
-    {tabs_html}
+    <div class="org-view-container">
+        <!-- Left Sidebar: Saved Simulations -->
+        <div class="left-sidebar" id="leftSidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-title">Chats</div>
+                <button class="new-simulation-btn" onclick="clearSimulation()" title="New Simulation">+</button>
+            </div>
+            <div class="simulations-list">
+                {simulations_html}
+            </div>
+        </div>
 
-    <!-- Team Tab Content -->
-    <div id="team-tab" class="tab-content active">
-        <div class="org-view-container">
-            <!-- Left Sidebar: Saved Simulations -->
-            <div class="left-sidebar" id="leftSidebar">
-                <div class="sidebar-header">
-                    <div class="sidebar-title">Chats</div>
-                    <button class="new-simulation-btn" onclick="clearSimulation()" title="New Simulation">+</button>
+        <!-- Center: Three.js Visualization -->
+        <div class="center-content">
+            <div class="org-header-bar">
+                <div>
+                    <span class="org-name">{org_info['name']}</span>
+                    <span class="member-count">{len(members)} member{'s' if len(members) != 1 else ''}</span>
                 </div>
-                <div class="simulations-list">
-                    {simulations_html}
+                <div class="invite-section">
+                    <input type="text" class="invite-link-input" id="inviteLink" value="{invite_url}" readonly>
+                    <button class="copy-btn" onclick="copyInviteLink()">Copy Link</button>
+                    <a href="/organization/{org_info['id']}/{applicants_link}" class="copy-btn" style="margin-left: 0.5rem; text-decoration: none;">{applicants_text}</a>
+                    {f'<a href="/organization/{org_info["id"]}/documents" class="copy-btn" style="margin-left: 0.5rem; text-decoration: none;">📄 Documents</a>' if not is_therapy else ''}
+                    {f'<a href="/organization/{org_info["id"]}/embed-settings" class="copy-btn" style="margin-left: 0.5rem; text-decoration: none;">Widget Settings</a>' if org_info['is_owner'] else ''}
                 </div>
             </div>
-
-            <!-- Center: Three.js Visualization -->
-            <div class="center-content">
-                <div class="org-header-bar">
-                    <div>
-                        <span class="org-name">{org_info['name']}</span>
-                        <span class="member-count">{len(members)} member{'s' if len(members) != 1 else ''}</span>
-                    </div>
-                    <div class="invite-section">
-                        <input type="text" class="invite-link-input" id="inviteLink" value="{invite_url}" readonly>
-                        <button class="copy-btn" onclick="copyInviteLink()">Copy Link</button>
-                        <a href="/organization/{org_info['id']}/{applicants_link}" class="copy-btn" style="margin-left: 0.5rem; text-decoration: none;">{applicants_text}</a>
-                        {'<a href="/organization/' + str(org_info['id']) + '/embed-settings" class="copy-btn" style="margin-left: 0.5rem; text-decoration: none;">Widget Settings</a>' if org_info['is_owner'] else ''}
-                    </div>
-                </div>
 
             <div class="canvas-container">
                 <canvas id="three-canvas"></canvas>
@@ -11814,6 +12637,9 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                     <div class="mode-toggle">
                         <button class="mode-btn active" id="simulationModeBtn" onclick="switchMode('simulation')">
                             {simulation_mode_text}
+                        </button>
+                        <button class="mode-btn" id="partyModeBtn" onclick="switchMode('party')">
+                            {party_mode_text}
                         </button>
                         {networking_mode_btn}
                     </div>
@@ -11844,12 +12670,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                 </div>
             </div>
         </div>
-        </div>
     </div>
-    <!-- End Team Tab -->
-
-    <!-- Knowledge Base Tab (only for non-therapy orgs) -->
-    {knowledge_base_tab}
 
     <!-- Subscription Required Modal -->
     <div id="subscriptionModal" class="subscription-modal" style="display: none;">
@@ -11888,219 +12709,11 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
         const members = {members_json_str};
         let currentSimulationId = null;
         let simulationResults = {{}};
-        let currentMode = 'simulation'; // 'simulation' or 'networking'
+        let currentMode = 'simulation'; // 'simulation', 'party', or 'networking'
         let partyResults = null;
         let networkingResults = null;
         let compatibilityLines = [];
         let externalAttendees = [];
-
-        // Tab Switching
-        function switchOrgTab(tabName) {{
-            // Hide all tabs
-            document.querySelectorAll('.org-tab').forEach(tab => tab.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-
-            // Show selected tab
-            event.target.classList.add('active');
-            document.getElementById(tabName + '-tab').classList.add('active');
-
-            // Load knowledge base if switching to it
-            if (tabName === 'knowledge') {{
-                loadKBFolders();
-            }}
-        }}
-
-        // Knowledge Base Functions
-        async function loadKBFolders() {{
-            const viewType = document.getElementById('kbFolderView').value;
-            const container = document.getElementById('kbFoldersContainer');
-            container.innerHTML = '<div style="text-align: center; padding: 3rem; color: #666;">Loading...</div>';
-
-            try {{
-                const response = await fetch(`/api/folders/by-${{viewType}}?org_id=${{orgId}}`);
-                const data = await response.json();
-
-                if (data.error || !data.folders || data.folders.length === 0) {{
-                    container.innerHTML = '<div style="text-align: center; padding: 4rem 2rem; color: #999;"><h3>No documents yet</h3><p>Upload your first document above</p></div>';
-                    return;
-                }}
-
-                container.innerHTML = '';
-                data.folders.forEach(folder => {{
-                    const folderDiv = document.createElement('div');
-                    folderDiv.style.marginBottom = '3rem';
-                    folderDiv.innerHTML = `
-                        <div onclick="toggleKBFolder(this)" style="display: flex; align-items: center; gap: 1rem; padding: 1rem; background: #f9f9f9; border-radius: 8px; cursor: pointer; transition: all 0.2s;">
-                            <span style="font-size: 1.5rem;">📁</span>
-                            <span style="font-size: 1.2rem; font-weight: 600; flex: 1;">${{folder.name || 'Uncategorized'}}</span>
-                            <span style="background: #e0e0e0; padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.85rem;">${{folder.document_count}} docs</span>
-                            <span style="font-size: 1.2rem; transition: transform 0.2s;">▼</span>
-                        </div>
-                        <div class="kb-folder-docs" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1.5rem; padding-left: 3rem; margin-top: 1rem;">
-                        </div>
-                    `;
-                    container.appendChild(folderDiv);
-
-                    // Load documents for this folder
-                    const docsContainer = folderDiv.querySelector('.kb-folder-docs');
-                    if (folder.documents && folder.documents.length > 0) {{
-                        folder.documents.forEach(doc => {{
-                            const statusIcon = {{
-                                'pending': '⏳',
-                                'processing': '🔄',
-                                'completed': '✅',
-                                'failed': '❌'
-                            }}[doc.processing_status] || '📄';
-
-                            const docCard = document.createElement('div');
-                            docCard.style.cssText = 'background: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 1.5rem; cursor: pointer; transition: all 0.3s;';
-                            docCard.onmouseover = () => docCard.style.transform = 'translateY(-2px)';
-                            docCard.onmouseout = () => docCard.style.transform = 'translateY(0)';
-                            docCard.innerHTML = `
-                                <div style="font-size: 2rem; margin-bottom: 0.5rem;">${{statusIcon}}</div>
-                                <div style="font-weight: 600; margin-bottom: 0.5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${{doc.filename}}">${{doc.filename}}</div>
-                                <div style="font-size: 0.85rem; color: #666; display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
-                                    <span>${{doc.file_type.toUpperCase()}}</span>
-                                    <span>${{(doc.file_size / (1024*1024)).toFixed(2)}} MB</span>
-                                </div>
-                                <div style="font-size: 0.85rem; color: #666;">
-                                    <span>${{new Date(doc.upload_date).toLocaleDateString()}}</span>
-                                </div>
-                            `;
-                            docCard.onclick = () => window.location.href = `/api/documents/${{doc.id}}/download`;
-                            docsContainer.appendChild(docCard);
-                        }});
-                    }} else {{
-                        docsContainer.innerHTML = '<p style="padding: 1rem; color: #999;">No documents</p>';
-                    }}
-                }});
-            }} catch (error) {{
-                console.error('Error loading folders:', error);
-                container.innerHTML = '<div style="text-align: center; padding: 4rem 2rem; color: #999;"><h3>Error loading folders</h3></div>';
-            }}
-        }}
-
-        function toggleKBFolder(header) {{
-            const folder = header.parentElement;
-            const docs = folder.querySelector('.kb-folder-docs');
-            const arrow = header.querySelector('span:last-child');
-
-            if (docs.style.display === 'none') {{
-                docs.style.display = 'grid';
-                arrow.style.transform = 'rotate(0deg)';
-            }} else {{
-                docs.style.display = 'none';
-                arrow.style.transform = 'rotate(-90deg)';
-            }}
-        }}
-
-        // File upload for Knowledge Base
-        document.getElementById('kbFileUpload')?.addEventListener('change', async (e) => {{
-            const files = Array.from(e.target.files);
-            if (files.length === 0) return;
-
-            if (files.length > 10) {{
-                alert('Maximum 10 files at once');
-                return;
-            }}
-
-            for (const file of files) {{
-                if (file.size > 50 * 1024 * 1024) {{
-                    alert(`${{file.name}} exceeds 50MB limit`);
-                    return;
-                }}
-            }}
-
-            const formData = new FormData();
-            formData.append('org_id', orgId);
-            files.forEach(file => formData.append('files', file));
-
-            try {{
-                const response = await fetch('/api/documents/upload', {{
-                    method: 'POST',
-                    body: formData
-                }});
-
-                const result = await response.json();
-
-                if (result.success) {{
-                    alert(`Uploaded ${{result.uploaded.length}} file(s)! Processing...`);
-                    setTimeout(() => loadKBFolders(), 2000); // Reload after 2 seconds
-                }} else {{
-                    alert(`Upload failed: ${{result.error}}`);
-                }}
-            }} catch (error) {{
-                console.error('Upload error:', error);
-                alert(`Upload failed: ${{error.message}}`);
-            }}
-
-            e.target.value = '';
-        }});
-
-        // Search documents in Knowledge Base
-        async function searchKBDocuments() {{
-            const query = document.getElementById('kbSearchBox').value.trim();
-            const container = document.getElementById('kbFoldersContainer');
-
-            if (!query) {{
-                loadKBFolders(); // Reset to folder view
-                return;
-            }}
-
-            try {{
-                const response = await fetch('/api/documents/search', {{
-                    method: 'POST',
-                    headers: {{'Content-Type': 'application/json'}},
-                    body: JSON.stringify({{ query, org_id: orgId, top_k: 20 }})
-                }});
-
-                const data = await response.json();
-
-                if (data.error) {{
-                    console.error('Search error:', data.error);
-                    return;
-                }}
-
-                // Show search results as a single folder
-                container.innerHTML = `
-                    <div style="margin-bottom: 3rem;">
-                        <div style="display: flex; align-items: center; gap: 1rem; padding: 1rem; background: #f9f9f9; border-radius: 8px;">
-                            <span style="font-size: 1.5rem;">🔍</span>
-                            <span style="font-size: 1.2rem; font-weight: 600; flex: 1;">Search Results</span>
-                            <span style="background: #e0e0e0; padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.85rem;">${{data.results?.length || 0}} results</span>
-                        </div>
-                        <div id="searchResults" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1.5rem; padding-left: 3rem; margin-top: 1rem;"></div>
-                    </div>
-                `;
-
-                // Group by document
-                const docMap = new Map();
-                (data.results || []).forEach(result => {{
-                    if (!docMap.has(result.doc_id)) {{
-                        docMap.set(result.doc_id, result);
-                    }}
-                }});
-
-                const resultsContainer = container.querySelector('#searchResults');
-                docMap.forEach(doc => {{
-                    const card = document.createElement('div');
-                    card.style.cssText = 'background: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 1.5rem; cursor: pointer; transition: all 0.3s;';
-                    card.onmouseover = () => card.style.transform = 'translateY(-2px)';
-                    card.onmouseout = () => card.style.transform = 'translateY(0)';
-                    card.innerHTML = `
-                        <div style="font-size: 2rem; margin-bottom: 0.5rem;">📄</div>
-                        <div style="font-weight: 600; margin-bottom: 0.5rem;">${{doc.filename}}</div>
-                        <div style="font-size: 0.85rem; color: #666;">
-                            <span>${{doc.doc_type?.toUpperCase() || 'DOC'}}</span>
-                        </div>
-                    `;
-                    card.onclick = () => window.location.href = `/api/documents/${{doc.doc_id}}/download`;
-                    resultsContainer.appendChild(card);
-                }});
-            }} catch (error) {{
-                console.error('Search error:', error);
-            }}
-        }}
 
         // Three.js Setup
         const canvas = document.getElementById('three-canvas');
@@ -17953,17 +18566,15 @@ def get_folders_by_team():
         # Get all documents organized by team
         query = '''
             SELECT
-                COALESCE(dc.team, 'Uncategorized') as team,
+                dc.team,
                 COUNT(DISTINCT d.id) as document_count,
                 json_agg(
                     json_build_object(
                         'id', d.id,
                         'filename', d.filename,
                         'file_type', d.file_type,
-                        'file_size', d.file_size,
                         'upload_date', d.upload_date,
-                        'processing_status', d.processing_status,
-                        'doc_type', COALESCE(dc.doc_type, d.file_type),
+                        'doc_type', dc.doc_type,
                         'project', dc.project,
                         'confidentiality_level', dc.confidentiality_level,
                         'tags', dc.tags,
@@ -17971,35 +18582,29 @@ def get_folders_by_team():
                     ) ORDER BY d.upload_date DESC
                 ) as documents
             FROM documents d
-            LEFT JOIN document_classifications dc ON dc.document_id = d.id
+            INNER JOIN document_classifications dc ON dc.document_id = d.id
             WHERE d.organization_id = %s
               AND d.is_deleted = FALSE
+              AND dc.team IS NOT NULL
         '''
         params = [org_id]
 
         if team_filter:
-            query += ' AND COALESCE(dc.team, \'Uncategorized\') = %s'
+            query += ' AND dc.team = %s'
             params.append(team_filter)
 
-        query += ' GROUP BY COALESCE(dc.team, \'Uncategorized\') ORDER BY COALESCE(dc.team, \'Uncategorized\')'
+        query += ' GROUP BY dc.team ORDER BY dc.team'
 
         cursor.execute(query, params)
         folders = cursor.fetchall()
 
         conn.close()
 
-        # Add 'name' field to each folder for consistency
-        formatted_folders = []
-        for f in folders:
-            folder_dict = dict(f)
-            folder_dict['name'] = folder_dict.get('team', 'Uncategorized')
-            formatted_folders.append(folder_dict)
-
         return jsonify({
             'success': True,
             'org_id': org_id,
             'view_type': 'by_team',
-            'folders': formatted_folders
+            'folders': [dict(f) for f in folders]
         })
 
     except Exception as e:
@@ -18042,17 +18647,15 @@ def get_folders_by_project():
 
         query = '''
             SELECT
-                COALESCE(dc.project, 'Uncategorized') as project,
+                dc.project,
                 COUNT(DISTINCT d.id) as document_count,
                 json_agg(
                     json_build_object(
                         'id', d.id,
                         'filename', d.filename,
                         'file_type', d.file_type,
-                        'file_size', d.file_size,
                         'upload_date', d.upload_date,
-                        'processing_status', d.processing_status,
-                        'doc_type', COALESCE(dc.doc_type, d.file_type),
+                        'doc_type', dc.doc_type,
                         'team', dc.team,
                         'confidentiality_level', dc.confidentiality_level,
                         'tags', dc.tags,
@@ -18060,35 +18663,29 @@ def get_folders_by_project():
                     ) ORDER BY d.upload_date DESC
                 ) as documents
             FROM documents d
-            LEFT JOIN document_classifications dc ON dc.document_id = d.id
+            INNER JOIN document_classifications dc ON dc.document_id = d.id
             WHERE d.organization_id = %s
               AND d.is_deleted = FALSE
+              AND dc.project IS NOT NULL
         '''
         params = [org_id]
 
         if project_filter:
-            query += ' AND COALESCE(dc.project, \'Uncategorized\') = %s'
+            query += ' AND dc.project = %s'
             params.append(project_filter)
 
-        query += ' GROUP BY COALESCE(dc.project, \'Uncategorized\') ORDER BY COALESCE(dc.project, \'Uncategorized\')'
+        query += ' GROUP BY dc.project ORDER BY dc.project'
 
         cursor.execute(query, params)
         folders = cursor.fetchall()
 
         conn.close()
 
-        # Add 'name' field to each folder for consistency
-        formatted_folders = []
-        for f in folders:
-            folder_dict = dict(f)
-            folder_dict['name'] = folder_dict.get('project', 'Uncategorized')
-            formatted_folders.append(folder_dict)
-
         return jsonify({
             'success': True,
             'org_id': org_id,
             'view_type': 'by_project',
-            'folders': formatted_folders
+            'folders': [dict(f) for f in folders]
         })
 
     except Exception as e:
