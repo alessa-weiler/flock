@@ -11325,22 +11325,27 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             width: 100%;
             gap: 0;
             font-family: "Satoshi", sans-serif;
+            position: relative;
         }}
 
         /* Left Sidebar - Saved Simulations */
         .left-sidebar {{
             width: 280px;
+            min-width: 280px;
             background: rgba(255, 255, 255, 0.95);
             backdrop-filter: blur(20px);
             border-right: 1px solid rgba(0, 0, 0, 0.1);
             overflow-y: auto;
             display: flex;
             flex-direction: column;
-            transition: transform 0.3s ease;
+            transition: width 0.3s ease, min-width 0.3s ease;
         }}
 
         .left-sidebar.collapsed {{
-            transform: translateX(-280px);
+            width: 0;
+            min-width: 0;
+            overflow: hidden;
+            border-right: none;
         }}
 
         .sidebar-header {{
@@ -11379,7 +11384,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
         }}
 
         .sidebar-toggle-btn {{
-            position: fixed;
+            position: absolute;
             left: 280px;
             top: 50%;
             transform: translateY(-50%);
@@ -11393,7 +11398,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: all 0.3s ease;
+            transition: left 0.3s ease;
             z-index: 1000;
             font-size: 0.875rem;
             color: #666;
@@ -11405,7 +11410,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1);
         }}
 
-        .left-sidebar.collapsed + .sidebar-toggle-btn {{
+        .left-sidebar.collapsed ~ .sidebar-toggle-btn {{
             left: 0;
         }}
 
@@ -11486,12 +11491,12 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             flex-direction: column;
             background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%);
             position: relative;
-            margin-left: 0;
-            transition: margin-left 0.3s ease;
+            margin-right: 0;
+            transition: margin-right 0.3s ease;
         }}
 
-        .left-sidebar.collapsed ~ .center-content {{
-            margin-left: -280px;
+        .center-content.right-sidebar-visible {{
+            margin-right: 350px;
         }}
 
         .org-header-bar {{
@@ -12904,6 +12909,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                     setTimeout(() => {{
                         const sidebar = document.getElementById('rightSidebar');
                         const container = document.getElementById('responseContainer');
+                        const centerContent = document.querySelector('.center-content');
 
                         container.innerHTML = `
                             <div class="response-header">Simulation Complete!</div>
@@ -12913,6 +12919,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                         `;
 
                         sidebar.classList.add('visible');
+                        centerContent.classList.add('right-sidebar-visible');
                     }}, spheres.length * 100);
                 }} else {{
                     // Check if subscription is required
@@ -12962,6 +12969,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                     setTimeout(() => {{
                         const sidebar = document.getElementById('rightSidebar');
                         const container = document.getElementById('responseContainer');
+                        const centerContent = document.querySelector('.center-content');
 
                         container.innerHTML = `
                             <div class="response-header">Compatibility Analysis Complete!</div>
@@ -12971,6 +12979,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                         `;
 
                         sidebar.classList.add('visible');
+                        centerContent.classList.add('right-sidebar-visible');
                     }}, 500);
                 }} else {{
                     // Check if subscription is required
@@ -13067,6 +13076,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
 
             const sidebar = document.getElementById('rightSidebar');
             const container = document.getElementById('responseContainer');
+            const centerContent = document.querySelector('.center-content');
 
             let matchesHtml = '';
             compatibility.top_matches.forEach((match, index) => {{
@@ -13091,6 +13101,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             `;
 
             sidebar.classList.add('visible');
+            centerContent.classList.add('right-sidebar-visible');
         }}
 
         // Networking Mode
@@ -13127,6 +13138,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                     setTimeout(() => {{
                         const sidebar = document.getElementById('rightSidebar');
                         const container = document.getElementById('responseContainer');
+                        const centerContent = document.querySelector('.center-content');
 
                         container.innerHTML = `
                             <div class="response-header">Networking Analysis Complete!</div>
@@ -13136,6 +13148,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                         `;
 
                         sidebar.classList.add('visible');
+                        centerContent.classList.add('right-sidebar-visible');
                     }}, 500);
                 }} else {{
                     // Check if subscription is required
@@ -13163,6 +13176,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
 
             const sidebar = document.getElementById('rightSidebar');
             const container = document.getElementById('responseContainer');
+            const centerContent = document.querySelector('.center-content');
 
             let recsHtml = '';
             recommendations.top_matches.forEach((match, index) => {{
@@ -13190,6 +13204,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             `;
 
             sidebar.classList.add('visible');
+            centerContent.classList.add('right-sidebar-visible');
         }}
 
         function showMemberResponse(memberId, memberName) {{
@@ -13201,6 +13216,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
 
             const sidebar = document.getElementById('rightSidebar');
             const container = document.getElementById('responseContainer');
+            const centerContent = document.querySelector('.center-content');
 
             // Format response nicely
             let formattedResponse = '';
@@ -13258,6 +13274,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             `;
 
             sidebar.classList.add('visible');
+            centerContent.classList.add('right-sidebar-visible');
         }}
 
         // Smooth color transition helper
@@ -13302,6 +13319,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             }});
 
             document.getElementById('rightSidebar').classList.remove('visible');
+            document.querySelector('.center-content').classList.remove('right-sidebar-visible');
         }}
 
         function toggleLeftSidebar() {{
@@ -13387,6 +13405,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                     setTimeout(() => {{
                         const sidebar = document.getElementById('rightSidebar');
                         const container = document.getElementById('responseContainer');
+                        const centerContent = document.querySelector('.center-content');
 
                         container.innerHTML = `
                             <div class="response-header">Simulation Loaded</div>
@@ -13396,6 +13415,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                         `;
 
                         sidebar.classList.add('visible');
+                        centerContent.classList.add('right-sidebar-visible');
                     }}, spheres.length * 80);
 
                     console.log('Loaded simulation with', Object.keys(simulationResults).length, 'responses');
