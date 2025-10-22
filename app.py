@@ -11181,18 +11181,10 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
     simulation_mode_text = 'Test Reactions' if is_therapy else 'Simulation Mode'
     party_mode_text = 'Compatibility within Network' if is_therapy else 'Party Mode'
 
-    # Radio buttons for mode selection (only for non-therapy orgs)
-    mode_selector_html = '' if is_therapy else '''
-        <div class="mode-selector">
-            <label class="mode-radio">
-                <input type="radio" name="analyzeMode" value="simulation" checked onchange="switchMode('simulation')">
-                <span>Simulation Mode</span>
-            </label>
-            <label class="mode-radio">
-                <input type="radio" name="analyzeMode" value="networking" onchange="switchMode('networking')">
-                <span>Networking Mode</span>
-            </label>
-        </div>
+    networking_mode_btn = '' if is_therapy else '''
+                        <button class="mode-btn" id="networkingModeBtn" onclick="switchMode('networking')">
+                            Networking Mode
+                        </button>
     '''
 
     # Tab navigation HTML (only for non-therapy orgs)
@@ -11208,18 +11200,17 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
     <div id="knowledge-tab" class="tab-content">
         <div style="padding: 2rem; max-width: 1400px; margin: 0 auto;">
             <div style="margin-bottom: 2rem;">
-                <h2 style="font-size: 1.5rem; font-weight: 600; margin-bottom: 0.5rem;"> Knowledge Base</h2>
+                <h2 style="font-size: 1.5rem; font-weight: 600; margin-bottom: 0.5rem;">📚 Knowledge Base</h2>
                 <p style="color: #666;">Upload documents and ask questions about your organization's knowledge</p>
             </div>
 
             <!-- Sub-tabs for Documents vs Chat -->
             <div class="kb-subtabs" style="display: flex; gap: 1rem; margin-bottom: 2rem; border-bottom: 2px solid #e0e0e0;">
                 <button class="kb-subtab active" onclick="switchKBView('documents')" id="documentsSubtab" style="padding: 0.75rem 1.5rem; background: none; border: none; border-bottom: 3px solid black; font-family: 'Satoshi', sans-serif; font-size: 1rem; font-weight: 600; color: black; cursor: pointer; transition: all 0.2s; margin-bottom: -2px;">
-                     Documents
+                    📄 Documents
                 </button>
                 <button class="kb-subtab" onclick="switchKBView('chat')" id="chatSubtab" style="padding: 0.75rem 1.5rem; background: none; border: none; border-bottom: 3px solid transparent; font-family: 'Satoshi', sans-serif; font-size: 1rem; font-weight: 500; color: #666; cursor: pointer; transition: all 0.2s; margin-bottom: -2px;">
-                    
-                     Ask Questions
+                    💬 Ask Questions
                 </button>
             </div>
 
@@ -17626,7 +17617,7 @@ def render_documents_page(org_id: int, org_name: str, documents: List[Dict], use
         <a href="/organization/{org_id}" class="back-link">← Back to {org_name}</a>
 
         <div class="docs-header">
-            <h1 class="docs-title"> Documents</h1>
+            <h1 class="docs-title">📄 Documents</h1>
             <p class="docs-subtitle">Upload and manage your organization's documents</p>
         </div>
 
