@@ -11195,11 +11195,22 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
         </div>
     '''
 
-    # No tabs needed anymore - Knowledge Base is integrated into main view
-    tabs_html = ''
+    # New 4-tab navigation system (Overview/People/Knowledge/Insights)
+    tabs_html = '''
+    <div class="main-tabs">
+        <button class="main-tab active" onclick="switchMainTab('overview')" data-tab="overview">Overview</button>
+        <button class="main-tab" onclick="switchMainTab('people')" data-tab="people">People</button>
+        <button class="main-tab" onclick="switchMainTab('knowledge')" data-tab="knowledge">Knowledge</button>
+        <button class="main-tab" onclick="switchMainTab('insights')" data-tab="insights">Insights</button>
+    </div>
+    '''
 
-    # Knowledge Base tab HTML (only for non-therapy orgs)
-    knowledge_base_tab = '' if is_therapy else '''
+    # Knowledge Base is now integrated into right sidebar, no separate tab needed
+    knowledge_base_tab = ''
+
+    # Placeholder to keep the rest of the function working
+    if False:
+        _ = '''
     <div id="knowledge-tab" class="tab-content">
         <div style="padding: 2rem; max-width: 1400px; margin: 0 auto;">
             <div style="margin-bottom: 2rem;">
@@ -11321,6 +11332,606 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             margin: 0;
             padding: 0;
             box-sizing: border-box;
+        }}
+
+        /* Main Tabs Navigation */
+        .main-tabs {{
+            display: flex;
+            gap: 0;
+            background: #f8f9fa;
+            border-bottom: 2px solid #e0e0e0;
+            padding: 0 2rem;
+        }}
+
+        .main-tab {{
+            padding: 1rem 2rem;
+            border: none;
+            background: transparent;
+            font-family: "Satoshi", sans-serif;
+            font-size: 1rem;
+            font-weight: 500;
+            color: #666;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            margin-bottom: -2px;
+            transition: all 0.2s ease;
+        }}
+
+        .main-tab:hover {{
+            color: #333;
+            background: rgba(0, 0, 0, 0.02);
+        }}
+
+        .main-tab.active {{
+            color: black;
+            font-weight: 600;
+            border-bottom-color: black;
+            background: white;
+        }}
+
+        .main-tab-content {{
+            display: none;
+            min-height: calc(100vh - 140px);
+        }}
+
+        .main-tab-content.active {{
+            display: block;
+        }}
+
+        /* Overview Tab Styles */
+        .overview-container {{
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 3rem 2rem;
+        }}
+
+        .overview-search-section {{
+            margin-bottom: 3rem;
+            text-align: center;
+        }}
+
+        .overview-question {{
+            font-family: "Sentient", "Satoshi", sans-serif;
+            font-size: 2rem;
+            font-weight: 600;
+            margin-bottom: 1.5rem;
+            color: black;
+        }}
+
+        .overview-search-bar {{
+            display: flex;
+            max-width: 700px;
+            margin: 0 auto;
+            gap: 0.75rem;
+        }}
+
+        .global-search-input {{
+            flex: 1;
+            padding: 1rem 1.5rem;
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            font-family: "Satoshi", sans-serif;
+            font-size: 1rem;
+            transition: all 0.2s ease;
+        }}
+
+        .global-search-input:focus {{
+            outline: none;
+            border-color: black;
+        }}
+
+        .search-btn {{
+            padding: 1rem 2rem;
+            background: black;
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-family: "Satoshi", sans-serif;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }}
+
+        .search-btn:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }}
+
+        .quick-stats {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 3rem;
+        }}
+
+        .stat-card {{
+            background: white;
+            padding: 2rem;
+            border-radius: 12px;
+            border: 1px solid #e0e0e0;
+            text-align: center;
+            transition: all 0.2s ease;
+        }}
+
+        .stat-card:hover {{
+            transform: translateY(-4px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+        }}
+
+        .stat-number {{
+            font-family: "Sentient", "Satoshi", sans-serif;
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: black;
+            margin-bottom: 0.5rem;
+        }}
+
+        .stat-label {{
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }}
+
+        .section-title {{
+            font-family: "Sentient", "Satoshi", sans-serif;
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 1.5rem;
+            color: black;
+        }}
+
+        .activity-feed {{
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 12px;
+            padding: 1.5rem;
+            min-height: 200px;
+        }}
+
+        .activity-item {{
+            padding: 1rem;
+            border-bottom: 1px solid #f0f0f0;
+            color: #333;
+            font-size: 0.95rem;
+        }}
+
+        .activity-item:last-child {{
+            border-bottom: none;
+        }}
+
+        .activity-item.loading {{
+            text-align: center;
+            color: #999;
+        }}
+
+        .quick-actions-section {{
+            margin-top: 3rem;
+        }}
+
+        .quick-actions {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+        }}
+
+        .quick-action-btn {{
+            padding: 1.5rem;
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            font-family: "Satoshi", sans-serif;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            color: black;
+        }}
+
+        .quick-action-btn:hover {{
+            background: black;
+            color: white;
+            border-color: black;
+            transform: translateY(-2px);
+        }}
+
+        /* Knowledge Tab Styles */
+        .knowledge-container {{
+            height: calc(100vh - 140px);
+            display: flex;
+            flex-direction: column;
+        }}
+
+        .knowledge-header {{
+            padding: 1.5rem 2rem;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: white;
+        }}
+
+        .knowledge-header h2 {{
+            font-family: "Sentient", "Satoshi", sans-serif;
+            font-size: 1.5rem;
+            font-weight: 600;
+        }}
+
+        .knowledge-toggle, .insights-toggle {{
+            display: flex;
+            gap: 0.5rem;
+            background: #f0f0f0;
+            padding: 0.25rem;
+            border-radius: 8px;
+        }}
+
+        .kb-mode-btn, .insights-mode-btn {{
+            padding: 0.5rem 1.5rem;
+            border: none;
+            background: transparent;
+            border-radius: 6px;
+            font-family: "Satoshi", sans-serif;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }}
+
+        .kb-mode-btn.active, .insights-mode-btn.active {{
+            background: white;
+            font-weight: 600;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }}
+
+        .kb-mode-content, .insights-mode-content {{
+            display: none;
+            flex: 1;
+            overflow: hidden;
+        }}
+
+        .kb-mode-content.active, .insights-mode-content.active {{
+            display: flex;
+            flex-direction: column;
+        }}
+
+        .kb-chat-layout {{
+            display: flex;
+            height: 100%;
+        }}
+
+        .kb-history-sidebar {{
+            width: 250px;
+            background: #f8f9fa;
+            border-right: 1px solid #e0e0e0;
+            padding: 1rem;
+        }}
+
+        .history-header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }}
+
+        .history-header h3 {{
+            font-size: 1rem;
+            font-weight: 600;
+        }}
+
+        .new-chat-btn {{
+            width: 32px;
+            height: 32px;
+            border-radius: 6px;
+            background: black;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-size: 1.2rem;
+        }}
+
+        .conversations-list {{
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }}
+
+        .conversation-item {{
+            padding: 0.75rem;
+            background: white;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.875rem;
+            transition: all 0.2s ease;
+        }}
+
+        .conversation-item:hover {{
+            background: #e0e0e0;
+        }}
+
+        .kb-chat-main {{
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: white;
+        }}
+
+        .kb-messages-area {{
+            flex: 1;
+            overflow-y: auto;
+            padding: 2rem;
+        }}
+
+        .kb-welcome {{
+            text-align: center;
+            padding: 3rem 2rem;
+            color: #666;
+        }}
+
+        .kb-welcome h3 {{
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+            color: black;
+        }}
+
+        .kb-input-area {{
+            border-top: 1px solid #e0e0e0;
+            padding: 1rem 2rem;
+            display: flex;
+            gap: 0.75rem;
+            background: #f8f9fa;
+        }}
+
+        .kb-input-area textarea {{
+            flex: 1;
+            padding: 0.75rem;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            font-family: "Satoshi", sans-serif;
+            resize: vertical;
+            min-height: 60px;
+        }}
+
+        .kb-input-area button {{
+            padding: 0.75rem 1.5rem;
+            background: black;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-family: "Satoshi", sans-serif;
+            font-weight: 600;
+            cursor: pointer;
+        }}
+
+        .browse-controls {{
+            padding: 1.5rem 2rem;
+            display: flex;
+            gap: 1rem;
+            background: white;
+            border-bottom: 1px solid #e0e0e0;
+        }}
+
+        .kb-select {{
+            padding: 0.75rem 1rem;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            font-family: "Satoshi", sans-serif;
+        }}
+
+        .kb-search-input {{
+            flex: 1;
+            padding: 0.75rem 1rem;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            font-family: "Satoshi", sans-serif;
+        }}
+
+        .documents-grid {{
+            flex: 1;
+            overflow-y: auto;
+            padding: 2rem;
+            background: #f8f9fa;
+        }}
+
+        .loading-docs {{
+            text-align: center;
+            padding: 3rem;
+            color: #999;
+        }}
+
+        /* Insights Tab Styles */
+        .insights-container {{
+            height: calc(100vh - 140px);
+            display: flex;
+            flex-direction: column;
+        }}
+
+        .insights-header {{
+            padding: 1.5rem 2rem;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: white;
+        }}
+
+        .insights-header h2 {{
+            font-family: "Sentient", "Satoshi", sans-serif;
+            font-size: 1.5rem;
+            font-weight: 600;
+        }}
+
+        .insights-layout {{
+            display: grid;
+            grid-template-columns: 1fr 350px;
+            gap: 0;
+            height: 100%;
+            overflow: hidden;
+        }}
+
+        .simulation-creator {{
+            padding: 2rem;
+            background: white;
+            border-right: 1px solid #e0e0e0;
+            overflow-y: auto;
+        }}
+
+        .simulation-creator h3 {{
+            font-family: "Sentient", "Satoshi", sans-serif;
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 1.5rem;
+        }}
+
+        .sim-form {{
+            max-width: 600px;
+        }}
+
+        .simulations-history {{
+            padding: 1.5rem;
+            background: #f8f9fa;
+            overflow-y: auto;
+        }}
+
+        .simulations-history h3 {{
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+        }}
+
+        .sim-results-drawer {{
+            position: fixed;
+            top: 0;
+            right: -500px;
+            width: 500px;
+            height: 100vh;
+            background: white;
+            box-shadow: -4px 0 12px rgba(0, 0, 0, 0.1);
+            transition: right 0.3s ease;
+            z-index: 1000;
+        }}
+
+        .sim-results-drawer.visible {{
+            right: 0;
+        }}
+
+        .network-analysis-content {{
+            padding: 2rem;
+            overflow-y: auto;
+        }}
+
+        .create-analysis-btn {{
+            padding: 1rem 2rem;
+            background: black;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-family: "Satoshi", sans-serif;
+            font-weight: 600;
+            cursor: pointer;
+            margin-bottom: 2rem;
+        }}
+
+        .network-analyses-list {{
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }}
+
+        .analysis-item {{
+            padding: 1.5rem;
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 12px;
+        }}
+
+        .analysis-item h4 {{
+            font-size: 1.1rem;
+            margin-bottom: 0.5rem;
+        }}
+
+        .analysis-meta {{
+            color: #666;
+            font-size: 0.875rem;
+            margin-bottom: 1rem;
+        }}
+
+        .view-analysis-btn {{
+            padding: 0.5rem 1rem;
+            background: black;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-family: "Satoshi", sans-serif;
+            font-weight: 500;
+        }}
+
+        /* Drawer Styles */
+        .drawer-content {{
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }}
+
+        .drawer-header {{
+            padding: 1.5rem;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }}
+
+        .drawer-title {{
+            font-family: "Sentient", "Satoshi", sans-serif;
+            font-size: 1.25rem;
+            font-weight: 600;
+        }}
+
+        .drawer-close {{
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #999;
+            transition: color 0.2s ease;
+        }}
+
+        .drawer-close:hover {{
+            color: black;
+        }}
+
+        .drawer-body {{
+            flex: 1;
+            padding: 1.5rem;
+            overflow-y: auto;
+        }}
+
+        .drawer-instruction {{
+            color: #666;
+            text-align: center;
+            padding: 2rem;
+        }}
+
+        .party-mode-btn {{
+            position: absolute;
+            bottom: 2rem;
+            right: 2rem;
+            padding: 1rem 2rem;
+            background: black;
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-family: "Satoshi", sans-serif;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            transition: all 0.2s ease;
+        }}
+
+        .party-mode-btn:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
         }}
 
         .org-view-container {{
@@ -11618,7 +12229,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             transform: none;
         }}
 
-        /* Right Sidebar - Results */
+        /* Right Sidebar - Results & Chat */
         .right-sidebar {{
             width: 350px;
             background: rgba(255, 255, 255, 0.95);
@@ -11627,10 +12238,148 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             overflow-y: auto;
             transition: transform 0.3s ease;
             transform: translateX(350px);
+            display: flex;
+            flex-direction: column;
         }}
 
         .right-sidebar.visible {{
             transform: translateX(0);
+        }}
+
+        .sidebar-tabs {{
+            display: flex;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+            background: rgba(0, 0, 0, 0.02);
+        }}
+
+        .sidebar-tab {{
+            flex: 1;
+            padding: 0.75rem;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            font-family: "Satoshi", sans-serif;
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: #666;
+            transition: all 0.2s ease;
+            border-bottom: 2px solid transparent;
+        }}
+
+        .sidebar-tab.active {{
+            color: black;
+            font-weight: 600;
+            border-bottom-color: black;
+        }}
+
+        .sidebar-tab:hover:not(.active) {{
+            color: #333;
+            background: rgba(0, 0, 0, 0.05);
+        }}
+
+        .sidebar-tab-content {{
+            display: none;
+            flex: 1;
+            overflow-y: auto;
+        }}
+
+        .sidebar-tab-content.active {{
+            display: flex;
+            flex-direction: column;
+        }}
+
+        .kb-chat-container {{
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            padding: 1rem;
+        }}
+
+        .kb-chat-header {{
+            margin-bottom: 1rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+        }}
+
+        .kb-chat-header h3 {{
+            font-family: "Sentient", "Satoshi", sans-serif;
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }}
+
+        .kb-chat-header p {{
+            font-size: 0.8rem;
+            color: #666;
+        }}
+
+        .kb-chat-messages {{
+            flex: 1;
+            overflow-y: auto;
+            margin-bottom: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }}
+
+        .kb-message {{
+            padding: 0.75rem;
+            border-radius: 8px;
+            font-size: 0.875rem;
+            line-height: 1.4;
+        }}
+
+        .kb-message.user {{
+            background: black;
+            color: white;
+            align-self: flex-end;
+            max-width: 80%;
+        }}
+
+        .kb-message.assistant {{
+            background: #f0f0f0;
+            color: #333;
+            align-self: flex-start;
+            max-width: 90%;
+        }}
+
+        .kb-chat-input-area {{
+            display: flex;
+            gap: 0.5rem;
+        }}
+
+        .kb-chat-input-area textarea {{
+            flex: 1;
+            padding: 0.75rem;
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+            font-family: "Satoshi", sans-serif;
+            font-size: 0.875rem;
+            resize: vertical;
+            min-height: 60px;
+            max-height: 120px;
+        }}
+
+        .kb-chat-input-area button {{
+            padding: 0.75rem 1rem;
+            background: black;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-family: "Satoshi", sans-serif;
+            font-weight: 600;
+            font-size: 0.875rem;
+            transition: all 0.2s ease;
+        }}
+
+        .kb-chat-input-area button:hover {{
+            background: #333;
+        }}
+
+        .kb-chat-input-area button:disabled {{
+            background: #ccc;
+            cursor: not-allowed;
         }}
 
         .response-container {{
@@ -11864,11 +12613,70 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
         }}
     </style>
 
-    <!-- Tab Navigation (only for non-therapy orgs) -->
+    <!-- DEBUG: Check if this renders -->
+    <div style="background: red; color: white; padding: 10px; font-size: 20px; font-weight: bold;">
+        DEBUG: NEW UI LOADED - If you see this, the HTML is rendering
+    </div>
+
+    <!-- Tab Navigation -->
     {tabs_html}
 
-    <!-- Team Tab Content -->
-    <div id="team-tab" class="tab-content active">
+    <!-- Overview Tab Content (Default) -->
+    <div id="overview-tab" class="main-tab-content active">
+        <div class="overview-container">
+            <!-- Global Search -->
+            <div class="overview-search-section">
+                <h2 class="overview-question">What do you need to know?</h2>
+                <div class="overview-search-bar">
+                    <input type="text" id="globalSearchInput" placeholder="Search people, documents, or simulations..." class="global-search-input">
+                    <button onclick="performGlobalSearch()" class="search-btn">Ask</button>
+                </div>
+            </div>
+
+            <!-- Quick Stats -->
+            <div class="quick-stats">
+                <div class="stat-card">
+                    <div class="stat-number">{len(members)}</div>
+                    <div class="stat-label">People</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="docsCount">--</div>
+                    <div class="stat-label">Documents</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">{len(simulations)}</div>
+                    <div class="stat-label">Simulations</div>
+                </div>
+            </div>
+
+            <!-- Recent Activity -->
+            <div class="recent-activity-section">
+                <h3 class="section-title">Recent Activity</h3>
+                <div class="activity-feed" id="activityFeed">
+                    <div class="activity-item loading">Loading recent activity...</div>
+                </div>
+            </div>
+
+            <!-- Quick Actions -->
+            <div class="quick-actions-section">
+                <h3 class="section-title">Quick Actions</h3>
+                <div class="quick-actions">
+                    <button class="quick-action-btn" onclick="switchMainTab('insights')">
+                        <span class="action-icon">Run Simulation</span>
+                    </button>
+                    <button class="quick-action-btn" onclick="switchMainTab('people')">
+                        <span class="action-icon">Analyze Team</span>
+                    </button>
+                    <button class="quick-action-btn" onclick="switchMainTab('knowledge')">
+                        <span class="action-icon">Ask Question</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- People Tab Content -->
+    <div id="people-tab" class="main-tab-content">
         <div class="org-view-container">
             <!-- Left Sidebar: Saved Simulations -->
             <div class="left-sidebar" id="leftSidebar">
@@ -11898,39 +12706,167 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
 
             <div class="canvas-container">
                 <canvas id="three-canvas"></canvas>
-
-                <div class="simulation-form">
-                    {mode_selector_html}
-                    <textarea
-                        class="scenario-input"
-                        id="scenarioInput"
-                        placeholder="Enter a scenario to simulate... (e.g., 'A major deadline is moved up by two weeks')"
-                    ></textarea>
-                    <textarea
-                        class="scenario-input"
-                        id="attendeeInput"
-                        placeholder="Paste attendee list (one per line, format: Name, LinkedIn URL)"
-                        style="display: none; margin-top: 1rem;"
-                    ></textarea>
-                    <button class="simulate-btn" id="simulateBtn" onclick="runSimulation()">
-                        Analyze
-                    </button>
-                </div>
+                <!-- Party Mode button for compatibility analysis -->
+                {'<button class="party-mode-btn" onclick="togglePartyMode()" id="partyModeToggle">Toggle ' + party_mode_text + '</button>' if not is_therapy else ''}
             </div>
         </div>
 
-        <!-- Right Sidebar: Response Details -->
-        <div class="right-sidebar" id="rightSidebar">
-            <div class="response-container" id="responseContainer">
-                <div class="response-header">Select a team member</div>
-                <div class="response-content">
-                    Click on a team member's sphere to see their predicted response to the scenario.
+        <!-- Right Drawer: Person Details -->
+        <div class="right-sidebar person-drawer" id="rightSidebar">
+            <div class="drawer-content" id="drawerContent">
+                <div class="drawer-header">
+                    <span class="drawer-title">Select a team member</span>
+                    <button class="drawer-close" onclick="closeDrawer()">&times;</button>
+                </div>
+                <div class="drawer-body">
+                    <p class="drawer-instruction">Click on a team member's sphere to see their details and available actions.</p>
                 </div>
             </div>
         </div>
         </div>
     </div>
-    <!-- End Team Tab -->
+    <!-- End People Tab -->
+
+    <!-- Knowledge Tab Content -->
+    <div id="knowledge-tab" class="main-tab-content">
+        <div class="knowledge-container">
+            <div class="knowledge-header">
+                <h2>Knowledge Base</h2>
+                <div class="knowledge-toggle">
+                    <button class="kb-mode-btn active" onclick="switchKBMode('chat')" data-mode="chat">Chat</button>
+                    <button class="kb-mode-btn" onclick="switchKBMode('browse')" data-mode="browse">Browse</button>
+                </div>
+            </div>
+
+            <!-- Chat Mode -->
+            <div id="chatMode" class="kb-mode-content active">
+                <div class="kb-chat-layout">
+                    <!-- Conversation history sidebar (collapsible) -->
+                    <div class="kb-history-sidebar" id="kbHistorySidebar">
+                        <div class="history-header">
+                            <h3>History</h3>
+                            <button onclick="createNewKBConversation()" class="new-chat-btn">+</button>
+                        </div>
+                        <div id="kbConversationsList" class="conversations-list">
+                            <div class="conversation-item">Q1 Strategy</div>
+                            <div class="conversation-item">Design System</div>
+                        </div>
+                    </div>
+
+                    <!-- Main chat area -->
+                    <div class="kb-chat-main">
+                        <div id="kbChatMessages" class="kb-messages-area">
+                            <div class="kb-welcome">
+                                <h3>Ask anything about your organization</h3>
+                                <p>I can help you find information from uploaded documents and team knowledge.</p>
+                            </div>
+                        </div>
+                        <div class="kb-input-area">
+                            <textarea id="kbChatInput" placeholder="Ask a question about your documents or team..." onkeydown="if(event.key === 'Enter' && !event.shiftKey) {{ event.preventDefault(); sendKBMessage(); }}"></textarea>
+                            <button onclick="sendKBMessage()" id="kbSendBtn">Send</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Browse Mode -->
+            <div id="browseMode" class="kb-mode-content">
+                <div class="browse-controls">
+                    <select id="kbSortBy" class="kb-select">
+                        <option value="date">By Date</option>
+                        <option value="team">By Team</option>
+                        <option value="type">By Type</option>
+                    </select>
+                    <input type="text" id="kbSearch" placeholder="Search documents..." class="kb-search-input">
+                </div>
+                <div class="documents-grid" id="documentsGrid">
+                    <div class="loading-docs">Loading documents...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- End Knowledge Tab -->
+
+    <!-- Insights Tab Content -->
+    <div id="insights-tab" class="main-tab-content">
+        <div class="insights-container">
+            <div class="insights-header">
+                <h2>Insights</h2>
+                <div class="insights-toggle">
+                    <button class="insights-mode-btn active" onclick="switchInsightsMode('simulations')" data-mode="simulations">Simulations</button>
+                    <button class="insights-mode-btn" onclick="switchInsightsMode('network')" data-mode="network">Network Analysis</button>
+                </div>
+            </div>
+
+            <!-- Simulations Mode -->
+            <div id="simulationsMode" class="insights-mode-content active">
+                <div class="insights-layout">
+                    <!-- Left: Simulation form -->
+                    <div class="simulation-creator">
+                        <h3>Create New Simulation</h3>
+                        <div class="sim-form">
+                            {mode_selector_html}
+                            <textarea
+                                class="scenario-input"
+                                id="insightsScenarioInput"
+                                placeholder="Enter a scenario to simulate... (e.g., 'A major deadline is moved up by two weeks')"
+                            ></textarea>
+                            <textarea
+                                class="scenario-input"
+                                id="insightsAttendeeInput"
+                                placeholder="Paste attendee list (one per line, format: Name, LinkedIn URL)"
+                                style="display: none; margin-top: 1rem;"
+                            ></textarea>
+                            <button class="simulate-btn" id="insightsSimulateBtn" onclick="runInsightsSimulation()">
+                                Analyze
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Right: Recent simulations list -->
+                    <div class="simulations-history">
+                        <h3>Recent Simulations</h3>
+                        <div class="simulations-list" id="simulationsHistoryList">
+                            {simulations_html}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Simulation Results Drawer (appears when simulation is run or clicked) -->
+                <div class="sim-results-drawer" id="simResultsDrawer">
+                    <div class="drawer-content">
+                        <div class="drawer-header">
+                            <span class="drawer-title">Simulation Results</span>
+                            <button class="drawer-close" onclick="closeSimDrawer()">&times;</button>
+                        </div>
+                        <div class="drawer-body" id="simResultsContent">
+                            Results will appear here...
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Network Analysis Mode -->
+            <div id="networkMode" class="insights-mode-content">
+                <div class="network-analysis-content">
+                    <button class="create-analysis-btn" onclick="createNetworkAnalysis()">+ New Analysis</button>
+                    <div class="network-analyses-list" id="networkAnalysesList">
+                        <div class="analysis-item">
+                            <h4>Best matches for Tech Summit 2025</h4>
+                            <p class="analysis-meta">Created 3 days ago</p>
+                            <button class="view-analysis-btn">View Results</button>
+                        </div>
+                        <div class="analysis-item">
+                            <h4>Sales team networking at Q4 conference</h4>
+                            <p class="analysis-meta">Created 1 week ago</p>
+                            <button class="view-analysis-btn">View Results</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- End Insights Tab -->
 
     <!-- Knowledge Base Tab (only for non-therapy orgs) -->
     {knowledge_base_tab}
@@ -11968,6 +12904,8 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script>
+        console.log('=== ORGANIZATION VIEW SCRIPT LOADED ===');
+
         const orgId = {org_info['id']};
         const members = {members_json_str};
         let currentSimulationId = null;
@@ -11978,23 +12916,232 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
         let compatibilityLines = [];
         let externalAttendees = [];
 
-        // Tab Switching
-        function switchOrgTab(tabName) {{
-            // Hide all tabs
-            document.querySelectorAll('.org-tab').forEach(tab => tab.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+        console.log('About to define switchMainTab function');
 
-            // Show selected tab
-            event.target.classList.add('active');
-            document.getElementById(tabName + '-tab').classList.add('active');
+        // Main Tab Switching
+        window.switchMainTab = function(tabName) {{
+            console.log('Switching to tab:', tabName);
 
-            // Load knowledge base if switching to it
-            if (tabName === 'knowledge') {{
-                loadKBFolders();
+            // Update tab buttons
+            const tabs = document.querySelectorAll('.main-tab');
+            console.log('Found tabs:', tabs.length);
+            tabs.forEach(tab => {{
+                tab.classList.remove('active');
+                if (tab.getAttribute('data-tab') === tabName) {{
+                    tab.classList.add('active');
+                    console.log('Activated tab button:', tabName);
+                }}
+            }});
+
+            // Update tab content
+            const tabContents = document.querySelectorAll('.main-tab-content');
+            console.log('Found tab contents:', tabContents.length);
+            tabContents.forEach(content => {{
+                content.classList.remove('active');
+            }});
+
+            const targetTab = document.getElementById(tabName + '-tab');
+            console.log('Looking for tab:', tabName + '-tab', 'Found:', !!targetTab);
+            if (targetTab) {{
+                targetTab.classList.add('active');
+                console.log('Activated tab content:', tabName);
+            }} else {{
+                console.error('Tab not found:', tabName + '-tab');
+                console.log('Available tabs:', Array.from(document.querySelectorAll('[id$="-tab"]')).map(t => t.id));
+            }}
+
+            // Load data when switching to specific tabs
+            if (tabName === 'overview') {{
+                loadOverviewData();
+            }} else if (tabName === 'knowledge') {{
+                // Knowledge tab is already set up
+            }} else if (tabName === 'insights') {{
+                // Insights tab is already set up
             }}
         }}
 
-        // Knowledge Base Functions
+        console.log('switchMainTab function defined. Testing:', typeof window.switchMainTab);
+
+        // Overview Tab Functions
+        async function loadOverviewData() {{
+            // Load document count
+            try {{
+                const response = await fetch('/api/organization/' + orgId + '/documents');
+                const data = await response.json();
+                const docsCount = data.documents ? data.documents.length : 0;
+                document.getElementById('docsCount').textContent = docsCount;
+            }} catch (error) {{
+                console.error('Error loading docs count:', error);
+                document.getElementById('docsCount').textContent = '0';
+            }}
+
+            // Load recent activity
+            loadRecentActivity();
+        }}
+
+        async function loadRecentActivity() {{
+            const activityFeed = document.getElementById('activityFeed');
+            try {{
+                // Use simulations data to build activity feed
+                const activities = [];
+
+                // Add from simulations (already available in page)
+                // We'll create a simple activity feed from what we have
+                activityFeed.innerHTML = '<div class="activity-item">No recent activity</div>';
+            }} catch (error) {{
+                console.error('Error loading activity:', error);
+                activityFeed.innerHTML = '<div class="activity-item">Unable to load activity</div>';
+            }}
+        }}
+
+        function performGlobalSearch() {{
+            const query = document.getElementById('globalSearchInput').value.trim();
+            if (!query) return;
+
+            // Simple search implementation - can be enhanced later
+            alert('Search functionality coming soon! Searching for: ' + query);
+        }}
+
+        // Knowledge Tab Functions
+        function switchKBMode(mode) {{
+            // Update buttons
+            document.querySelectorAll('.kb-mode-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelector('[data-mode="' + mode + '"]').classList.add('active');
+
+            // Update content
+            document.querySelectorAll('.kb-mode-content').forEach(content => content.classList.remove('active'));
+            document.getElementById(mode + 'Mode').classList.add('active');
+
+            if (mode === 'browse') {{
+                loadDocuments();
+            }}
+        }}
+
+        async function loadDocuments() {{
+            const grid = document.getElementById('documentsGrid');
+            try {{
+                const response = await fetch('/api/organization/' + orgId + '/documents');
+                const data = await response.json();
+
+                if (!data.documents || data.documents.length === 0) {{
+                    grid.innerHTML = '<div class="loading-docs">No documents uploaded yet</div>';
+                    return;
+                }}
+
+                grid.innerHTML = data.documents.map(function(doc) {{
+                    return '<div style="padding: 1.5rem; background: white; border: 1px solid #e0e0e0; border-radius: 8px; cursor: pointer;">' +
+                        '<h4 style="margin-bottom: 0.5rem;">' + doc.filename + '</h4>' +
+                        '<p style="color: #666; font-size: 0.875rem;">' + doc.created_at + '</p>' +
+                        '</div>';
+                }}).join('');
+            }} catch (error) {{
+                console.error('Error loading documents:', error);
+                grid.innerHTML = '<div class="loading-docs">Error loading documents</div>';
+            }}
+        }}
+
+        function createNewKBConversation() {{
+            // Clear chat messages
+            const messagesArea = document.getElementById('kbChatMessages');
+            messagesArea.innerHTML = '<div class="kb-welcome"><h3>New conversation started</h3><p>Ask me anything about your organization.</p></div>';
+            document.getElementById('kbChatInput').value = '';
+        }}
+
+        // Insights Tab Functions
+        function switchInsightsMode(mode) {{
+            // Update buttons
+            document.querySelectorAll('.insights-mode-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelector('.insights-mode-btn[data-mode="' + mode + '"]').classList.add('active');
+
+            // Update content
+            document.querySelectorAll('.insights-mode-content').forEach(content => content.classList.remove('active'));
+            document.getElementById(mode + 'Mode').classList.add('active');
+        }}
+
+        async function runInsightsSimulation() {{
+            const scenario = document.getElementById('insightsScenarioInput').value.trim();
+            if (!scenario) {{
+                alert('Please enter a scenario');
+                return;
+            }}
+
+            const btn = document.getElementById('insightsSimulateBtn');
+            btn.disabled = true;
+            btn.textContent = 'Analyzing...';
+
+            try {{
+                const response = await fetch('/api/run-simulation', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{
+                        org_id: orgId,
+                        scenario: scenario
+                    }})
+                }});
+
+                const data = await response.json();
+
+                if (data.success) {{
+                    // Show results in drawer
+                    showSimResultsDrawer(data);
+
+                    // Clear input
+                    document.getElementById('insightsScenarioInput').value = '';
+                }} else {{
+                    alert(data.error || 'Failed to run simulation');
+                }}
+            }} catch (error) {{
+                console.error('Error:', error);
+                alert('Failed to run simulation');
+            }} finally {{
+                btn.disabled = false;
+                btn.textContent = 'Analyze';
+            }}
+        }}
+
+        function showSimResultsDrawer(data) {{
+            const drawer = document.getElementById('simResultsDrawer');
+            const content = document.getElementById('simResultsContent');
+
+            content.innerHTML = '<h3 style="margin-bottom: 1rem;">Simulation Complete</h3>' +
+                '<p>View the 3D visualization in the People tab to see detailed responses.</p>' +
+                '<button onclick="switchMainTab(\'people\')" style="padding: 0.75rem 1.5rem; background: black; color: white; border: none; border-radius: 8px; cursor: pointer; margin-top: 1rem; font-family: \'Satoshi\', sans-serif; font-weight: 600;">' +
+                'Go to People Tab</button>';
+
+            drawer.classList.add('visible');
+        }}
+
+        function closeSimDrawer() {{
+            document.getElementById('simResultsDrawer').classList.remove('visible');
+        }}
+
+        function createNetworkAnalysis() {{
+            alert('Network analysis creation coming soon!');
+        }}
+
+        // People Tab Drawer Functions
+        function closeDrawer() {{
+            document.getElementById('rightSidebar').classList.remove('visible');
+        }}
+
+        function togglePartyMode() {{
+            // This will be connected to the existing party mode functionality
+            alert('Party mode toggle - to be connected to existing functionality');
+        }}
+
+        // Sidebar Tab Switching (for right sidebar)
+        function switchSidebarTab(tabName) {{
+            // Update tab buttons
+            document.querySelectorAll('.sidebar-tab').forEach(tab => tab.classList.remove('active'));
+            event.target.classList.add('active');
+
+            // Update tab content
+            document.querySelectorAll('.sidebar-tab-content').forEach(content => content.classList.remove('active'));
+            document.getElementById(tabName + 'Tab').classList.add('active');
+        }}
+
+        // OLD Knowledge Base Functions - COMMENTED OUT (using new simplified versions above)
+        /*
         async function loadKBFolders() {{
             const viewType = document.getElementById('kbFolderView').value;
             const container = document.getElementById('kbFoldersContainer');
@@ -12568,6 +13715,73 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             document.getElementById('messageInput').value = question;
             sendChatMessage();
         }}
+        */
+        // END OLD KB FUNCTIONS - These used template literals that break in Python f-strings
+
+        // KB Chat in Sidebar
+        let kbConversationId = null;
+
+        async function sendKBMessage() {{
+            const input = document.getElementById('kbChatInput');
+            const message = input.value.trim();
+
+            if (!message) return;
+
+            // Create conversation if needed
+            if (!kbConversationId) {{
+                try {{
+                    const response = await fetch('/api/chat/conversations', {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }},
+                        body: JSON.stringify({{ org_id: orgId, title: 'Knowledge Base Chat' }})
+                    }});
+                    const data = await response.json();
+                    kbConversationId = data.conversation_id;
+                }} catch (error) {{
+                    console.error('Error creating conversation:', error);
+                    return;
+                }}
+            }}
+
+            const sendBtn = document.getElementById('kbSendBtn');
+            const messagesDiv = document.getElementById('kbChatMessages');
+
+            input.disabled = true;
+            sendBtn.disabled = true;
+            sendBtn.textContent = 'Sending...';
+
+            // Add user message
+            messagesDiv.innerHTML += '<div class="kb-message user">' + escapeHtml(message) + '</div>';
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            input.value = '';
+
+            try {{
+                const response = await fetch('/api/chat/' + kbConversationId + '/messages', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{
+                        message: message,
+                        use_rag: true,
+                        org_id: orgId
+                    }})
+                }});
+
+                const data = await response.json();
+
+                // Add assistant response
+                messagesDiv.innerHTML += '<div class="kb-message assistant">' + escapeHtml(data.answer || data.response) + '</div>';
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+            }} catch (error) {{
+                console.error('Error:', error);
+                messagesDiv.innerHTML += '<div class="kb-message assistant" style="background: #fef2f2; color: #ef4444;">Error: Failed to send message</div>';
+            }} finally {{
+                input.disabled = false;
+                sendBtn.disabled = false;
+                sendBtn.textContent = 'Send';
+                input.focus();
+            }}
+        }}
 
         // HTML escape utility
         function escapeHtml(text) {{
@@ -12575,6 +13789,15 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             div.textContent = text;
             return div.innerHTML;
         }}
+
+        // ========================================================================
+        // PAGE INITIALIZATION
+        // ========================================================================
+
+        // Initialize overview tab on page load
+        window.addEventListener('DOMContentLoaded', function() {{
+            loadOverviewData();
+        }});
 
         // ========================================================================
         // THREE.JS SETUP
