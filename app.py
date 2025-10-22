@@ -11201,29 +11201,109 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
         <div style="padding: 2rem; max-width: 1400px; margin: 0 auto;">
             <div style="margin-bottom: 2rem;">
                 <h2 style="font-size: 1.5rem; font-weight: 600; margin-bottom: 0.5rem;">📚 Knowledge Base</h2>
-                <p style="color: #666;">Documents automatically organized by team, project, type, and contributor</p>
+                <p style="color: #666;">Upload documents and ask questions about your organization's knowledge</p>
             </div>
 
-            <div style="border: 2px dashed #ccc; border-radius: 8px; padding: 2rem; text-align: center; cursor: pointer; transition: all 0.3s; margin-bottom: 2rem;" onclick="document.getElementById('kbFileUpload').click()">
-                <input type="file" id="kbFileUpload" multiple accept=".pdf,.docx,.txt,.md,.csv" style="display: none">
-                <div style="font-size: 1.1rem; font-weight: 500;">📤 Drop files here or click to upload</div>
-                <div style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">PDF, DOCX, TXT, MD, CSV • Max 50MB</div>
+            <!-- Sub-tabs for Documents vs Chat -->
+            <div class="kb-subtabs" style="display: flex; gap: 1rem; margin-bottom: 2rem; border-bottom: 2px solid #e0e0e0;">
+                <button class="kb-subtab active" onclick="switchKBView('documents')" id="documentsSubtab" style="padding: 0.75rem 1.5rem; background: none; border: none; border-bottom: 3px solid black; font-family: 'Satoshi', sans-serif; font-size: 1rem; font-weight: 600; color: black; cursor: pointer; transition: all 0.2s; margin-bottom: -2px;">
+                    📄 Documents
+                </button>
+                <button class="kb-subtab" onclick="switchKBView('chat')" id="chatSubtab" style="padding: 0.75rem 1.5rem; background: none; border: none; border-bottom: 3px solid transparent; font-family: 'Satoshi', sans-serif; font-size: 1rem; font-weight: 500; color: #666; cursor: pointer; transition: all 0.2s; margin-bottom: -2px;">
+                    💬 Ask Questions
+                </button>
             </div>
 
-            <div style="display: flex; gap: 1rem; margin-bottom: 2rem; align-items: center;">
-                <select id="kbFolderView" onchange="loadKBFolders()" style="padding: 0.75rem 1rem; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 0.95rem; width: 180px;">
-                    <option value="team">By Team</option>
-                    <option value="project">By Project</option>
-                    <option value="type">By Type</option>
-                    <option value="date">By Date</option>
-                    <option value="person">By Person</option>
-                </select>
+            <!-- Documents View (existing) -->
+            <div id="documentsView" class="kb-view">
+                <div style="border: 2px dashed #ccc; border-radius: 8px; padding: 2rem; text-align: center; cursor: pointer; transition: all 0.3s; margin-bottom: 2rem;" onclick="document.getElementById('kbFileUpload').click()">
+                    <input type="file" id="kbFileUpload" multiple accept=".pdf,.docx,.txt,.md,.csv" style="display: none">
+                    <div style="font-size: 1.1rem; font-weight: 500;">📤 Drop files here or click to upload</div>
+                    <div style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">PDF, DOCX, TXT, MD, CSV • Max 50MB</div>
+                </div>
 
-                <input type="text" id="kbSearchBox" placeholder="Search documents..." oninput="searchKBDocuments()" style="flex: 1; padding: 0.75rem 1rem; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 0.95rem;">
+                <div style="display: flex; gap: 1rem; margin-bottom: 2rem; align-items: center;">
+                    <select id="kbFolderView" onchange="loadKBFolders()" style="padding: 0.75rem 1rem; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 0.95rem; width: 180px;">
+                        <option value="team">By Team</option>
+                        <option value="project">By Project</option>
+                        <option value="type">By Type</option>
+                        <option value="date">By Date</option>
+                        <option value="person">By Person</option>
+                    </select>
+
+                    <input type="text" id="kbSearchBox" placeholder="Search documents..." oninput="searchKBDocuments()" style="flex: 1; padding: 0.75rem 1rem; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 0.95rem;">
+                </div>
+
+                <div id="kbFoldersContainer" style="margin-top: 2rem;">
+                    <div style="text-align: center; padding: 3rem; color: #666;">Loading documents...</div>
+                </div>
             </div>
 
-            <div id="kbFoldersContainer" style="margin-top: 2rem;">
-                <div style="text-align: center; padding: 3rem; color: #666;">Loading documents...</div>
+            <!-- Chat View (NEW) -->
+            <div id="chatView" class="kb-view" style="display: none;">
+                <div class="chat-container" style="display: grid; grid-template-columns: 280px 1fr; gap: 0; height: calc(100vh - 320px); border: 1px solid #e0e0e0; border-radius: 12px; overflow: hidden;">
+
+                    <!-- Conversation List Sidebar -->
+                    <div class="conversations-sidebar" style="border-right: 1px solid #e0e0e0; background: #f8f9fa; overflow-y: auto;">
+                        <div style="padding: 1rem; border-bottom: 1px solid #e0e0e0; display: flex; justify-content: space-between; align-items: center;">
+                            <h3 style="font-size: 1rem; font-weight: 600;">Conversations</h3>
+                            <button onclick="createNewConversation()" style="background: black; color: white; border: none; width: 32px; height: 32px; border-radius: 6px; cursor: pointer; font-size: 1.2rem; transition: all 0.2s;">+</button>
+                        </div>
+                        <div id="conversationsList" style="padding: 0.5rem;">
+                            <div style="text-align: center; padding: 2rem 1rem; color: #666; font-size: 0.875rem;">
+                                No conversations yet.<br>Click + to start.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Chat Main Area -->
+                    <div class="chat-main" style="display: flex; flex-direction: column; background: white;">
+
+                        <!-- Messages Area -->
+                        <div id="messagesArea" style="flex: 1; overflow-y: auto; padding: 1.5rem;">
+                            <div class="empty-state" style="text-align: center; padding: 3rem 1rem; color: #666;">
+                                <h3 style="font-size: 1.25rem; margin-bottom: 1rem;">Ask a question about your documents</h3>
+                                <p style="margin-bottom: 1.5rem;">Examples:</p>
+                                <div style="display: flex; flex-direction: column; gap: 0.75rem; max-width: 500px; margin: 0 auto;">
+                                    <button onclick="askExample(\\'What are our Q1 priorities?\\')" style="padding: 0.75rem; background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 8px; cursor: pointer; text-align: left; transition: all 0.2s;">
+                                        "What are our Q1 priorities?"
+                                    </button>
+                                    <button onclick="askExample(\\'Who knows about TypeScript?\\')" style="padding: 0.75rem; background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 8px; cursor: pointer; text-align: left; transition: all 0.2s;">
+                                        "Who knows about TypeScript?"
+                                    </button>
+                                    <button onclick="askExample(\\'Summarize the marketing report\\')" style="padding: 0.75rem; background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 8px; cursor: pointer; text-align: left; transition: all 0.2s;">
+                                        "Summarize the marketing report"
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Message Input Area -->
+                        <div style="border-top: 1px solid #e0e0e0; padding: 1rem; background: #f8f9fa;">
+                            <div style="display: flex; gap: 0.5rem; align-items: flex-end;">
+                                <textarea
+                                    id="messageInput"
+                                    placeholder="Ask a question about your documents or team..."
+                                    style="flex: 1; min-height: 60px; max-height: 150px; padding: 0.75rem; border: 1px solid #e0e0e0; border-radius: 8px; resize: vertical; font-family: inherit; font-size: 0.95rem;"
+                                    onkeydown="if(event.key === \\'Enter\\' && !event.shiftKey) { event.preventDefault(); sendChatMessage(); }"
+                                ></textarea>
+                                <button
+                                    onclick="sendChatMessage()"
+                                    id="sendBtn"
+                                    style="padding: 0.75rem 1.5rem; background: black; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; min-width: 80px; height: 60px;">
+                                    Send
+                                </button>
+                            </div>
+                            <div style="margin-top: 0.5rem; font-size: 0.75rem; color: #666;">
+                                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                                    <input type="checkbox" id="useRagMode" checked>
+                                    Use simple RAG (faster, document Q&A only)
+                                </label>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -12174,6 +12254,328 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             }}
         }}
 
+        // ========================================================================
+        // CHAT FUNCTIONS (Phase 7)
+        // ========================================================================
+
+        // Global chat state
+        let currentConversationId = null;
+        let conversations = [];
+
+        // Switch between Documents and Chat views
+        function switchKBView(view) {{
+            const documentsView = document.getElementById('documentsView');
+            const chatView = document.getElementById('chatView');
+            const documentsTab = document.getElementById('documentsSubtab');
+            const chatTab = document.getElementById('chatSubtab');
+
+            if (view === 'documents') {{
+                documentsView.style.display = 'block';
+                chatView.style.display = 'none';
+                documentsTab.classList.add('active');
+                documentsTab.style.borderBottomColor = 'black';
+                documentsTab.style.fontWeight = '600';
+                documentsTab.style.color = 'black';
+                chatTab.classList.remove('active');
+                chatTab.style.borderBottomColor = 'transparent';
+                chatTab.style.fontWeight = '500';
+                chatTab.style.color = '#666';
+            }} else {{
+                documentsView.style.display = 'none';
+                chatView.style.display = 'block';
+                documentsTab.classList.remove('active');
+                documentsTab.style.borderBottomColor = 'transparent';
+                documentsTab.style.fontWeight = '500';
+                documentsTab.style.color = '#666';
+                chatTab.classList.add('active');
+                chatTab.style.borderBottomColor = 'black';
+                chatTab.style.fontWeight = '600';
+                chatTab.style.color = 'black';
+
+                // Load conversations on first view
+                if (conversations.length === 0) {{
+                    loadConversations();
+                }}
+            }}
+        }}
+
+        // Load all conversations
+        async function loadConversations() {{
+            try {{
+                const response = await fetch(`/api/chat/conversations?org_id=${{orgId}}`);
+                const data = await response.json();
+                conversations = data.conversations || [];
+
+                renderConversationsList();
+            }} catch (error) {{
+                console.error('Error loading conversations:', error);
+            }}
+        }}
+
+        // Render conversations list
+        function renderConversationsList() {{
+            const container = document.getElementById('conversationsList');
+
+            if (conversations.length === 0) {{
+                container.innerHTML = `
+                    <div style="text-align: center; padding: 2rem 1rem; color: #666; font-size: 0.875rem;">
+                        No conversations yet.<br>Click + to start.
+                    </div>
+                `;
+                return;
+            }}
+
+            container.innerHTML = conversations.map(conv => `
+                <div class="conversation-item ${{conv.id === currentConversationId ? 'active' : ''}}"
+                     onclick="loadConversation(${{conv.id}})"
+                     style="padding: 0.75rem; margin-bottom: 0.5rem; background: ${{conv.id === currentConversationId ? 'white' : 'transparent'}}; border-radius: 8px; cursor: pointer; transition: all 0.2s; border: 1px solid ${{conv.id === currentConversationId ? '#000' : 'transparent'}};">
+                    <div style="font-weight: 600; font-size: 0.875rem; margin-bottom: 0.25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                        ${{conv.title || 'Untitled Conversation'}}
+                    </div>
+                    <div style="font-size: 0.75rem; color: #666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                        ${{conv.last_message_preview || 'No messages yet'}}
+                    </div>
+                </div>
+            `).join('');
+        }}
+
+        // Create new conversation
+        async function createNewConversation() {{
+            try {{
+                const response = await fetch('/api/chat/conversations', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{
+                        org_id: orgId,
+                        title: 'New Conversation'
+                    }})
+                }});
+
+                const data = await response.json();
+                currentConversationId = data.conversation_id;
+
+                // Reload conversations
+                await loadConversations();
+
+                // Clear messages
+                document.getElementById('messagesArea').innerHTML = '<div style="text-align: center; padding: 2rem; color: #666;">Start the conversation!</div>';
+                document.getElementById('messageInput').focus();
+
+            }} catch (error) {{
+                console.error('Error creating conversation:', error);
+                alert('Failed to create conversation');
+            }}
+        }}
+
+        // Load conversation messages
+        async function loadConversation(conversationId) {{
+            currentConversationId = conversationId;
+            renderConversationsList();
+
+            try {{
+                const response = await fetch(`/api/chat/${{conversationId}}/messages`);
+                const data = await response.json();
+
+                renderMessages(data.messages || []);
+            }} catch (error) {{
+                console.error('Error loading conversation:', error);
+            }}
+        }}
+
+        // Render messages
+        function renderMessages(messages) {{
+            const container = document.getElementById('messagesArea');
+
+            if (messages.length === 0) {{
+                container.innerHTML = '<div style="text-align: center; padding: 2rem; color: #666;">No messages yet. Start the conversation!</div>';
+                return;
+            }}
+
+            container.innerHTML = messages.map(msg => {{
+                if (msg.role === 'user') {{
+                    return `
+                        <div class="message user-message" style="margin-bottom: 1.5rem;">
+                            <div style="background: #f0f0f0; padding: 1rem; border-radius: 8px; max-width: 70%; margin-left: auto;">
+                                ${{escapeHtml(msg.content)}}
+                            </div>
+                        </div>
+                    `;
+                }} else {{
+                    const reasoning = msg.reasoning && msg.reasoning.steps ? `
+                        <details style="margin-top: 1rem; font-size: 0.875rem; color: #666;">
+                            <summary style="cursor: pointer; font-weight: 600;">🔍 How I figured this out</summary>
+                            <div style="margin-top: 0.5rem; padding: 0.75rem; background: #f8f9fa; border-radius: 6px;">
+                                ${{msg.reasoning.steps.map(step => `<div style="margin-bottom: 0.25rem;">✓ ${{step}}</div>`).join('')}}
+                            </div>
+                        </details>
+                    ` : '';
+
+                    const hasSources = msg.sources && (msg.sources.documents.length > 0 || msg.sources.employees.length > 0);
+                    const sources = hasSources ? `
+                        <details style="margin-top: 1rem; font-size: 0.875rem;">
+                            <summary style="cursor: pointer; font-weight: 600;">📚 Sources</summary>
+                            <div style="margin-top: 0.5rem; padding: 0.75rem; background: #fafafa; border-radius: 6px;">
+                                ${{msg.sources.documents.map(doc => `
+                                    <div style="margin-bottom: 0.5rem; padding: 0.5rem; border-left: 2px solid #ccc; padding-left: 0.75rem;">
+                                        <strong>${{doc.filename}}</strong> ${{doc.page ? `(page ${{doc.page}})` : ''}}
+                                    </div>
+                                `).join('')}}
+                                ${{msg.sources.employees.map(emp => `
+                                    <div style="margin-bottom: 0.5rem; padding: 0.5rem; border-left: 2px solid #ccc; padding-left: 0.75rem;">
+                                        <strong>${{emp.name}}</strong> - ${{emp.title}}
+                                    </div>
+                                `).join('')}}
+                            </div>
+                        </details>
+                    ` : '';
+
+                    return `
+                        <div class="message assistant-message" style="margin-bottom: 1.5rem;">
+                            <div style="padding: 1rem; border-left: 3px solid black; max-width: 85%;">
+                                <div style="margin-bottom: 0.5rem;">${{escapeHtml(msg.content)}}</div>
+                                ${{reasoning}}
+                                ${{sources}}
+                            </div>
+                        </div>
+                    `;
+                }}
+            }}).join('');
+
+            // Scroll to bottom
+            container.scrollTop = container.scrollHeight;
+        }}
+
+        // Send message
+        async function sendChatMessage() {{
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+
+            if (!message) return;
+
+            if (!currentConversationId) {{
+                await createNewConversation();
+            }}
+
+            const sendBtn = document.getElementById('sendBtn');
+            const useRag = document.getElementById('useRagMode').checked;
+
+            // Disable input
+            input.disabled = true;
+            sendBtn.disabled = true;
+            sendBtn.textContent = 'Sending...';
+
+            // Add user message to UI immediately
+            const messagesArea = document.getElementById('messagesArea');
+            const userMsgHtml = `
+                <div class="message user-message" style="margin-bottom: 1.5rem;">
+                    <div style="background: #f0f0f0; padding: 1rem; border-radius: 8px; max-width: 70%; margin-left: auto;">
+                        ${{escapeHtml(message)}}
+                    </div>
+                </div>
+            `;
+
+            if (messagesArea.innerHTML.includes('Start the conversation') || messagesArea.innerHTML.includes('No messages yet')) {{
+                messagesArea.innerHTML = userMsgHtml;
+            }} else {{
+                messagesArea.innerHTML += userMsgHtml;
+            }}
+
+            messagesArea.scrollTop = messagesArea.scrollHeight;
+
+            // Clear input
+            input.value = '';
+
+            try {{
+                const response = await fetch(`/api/chat/${{currentConversationId}}/messages`, {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{
+                        message: message,
+                        use_rag: useRag
+                    }})
+                }});
+
+                const data = await response.json();
+
+                // Build sources HTML
+                const hasSources = data.sources && (data.sources.documents.length > 0 || data.sources.employees.length > 0);
+                const sourcesHtml = hasSources ? `
+                    <details style="margin-top: 1rem; font-size: 0.875rem;">
+                        <summary style="cursor: pointer; font-weight: 600;">📚 Sources</summary>
+                        <div style="margin-top: 0.5rem; padding: 0.75rem; background: #fafafa; border-radius: 6px;">
+                            ${{data.sources.documents.map(doc => `
+                                <div style="margin-bottom: 0.5rem; padding: 0.5rem; border-left: 2px solid #ccc; padding-left: 0.75rem;">
+                                    <strong>${{doc.filename}}</strong> ${{doc.page ? `(page ${{doc.page}})` : ''}}
+                                </div>
+                            `).join('')}}
+                            ${{data.sources.employees ? data.sources.employees.map(emp => `
+                                <div style="margin-bottom: 0.5rem; padding: 0.5rem; border-left: 2px solid #ccc; padding-left: 0.75rem;">
+                                    <strong>${{emp.name}}</strong> - ${{emp.title}}
+                                </div>
+                            `).join('') : ''}}
+                        </div>
+                    </details>
+                ` : '';
+
+                const reasoningHtml = data.reasoning_steps ? `
+                    <details style="margin-top: 1rem; font-size: 0.875rem; color: #666;">
+                        <summary style="cursor: pointer; font-weight: 600;">🔍 How I figured this out</summary>
+                        <div style="margin-top: 0.5rem; padding: 0.75rem; background: #f8f9fa; border-radius: 6px;">
+                            ${{data.reasoning_steps.map(step => `<div style="margin-bottom: 0.25rem;">✓ ${{step}}</div>`).join('')}}
+                        </div>
+                    </details>
+                ` : '';
+
+                // Add assistant response
+                messagesArea.innerHTML += `
+                    <div class="message assistant-message" style="margin-bottom: 1.5rem;">
+                        <div style="padding: 1rem; border-left: 3px solid black; max-width: 85%;">
+                            <div>${{escapeHtml(data.answer)}}</div>
+                            ${{reasoningHtml}}
+                            ${{sourcesHtml}}
+                        </div>
+                    </div>
+                `;
+
+                messagesArea.scrollTop = messagesArea.scrollHeight;
+
+                // Update conversation list
+                await loadConversations();
+
+            }} catch (error) {{
+                console.error('Error sending message:', error);
+                messagesArea.innerHTML += `
+                    <div class="message assistant-message" style="margin-bottom: 1.5rem;">
+                        <div style="padding: 1rem; border-left: 3px solid #ef4444; max-width: 85%; background: #fef2f2;">
+                            Error: ${{error.message || 'Failed to send message'}}
+                        </div>
+                    </div>
+                `;
+            }} finally {{
+                input.disabled = false;
+                sendBtn.disabled = false;
+                sendBtn.textContent = 'Send';
+                input.focus();
+            }}
+        }}
+
+        // Example question shortcuts
+        function askExample(question) {{
+            document.getElementById('messageInput').value = question;
+            sendChatMessage();
+        }}
+
+        // HTML escape utility
+        function escapeHtml(text) {{
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }}
+
+        // ========================================================================
+        // THREE.JS SETUP
+        // ========================================================================
+
         // Three.js Setup
         const canvas = document.getElementById('three-canvas');
         const scene = new THREE.Scene();
@@ -12369,12 +12771,23 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
 
         // Mode switching
         function switchMode(mode) {{
+            console.log('switchMode called with mode:', mode);
             currentMode = mode;
 
-            // Update button states
-            document.getElementById('simulationModeBtn').classList.toggle('active', mode === 'simulation');
-            document.getElementById('partyModeBtn').classList.toggle('active', mode === 'party');
-            document.getElementById('networkingModeBtn').classList.toggle('active', mode === 'networking');
+            // Update button states (with null checks for buttons that may not exist)
+            const simulationBtn = document.getElementById('simulationModeBtn');
+            const partyBtn = document.getElementById('partyModeBtn');
+            const networkingBtn = document.getElementById('networkingModeBtn');
+
+            console.log('Buttons found:', {{
+                simulation: !!simulationBtn,
+                party: !!partyBtn,
+                networking: !!networkingBtn
+            }});
+
+            if (simulationBtn) simulationBtn.classList.toggle('active', mode === 'simulation');
+            if (partyBtn) partyBtn.classList.toggle('active', mode === 'party');
+            if (networkingBtn) networkingBtn.classList.toggle('active', mode === 'networking');
 
             // Update placeholder and button text
             const scenarioInput = document.getElementById('scenarioInput');
@@ -12386,9 +12799,11 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                 attendeeInput.style.display = 'none';
                 btn.textContent = 'Analyze Compatibility';
             }} else if (mode === 'networking') {{
+                console.log('Switching to networking mode UI');
                 scenarioInput.placeholder = 'Enter your networking goal... (e.g., "Find potential investors for my startup")';
                 attendeeInput.style.display = 'block';
                 btn.textContent = 'Analyze Networking Matches';
+                console.log('Attendee input display:', attendeeInput.style.display);
             }} else {{
                 scenarioInput.placeholder = 'Enter a scenario to simulate... (e.g., "A major deadline is moved up by two weeks")';
                 attendeeInput.style.display = 'none';
@@ -18706,6 +19121,384 @@ def system_status():
         status['services']['pinecone'] = f'error: {str(e)}'
 
     return jsonify(status)
+
+
+# ============================================================================
+# PHASE 7: CHAT API ENDPOINTS
+# ============================================================================
+
+@app.route('/api/chat/conversations', methods=['GET'])
+@login_required
+def get_conversations():
+    """
+    Get all conversations for the user in their organization
+
+    Query params:
+        org_id: Organization ID (required)
+        include_archived: Include archived conversations (default: false)
+    """
+    user_id = session['user_id']
+    org_id = request.args.get('org_id', type=int)
+    include_archived = request.args.get('include_archived', 'false').lower() == 'true'
+
+    if not org_id:
+        return jsonify({'error': 'org_id is required'}), 400
+
+    # Verify user has access to organization
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT 1 FROM organization_members
+        WHERE organization_id = %s AND user_id = %s AND is_active = TRUE
+    ''', (org_id, user_id))
+
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({'error': 'Access denied'}), 403
+
+    # Get conversations
+    archived_filter = '' if include_archived else 'AND is_archived = FALSE'
+
+    cursor.execute(f'''
+        SELECT
+            cc.id,
+            cc.conversation_title,
+            cc.created_at,
+            cc.last_message_at,
+            cc.is_archived,
+            (
+                SELECT content
+                FROM chat_messages
+                WHERE conversation_id = cc.id
+                ORDER BY timestamp DESC
+                LIMIT 1
+            ) as last_message_preview
+        FROM chat_conversations cc
+        WHERE cc.organization_id = %s AND cc.user_id = %s {archived_filter}
+        ORDER BY cc.last_message_at DESC
+    ''', (org_id, user_id))
+
+    conversations = cursor.fetchall()
+    conn.close()
+
+    return jsonify({
+        'conversations': [
+            {
+                'id': conv['id'],
+                'title': conv['conversation_title'],
+                'last_message_preview': conv['last_message_preview'][:100] + '...'
+                    if conv['last_message_preview'] and len(conv['last_message_preview']) > 100
+                    else conv['last_message_preview'],
+                'last_message_at': conv['last_message_at'].isoformat() if conv['last_message_at'] else None,
+                'created_at': conv['created_at'].isoformat() if conv['created_at'] else None,
+                'is_archived': conv['is_archived']
+            }
+            for conv in conversations
+        ]
+    })
+
+
+@app.route('/api/chat/conversations', methods=['POST'])
+@login_required
+def create_conversation():
+    """
+    Create a new conversation
+
+    Request body:
+    {
+        "org_id": 123,
+        "title": "Optional conversation title"
+    }
+    """
+    user_id = session['user_id']
+    data = request.json
+
+    if not data or 'org_id' not in data:
+        return jsonify({'error': 'org_id is required'}), 400
+
+    org_id = data['org_id']
+    title = data.get('title', 'New Conversation')
+
+    # Verify user has access to organization
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT 1 FROM organization_members
+        WHERE organization_id = %s AND user_id = %s AND is_active = TRUE
+    ''', (org_id, user_id))
+
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({'error': 'Access denied'}), 403
+
+    # Create conversation
+    cursor.execute('''
+        INSERT INTO chat_conversations (organization_id, user_id, conversation_title)
+        VALUES (%s, %s, %s)
+        RETURNING id, conversation_title, created_at
+    ''', (org_id, user_id, title))
+
+    conversation = cursor.fetchone()
+    conn.commit()
+    conn.close()
+
+    return jsonify({
+        'conversation_id': conversation['id'],
+        'title': conversation['conversation_title'],
+        'created_at': conversation['created_at'].isoformat() if conversation['created_at'] else None
+    }), 201
+
+
+@app.route('/api/chat/<int:conversation_id>/messages', methods=['GET'])
+@login_required
+def get_messages(conversation_id):
+    """Get all messages in a conversation"""
+    user_id = session['user_id']
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Verify access
+    cursor.execute('''
+        SELECT cc.*, om.user_id
+        FROM chat_conversations cc
+        JOIN organization_members om ON cc.organization_id = om.organization_id
+        WHERE cc.id = %s AND om.user_id = %s AND om.is_active = TRUE
+    ''', (conversation_id, user_id))
+
+    conversation = cursor.fetchone()
+
+    if not conversation:
+        conn.close()
+        return jsonify({'error': 'Conversation not found or access denied'}), 404
+
+    # Get messages
+    cursor.execute('''
+        SELECT
+            id, role, content, reasoning_json,
+            source_documents_json, source_employees_json, source_external_json,
+            timestamp
+        FROM chat_messages
+        WHERE conversation_id = %s
+        ORDER BY timestamp ASC
+    ''', (conversation_id,))
+
+    messages = cursor.fetchall()
+    conn.close()
+
+    return jsonify({
+        'conversation_id': conversation_id,
+        'title': conversation['conversation_title'],
+        'messages': [
+            {
+                'id': msg['id'],
+                'role': msg['role'],
+                'content': msg['content'],
+                'reasoning': json.loads(msg['reasoning_json']) if msg['reasoning_json'] else None,
+                'sources': {
+                    'documents': json.loads(msg['source_documents_json']) if msg['source_documents_json'] else [],
+                    'employees': json.loads(msg['source_employees_json']) if msg['source_employees_json'] else [],
+                    'external': json.loads(msg['source_external_json']) if msg['source_external_json'] else []
+                },
+                'timestamp': msg['timestamp'].isoformat() if msg['timestamp'] else None
+            }
+            for msg in messages
+        ]
+    })
+
+
+@app.route('/api/chat/<int:conversation_id>/messages', methods=['POST'])
+@login_required
+def send_message(conversation_id):
+    """
+    Send a message in a conversation
+
+    Request body:
+    {
+        "message": "User's question",
+        "use_rag": true  # optional, use simple RAG vs full multi-agent (default: false)
+    }
+    """
+    user_id = session['user_id']
+    data = request.json
+
+    if not data or 'message' not in data:
+        return jsonify({'error': 'message is required'}), 400
+
+    message = data['message']
+    use_rag = data.get('use_rag', False)
+
+    if not message or not message.strip():
+        return jsonify({'error': 'Message cannot be empty'}), 400
+
+    # Verify access
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT cc.organization_id, om.user_id
+        FROM chat_conversations cc
+        JOIN organization_members om ON cc.organization_id = om.organization_id
+        WHERE cc.id = %s AND cc.user_id = %s AND om.user_id = %s AND om.is_active = TRUE
+    ''', (conversation_id, user_id, user_id))
+
+    conversation = cursor.fetchone()
+    conn.close()
+
+    if not conversation:
+        return jsonify({'error': 'Conversation not found or access denied'}), 404
+
+    org_id = conversation['organization_id']
+
+    try:
+        # Initialize services
+        from vector_store import VectorStore
+        from embedding_service import EmbeddingService
+
+        vector_store = VectorStore(index_name="flock-knowledge-base")
+        embedding_service = EmbeddingService(model="text-embedding-3-large")
+
+        if use_rag:
+            # Simple RAG pipeline
+            from rag_pipeline import RAGPipeline
+
+            rag = RAGPipeline(vector_store, embedding_service)
+            result = rag.query(org_id=org_id, query=message, top_k=10)
+
+            # Store messages
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            # Store user message
+            cursor.execute('''
+                INSERT INTO chat_messages (conversation_id, role, content, timestamp)
+                VALUES (%s, %s, %s, NOW())
+            ''', (conversation_id, 'user', message))
+
+            # Store assistant message with sources
+            cursor.execute('''
+                INSERT INTO chat_messages (
+                    conversation_id, role, content, source_documents_json, timestamp
+                )
+                VALUES (%s, %s, %s, %s, NOW())
+                RETURNING id, timestamp
+            ''', (
+                conversation_id,
+                'assistant',
+                result['answer'],
+                json.dumps(result['sources'])
+            ))
+
+            assistant_msg = cursor.fetchone()
+
+            # Update conversation timestamp
+            cursor.execute('''
+                UPDATE chat_conversations SET last_message_at = NOW()
+                WHERE id = %s
+            ''', (conversation_id,))
+
+            conn.commit()
+            conn.close()
+
+            return jsonify({
+                'message_id': assistant_msg['id'],
+                'answer': result['answer'],
+                'sources': {
+                    'documents': result['sources'],
+                    'employees': [],
+                    'external': []
+                },
+                'timestamp': assistant_msg['timestamp'].isoformat() if assistant_msg['timestamp'] else None,
+                'usage': result.get('usage', {})
+            })
+        else:
+            # Full multi-agent system
+            from chat_agents import MasterOrchestrator
+
+            orchestrator = MasterOrchestrator(vector_store, embedding_service)
+            result = orchestrator.process_query(
+                conversation_id=conversation_id,
+                org_id=org_id,
+                user_id=user_id,
+                query=message
+            )
+
+            return jsonify({
+                'answer': result['answer'],
+                'reasoning_steps': result['reasoning_steps'],
+                'sources': result['sources'],
+                'confidence': result['confidence']
+            })
+
+    except Exception as e:
+        print(f"Error processing message: {e}")
+        return jsonify({'error': f'Error processing message: {str(e)}'}), 500
+
+
+@app.route('/api/chat/<int:conversation_id>/archive', methods=['POST'])
+@login_required
+def archive_conversation(conversation_id):
+    """Archive a conversation"""
+    user_id = session['user_id']
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Verify access and ownership
+    cursor.execute('''
+        SELECT 1 FROM chat_conversations
+        WHERE id = %s AND user_id = %s
+    ''', (conversation_id, user_id))
+
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({'error': 'Conversation not found or access denied'}), 404
+
+    # Archive conversation
+    cursor.execute('''
+        UPDATE chat_conversations
+        SET is_archived = TRUE
+        WHERE id = %s
+    ''', (conversation_id,))
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({'success': True, 'conversation_id': conversation_id})
+
+
+@app.route('/api/chat/<int:conversation_id>/unarchive', methods=['POST'])
+@login_required
+def unarchive_conversation(conversation_id):
+    """Unarchive a conversation"""
+    user_id = session['user_id']
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Verify access and ownership
+    cursor.execute('''
+        SELECT 1 FROM chat_conversations
+        WHERE id = %s AND user_id = %s
+    ''', (conversation_id, user_id))
+
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({'error': 'Conversation not found or access denied'}), 404
+
+    # Unarchive conversation
+    cursor.execute('''
+        UPDATE chat_conversations
+        SET is_archived = FALSE
+        WHERE id = %s
+    ''', (conversation_id,))
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({'success': True, 'conversation_id': conversation_id})
 
 
 # ============================================================================
