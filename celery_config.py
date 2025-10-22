@@ -48,7 +48,6 @@ def make_celery(app_name='flock'):
 
         # Result backend
         result_expires=3600,  # Results expire after 1 hour
-        result_backend_transport_options={'master_name': 'mymaster'},
 
         # Task routing (can add custom routing later)
         task_routes={
@@ -65,6 +64,18 @@ def make_celery(app_name='flock'):
         # Retry configuration
         task_acks_late=True,
         task_reject_on_worker_lost=True,
+
+        # Connection retry settings for Celery 6.0+ compatibility
+        broker_connection_retry_on_startup=True,
+        broker_connection_retry=True,
+        broker_connection_max_retries=10,
+
+        # Health check to detect broken connections
+        broker_heartbeat=10,
+        broker_pool_limit=10,
+
+        # Worker cancel tasks on connection loss
+        worker_cancel_long_running_tasks_on_connection_loss=False,
     )
 
     return celery_app

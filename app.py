@@ -17407,12 +17407,17 @@ def upload_documents():
                 failed_files.append({'filename': file.filename, 'error': error_msg})
                 continue
 
+            # Get actual file size by seeking to end
+            file.seek(0, 2)  # Seek to end of file
+            file_size = file.tell()
+            file.seek(0)  # Reset to beginning
+
             # Create document record
             cursor.execute('''
                 INSERT INTO documents (organization_id, filename, file_type, file_size, uploaded_by, storage_url, processing_status)
                 VALUES (%s, %s, %s, %s, %s, %s, 'pending')
                 RETURNING id
-            ''', (org_id, file.filename, file_type, file.content_length or 0, user_id, 'pending'))
+            ''', (org_id, file.filename, file_type, file_size, user_id, 'pending'))
 
             doc_id = cursor.fetchone()['id']
             conn.commit()
