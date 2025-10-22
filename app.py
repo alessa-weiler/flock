@@ -11378,6 +11378,37 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
         }}
 
+        .sidebar-toggle-btn {{
+            position: fixed;
+            left: 280px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(255, 255, 255, 0.95);
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            border-left: none;
+            border-radius: 0 8px 8px 0;
+            width: 24px;
+            height: 48px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+            z-index: 1000;
+            font-size: 0.875rem;
+            color: #666;
+        }}
+
+        .sidebar-toggle-btn:hover {{
+            background: white;
+            color: black;
+            box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1);
+        }}
+
+        .left-sidebar.collapsed + .sidebar-toggle-btn {{
+            left: 0;
+        }}
+
         .simulations-list {{
             padding: 1rem;
             flex: 1;
@@ -11455,6 +11486,12 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             flex-direction: column;
             background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%);
             position: relative;
+            margin-left: 0;
+            transition: margin-left 0.3s ease;
+        }}
+
+        .left-sidebar.collapsed ~ .center-content {{
+            margin-left: -280px;
         }}
 
         .org-header-bar {{
@@ -11871,6 +11908,9 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                     {simulations_html}
                 </div>
             </div>
+
+            <!-- Sidebar Toggle Button -->
+            <button class="sidebar-toggle-btn" id="sidebarToggleBtn" onclick="toggleLeftSidebar()" title="Toggle Chats">‹</button>
 
             <!-- Center: Three.js Visualization -->
             <div class="center-content">
@@ -12403,7 +12443,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                 }} else {{
                     const reasoning = msg.reasoning && msg.reasoning.steps ? `
                         <details style="margin-top: 1rem; font-size: 0.875rem; color: #666;">
-                            <summary style="cursor: pointer; font-weight: 600;">🔍 How I figured this out</summary>
+                            <summary style="cursor: pointer; font-weight: 600;"> How I figured this out</summary>
                             <div style="margin-top: 0.5rem; padding: 0.75rem; background: #f8f9fa; border-radius: 6px;">
                                 ${{msg.reasoning.steps.map(step => `<div style="margin-bottom: 0.25rem;">✓ ${{step}}</div>`).join('')}}
                             </div>
@@ -12413,7 +12453,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                     const hasSources = msg.sources && (msg.sources.documents.length > 0 || msg.sources.employees.length > 0);
                     const sources = hasSources ? `
                         <details style="margin-top: 1rem; font-size: 0.875rem;">
-                            <summary style="cursor: pointer; font-weight: 600;">📚 Sources</summary>
+                            <summary style="cursor: pointer; font-weight: 600;"> Sources</summary>
                             <div style="margin-top: 0.5rem; padding: 0.75rem; background: #fafafa; border-radius: 6px;">
                                 ${{msg.sources.documents.map(doc => `
                                     <div style="margin-bottom: 0.5rem; padding: 0.5rem; border-left: 2px solid #ccc; padding-left: 0.75rem;">
@@ -12501,7 +12541,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                 const hasSources = data.sources && (data.sources.documents.length > 0 || data.sources.employees.length > 0);
                 const sourcesHtml = hasSources ? `
                     <details style="margin-top: 1rem; font-size: 0.875rem;">
-                        <summary style="cursor: pointer; font-weight: 600;">📚 Sources</summary>
+                        <summary style="cursor: pointer; font-weight: 600;"> Sources</summary>
                         <div style="margin-top: 0.5rem; padding: 0.75rem; background: #fafafa; border-radius: 6px;">
                             ${{data.sources.documents.map(doc => `
                                 <div style="margin-bottom: 0.5rem; padding: 0.5rem; border-left: 2px solid #ccc; padding-left: 0.75rem;">
@@ -12519,7 +12559,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
 
                 const reasoningHtml = data.reasoning_steps ? `
                     <details style="margin-top: 1rem; font-size: 0.875rem; color: #666;">
-                        <summary style="cursor: pointer; font-weight: 600;">🔍 How I figured this out</summary>
+                        <summary style="cursor: pointer; font-weight: 600;"> How I figured this out</summary>
                         <div style="margin-top: 0.5rem; padding: 0.75rem; background: #f8f9fa; border-radius: 6px;">
                             ${{data.reasoning_steps.map(step => `<div style="margin-bottom: 0.25rem;">✓ ${{step}}</div>`).join('')}}
                         </div>
@@ -12579,7 +12619,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
         // Three.js Setup
         const canvas = document.getElementById('three-canvas');
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0xf8f9fa);
+        scene.background = new THREE.Color(0xffffff);
 
         // Camera setup
         const camera = new THREE.PerspectiveCamera(
@@ -13031,7 +13071,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             let matchesHtml = '';
             compatibility.top_matches.forEach((match, index) => {{
                 matchesHtml += `
-                    <div style="margin-bottom: 1rem; padding: 1rem; background: #f8f9fa; border-radius: 8px;">
+                    <div style="margin-bottom: 1rem; padding: 1rem; background: #ffffff; border-radius: 8px;">
                         <div style="font-weight: 600; margin-bottom: 0.5rem;">${{index + 1}}. ${{match.name}}</div>
                         <div style="font-size: 0.875rem; color: #666; margin-bottom: 0.5rem;">
                             Compatibility: ${{(match.score * 100).toFixed(0)}}%
@@ -13127,7 +13167,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             let recsHtml = '';
             recommendations.top_matches.forEach((match, index) => {{
                 recsHtml += `
-                    <div style="margin-bottom: 1rem; padding: 1rem; background: #f8f9fa; border-radius: 8px;">
+                    <div style="margin-bottom: 1rem; padding: 1rem; background: #ffffff; border-radius: 8px;">
                         <div style="font-weight: 600; margin-bottom: 0.5rem;">${{index + 1}}. ${{match.name}}</div>
                         <div style="font-size: 0.875rem; color: #666; margin-bottom: 0.25rem;">
                             ${{match.title || 'Attendee'}}
@@ -13262,6 +13302,20 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             }});
 
             document.getElementById('rightSidebar').classList.remove('visible');
+        }}
+
+        function toggleLeftSidebar() {{
+            const sidebar = document.getElementById('leftSidebar');
+            const toggleBtn = document.getElementById('sidebarToggleBtn');
+
+            sidebar.classList.toggle('collapsed');
+
+            // Update button text based on state
+            if (sidebar.classList.contains('collapsed')) {{
+                toggleBtn.innerHTML = '›';
+            }} else {{
+                toggleBtn.innerHTML = '‹';
+            }}
         }}
 
         function copyInviteLink() {{
