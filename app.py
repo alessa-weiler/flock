@@ -11195,13 +11195,8 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
         </div>
     '''
 
-    # Tab navigation HTML (only for non-therapy orgs)
-    tabs_html = '' if is_therapy else '''
-    <div class="org-tabs">
-        <button class="org-tab active" onclick="switchOrgTab('team')">Team</button>
-        <button class="org-tab" onclick="switchOrgTab('knowledge')">Knowledge Base</button>
-    </div>
-    '''
+    # No tabs needed anymore - Knowledge Base is integrated into main view
+    tabs_html = ''
 
     # Knowledge Base tab HTML (only for non-therapy orgs)
     knowledge_base_tab = '' if is_therapy else '''
@@ -11543,36 +11538,41 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             border: 1px solid rgba(255, 255, 255, 0.2);
         }}
 
-        .mode-toggle {{
+        .mode-selector {{
             display: flex;
-            gap: 0.5rem;
+            gap: 1rem;
             margin-bottom: 1rem;
-            background: rgba(0, 0, 0, 0.05);
+            padding: 0.75rem;
+            background: rgba(255, 255, 255, 0.9);
             border-radius: 8px;
-            padding: 0.25rem;
+            border: 1px solid rgba(0, 0, 0, 0.1);
         }}
 
-        .mode-btn {{
-            flex: 1;
-            padding: 0.5rem 1rem;
-            border: none;
-            background: transparent;
-            border-radius: 6px;
+        .mode-radio {{
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
             cursor: pointer;
             font-family: "Satoshi", sans-serif;
             font-size: 0.875rem;
-            font-weight: 600;
-            color: #666;
+            font-weight: 500;
+            color: #333;
             transition: all 0.2s ease;
         }}
 
-        .mode-btn.active {{
-            background: black;
-            color: white;
+        .mode-radio input[type="radio"] {{
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+            accent-color: black;
         }}
 
-        .mode-btn:hover:not(.active) {{
-            background: rgba(0, 0, 0, 0.1);
+        .mode-radio:hover {{
+            color: black;
+        }}
+
+        .mode-radio span {{
+            user-select: none;
         }}
 
         .scenario-input {{
@@ -11900,12 +11900,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                 <canvas id="three-canvas"></canvas>
 
                 <div class="simulation-form">
-                    <div class="mode-toggle">
-                        <button class="mode-btn active" id="simulationModeBtn" onclick="switchMode('simulation')">
-                            {simulation_mode_text}
-                        </button>
-                        {networking_mode_btn}
-                    </div>
+                    {mode_selector_html}
                     <textarea
                         class="scenario-input"
                         id="scenarioInput"
@@ -11918,7 +11913,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                         style="display: none; margin-top: 1rem;"
                     ></textarea>
                     <button class="simulate-btn" id="simulateBtn" onclick="runSimulation()">
-                        Simulate Responses
+                        Analyze
                     </button>
                 </div>
             </div>
@@ -12783,40 +12778,21 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             console.log('switchMode called with mode:', mode);
             currentMode = mode;
 
-            // Update button states (with null checks for buttons that may not exist)
-            const simulationBtn = document.getElementById('simulationModeBtn');
-            const partyBtn = document.getElementById('partyModeBtn');
-            const networkingBtn = document.getElementById('networkingModeBtn');
-
-            console.log('Buttons found:', {{
-                simulation: !!simulationBtn,
-                party: !!partyBtn,
-                networking: !!networkingBtn
-            }});
-
-            if (simulationBtn) simulationBtn.classList.toggle('active', mode === 'simulation');
-            if (partyBtn) partyBtn.classList.toggle('active', mode === 'party');
-            if (networkingBtn) networkingBtn.classList.toggle('active', mode === 'networking');
-
-            // Update placeholder and button text
+            // Update placeholder text based on mode
             const scenarioInput = document.getElementById('scenarioInput');
             const attendeeInput = document.getElementById('attendeeInput');
-            const btn = document.getElementById('simulateBtn');
 
             if (mode === 'party') {{
                 scenarioInput.placeholder = 'Party Mode analyzes how compatible each team member is with each other in social settings. Enter a scenario to see compatibility insights...';
                 attendeeInput.style.display = 'none';
-                btn.textContent = 'Analyze Compatibility';
             }} else if (mode === 'networking') {{
                 console.log('Switching to networking mode UI');
                 scenarioInput.placeholder = 'Enter your networking goal... (e.g., "Find potential investors for my startup")';
                 attendeeInput.style.display = 'block';
-                btn.textContent = 'Analyze Networking Matches';
                 console.log('Attendee input display:', attendeeInput.style.display);
             }} else {{
                 scenarioInput.placeholder = 'Enter a scenario to simulate... (e.g., "A major deadline is moved up by two weeks")';
                 attendeeInput.style.display = 'none';
-                btn.textContent = 'Simulate Responses';
             }}
 
             // Clear results and reset view
@@ -12840,7 +12816,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             const btn = document.getElementById('simulateBtn');
 
             btn.disabled = true;
-            btn.textContent = 'Simulating...';
+            btn.textContent = 'Analyzing...';
 
             try {{
                 const response = await fetch('/api/run-simulation', {{
@@ -12896,7 +12872,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                 alert('Failed to run simulation');
             }} finally {{
                 btn.disabled = false;
-                btn.textContent = 'Simulate Responses';
+                btn.textContent = 'Analyze';
             }}
         }}
 
