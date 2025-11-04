@@ -1,17 +1,19 @@
-# Pont - AI-Powered Team Dynamics Platform
+# Flock - AI-Powered Organizational Intelligence Platform
 
-> Understand how your team will respond before it happens.
+> Your organization's knowledge and team dynamics, unified by AI.
 
-Pont uses AI agents to simulate how team members will react to scenarios, engage with new people, and collaborate with each other. Make better decisions with predictive insights into team dynamics.
+Flock combines intelligent document management with personality-driven team insights. It's a dual-purpose platform that adapts to your organization's needs—whether you're managing knowledge and recruiting, or running a therapy practice matching patients with providers.
 
-## 🎯 What Pont Does
+## 🎯 What Flock Does
 
-Pont creates AI-powered simulations of your team members based on deep psychological profiling. It helps teams:
+Flock creates an AI-powered workspace for organizations that need to:
 
-- **Test ideas before implementation**: Simulate how your team/investors will react to a pivot or major change
-- **Optimize team composition**: Discover hidden synergies and predict collaboration dynamics
-- **Match people effectively**: Embed on websites to match patients with therapists, candidates with teams, or clients with service providers
-- **Maximize networking ROI**: Analyze event attendees and recommend who each team member should prioritize meeting
+- **Chat with your organization's knowledge**: Ask questions about documents, policies, and team expertise in natural language
+- **Auto-organize documents**: Documents automatically classify themselves by team, project, type, and time period
+- **Find team expertise**: Semantic search to discover "who knows about Python?" or "who has experience with acquisitions?"
+- **Test ideas before implementation**: AI agents simulate how team members will react to scenarios based on psychological profiles
+- **Match people effectively**: Embed widgets to match patients with therapists, candidates with teams, or clients with service providers
+- **Optimize team dynamics**: Discover collaboration patterns and compatibility through AI-powered networking analysis
 
 ## 🚀 Key Features
 
