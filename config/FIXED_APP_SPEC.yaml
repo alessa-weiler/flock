@@ -2,9 +2,9 @@ alerts:
 - rule: DEPLOYMENT_FAILED
 - rule: DOMAIN_FAILED
 domains:
-- domain: pont.world
+- domain: example.com
   type: PRIMARY
-  zone: pont.world
+  zone: example.com
 envs:
 - key: EMAIL_HOST
   scope: RUN_AND_BUILD_TIME
@@ -14,16 +14,16 @@ envs:
   value: "587"
 - key: EMAIL_USER
   scope: RUN_AND_BUILD_TIME
-  value: alessa@pont-diagnostics.com
+  value: your-email@example.com
 - key: EMAIL_FROM
   scope: RUN_AND_BUILD_TIME
-  value: alessa@pont-diagnostics.com
+  value: your-email@example.com
 - key: BASE_URL
   scope: RUN_AND_BUILD_TIME
   value: http://localhost:8080
 - key: EMAIL_PASSWORD
   scope: RUN_AND_BUILD_TIME
-  value: xhlsbtdhaxzwviqt
+  value: your-email-app-password
 - key: ENCRYPTION_PASSWORD
   scope: RUN_AND_BUILD_TIME
   value: your-super-secure-password-change-this
@@ -38,58 +38,58 @@ envs:
   value: your-database-key
 - key: ENCRYPTION_MASTER_KEY
   scope: RUN_AND_BUILD_TIME
-  value: 1vFS3QxaCwV174cUyrV4hXG_OBjiZwzfXXt6aeHW8Qo=
+  value: your-base64-encoded-encryption-key
 - key: DATABASE_URL
   scope: RUN_AND_BUILD_TIME
-  value: postgresql://doadmin:AVNS_rbZAA35BkBUBJHElomG@db-postgresql-lon1-27386-do-user-23717438-0.l.db.ondigitalocean.com:25060/defaultdb?sslmode=require
+  value: postgresql://username:password@host:port/database?sslmode=require
 - key: ADMIN_PASSWORD
   scope: RUN_AND_BUILD_TIME
-  value: Smartcookie05!
+  value: your-secure-admin-password
 - key: VERIFICATION_EMAIL
   scope: RUN_AND_BUILD_TIME
-  value: alessa@pont-diagnostics.com
+  value: your-email@example.com
 - key: STRIPE_PRICE_ID
   scope: RUN_AND_BUILD_TIME
-  value: price_1S6B3JGwt37RvxTuQIGRtcPT
+  value: price_your_stripe_price_id
 - key: STRIPE_SECRET_KEY
   scope: RUN_AND_BUILD_TIME
-  value: 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
+  value: sk_live_your_stripe_secret_key
 - key: STRIPE_PUBLISHABLE_KEY
   scope: RUN_AND_BUILD_TIME
-  value: pk_live_51RsRP6Gwt37RvxTu4Mlu1LeAC7ChiFF6VSinvTDFat1Wbwl2emZzHCtlkmrDQaMrRnLszDYv2D34wRB33fCthDXa00Un9RUbKe
+  value: pk_live_your_stripe_publishable_key
 - key: STRIPE_WEBHOOK_SECRET
   scope: RUN_AND_BUILD_TIME
-  value: whsec_Rmv8LRiYJjXflRaZN2zGhFt18SfO1bJ3
+  value: whsec_your_webhook_secret
 - key: REDIS_URL
   scope: RUN_AND_BUILD_TIME
-  value: redis://default:C8IIN5Ig8YNsJBHU33bPGw87Q4xbLcfP@redis-17814.c338.eu-west-2-1.ec2.redns.redis-cloud.com:17814
+  value: redis://default:password@host:port
 - key: DO_SPACES_ENDPOINT
   scope: RUN_AND_BUILD_TIME
-  value: https://lon1.digitaloceanspaces.com
+  value: https://region.digitaloceanspaces.com
 - key: DO_SPACES_KEY
   scope: RUN_AND_BUILD_TIME
-  value: DO00WC4UNKCDYWVUM92E
+  value: YOUR_DO_SPACES_KEY
 - key: DO_SPACES_SECRET
   scope: RUN_AND_BUILD_TIME
-  value: Yd0/wQsQ0uwDENeJrs9kyj28IdVojprCwN8pLG+QZpI
+  value: YOUR_DO_SPACES_SECRET
 - key: DO_SPACES_REGION
   scope: RUN_AND_BUILD_TIME
-  value: lon1
+  value: your-region
 - key: DO_SPACES_BUCKET
   scope: RUN_AND_BUILD_TIME
-  value: flock-documents
+  value: your-bucket-name
 - key: PINECONE_API_KEY
   scope: RUN_AND_BUILD_TIME
-  value: pcsk_5EJDyi_QHz7hsp1TSvgPhMLjiwPRNsAM6D59Dh24AAQHxUbg1qooXY4U5ZTppWBRUqAuRL
+  value: pcsk_your_pinecone_api_key
 - key: PINECONE_ENVIRONMENT
   scope: RUN_AND_BUILD_TIME
   value: us-east-1
 - key: PINECONE_INDEX_NAME
   scope: RUN_AND_BUILD_TIME
-  value: flock-knowledge-base
+  value: your-index-name
 - key: OPENAI_API_KEY
   scope: RUN_AND_BUILD_TIME
-  value: YOUR_OPENAI_KEY_HERE
+  value: sk-your-openai-api-key
 features:
 - buildpack-stack=ubuntu-22
 ingress:
@@ -101,14 +101,14 @@ ingress:
         exact: ""
       path:
         prefix: /
-name: sea-turtle-app
+name: your-app-name
 region: lon
 services:
 - environment_slug: python
   github:
     branch: main
     deploy_on_push: true
-    repo: alessa-weiler/flock
+    repo: your-username/your-repo
   http_port: 8080
   instance_count: 1
   instance_size_slug: apps-s-1vcpu-0.5gb
@@ -120,7 +120,7 @@ workers:
   github:
     branch: main
     deploy_on_push: true
-    repo: alessa-weiler/flock
+    repo: your-username/your-repo
   instance_count: 1
   instance_size_slug: apps-s-1vcpu-0.5gb
   name: worker
