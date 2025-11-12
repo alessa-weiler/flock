@@ -73,6 +73,12 @@ credentials.json
 service-account.json
 config.local.json
 
+# Config files with credentials (keep templates only)
+config/*
+!config/*.example
+!config/*.template
+!config/README.md
+
 # -----------------------------------------------------------------------------
 # IDE & Editors
 # -----------------------------------------------------------------------------
