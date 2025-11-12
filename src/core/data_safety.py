@@ -24,11 +24,19 @@ class DataEncryption:
         key_env = os.environ.get('ENCRYPTION_MASTER_KEY')
         if key_env:
             return key_env.encode()
-        
-        # Generate new key if none exists
-        password = os.environ.get('ENCRYPTION_PASSWORD', 'default-change-in-production')
-        salt = os.environ.get('ENCRYPTION_SALT', 'default-salt-change-in-production').encode()
-        
+
+        # Generate key from password and salt - both MUST be set
+        password = os.environ.get('ENCRYPTION_PASSWORD')
+        salt_str = os.environ.get('ENCRYPTION_SALT')
+
+        if not password or not salt_str:
+            raise ValueError(
+                "ENCRYPTION_PASSWORD and ENCRYPTION_SALT environment variables must be set. "
+                "See .env.example for setup instructions."
+            )
+
+        salt = salt_str.encode()
+
         kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
             length=32,
@@ -54,7 +62,12 @@ class DataEncryption:
         """Create one-way hash for matching purposes (cannot be reversed)"""
         if not data:
             return data
-        return hashlib.sha256(f"{data}_{os.environ.get('HASH_SALT', 'default-salt')}".encode()).hexdigest()
+
+        hash_salt = os.environ.get('HASH_SALT')
+        if not hash_salt:
+            raise ValueError("HASH_SALT environment variable must be set. See .env.example for setup instructions.")
+
+        return hashlib.sha256(f"{data}_{hash_salt}".encode()).hexdigest()
     
     def generate_anonymous_id(self) -> str:
         """Generate anonymous ID for user"""
@@ -70,7 +83,7 @@ class GDPRCompliance:
     def export_user_data(self, user_id: int) -> Dict[str, Any]:
         """Export all user data in readable format (GDPR Article 15)"""
         try:
-            conn = get_db_connection()
+            conn = self.get_db_connection()
             cursor = conn.cursor()
             
             # Get user data
@@ -127,7 +140,7 @@ class GDPRCompliance:
     def delete_user_data(self, user_id: int) -> Dict[str, Any]:
         """Permanently delete all user data (GDPR Article 17)"""
         try:
-            conn = get_db_connection()
+            conn = self.get_db_connection()
             cursor = conn.cursor()
             
             # Get anonymous ID

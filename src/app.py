@@ -2,17 +2,12 @@ import os
 import warnings
 
 # Standard library imports
-import base64
-import hashlib
 import json
 import logging
-import math
 import random
-import re
 import secrets
 import smtplib
-import time
-from dataclasses import dataclass
+import threading
 from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -23,22 +18,17 @@ from typing import Any, Dict, List, Optional, Tuple
 import psycopg2
 import requests
 import stripe
-from cryptography.fernet import Fernet
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from dotenv import load_dotenv
 from flask import (Flask, abort, flash, get_flashed_messages, jsonify, redirect,
-                   render_template_string, request, send_from_directory, session, url_for)
+                   request, session, url_for)
 from flask_cors import CORS
 from openai import OpenAI
 from psycopg2.extras import RealDictCursor
 from werkzeug.security import check_password_hash, generate_password_hash
 
 # Local imports
-from enhanced_matching_system import (EnhancedMatchingSystem, InteractionTracker,
-                                       MatchingDataCollector, MatchingSystem,
-                                       integrate_enhanced_matching)
-from payment import SubscriptionManager
+# Removed: enhanced_matching_system (deprecated ML matching system)
+from core.payment import SubscriptionManager
 
 # Load environment variables
 load_dotenv()
@@ -51,17 +41,28 @@ warnings.filterwarnings("ignore", category=UserWarning)
 # ============================================================================
 
 app = Flask(__name__)
-app.secret_key = 'pont-matching-secret-key-change-in-production'
+
+# Security: SECRET_KEY must be set via environment variable
+SECRET_KEY = os.environ.get('SECRET_KEY')
+if not SECRET_KEY:
+    raise ValueError("SECRET_KEY environment variable must be set. See .env.example for setup instructions.")
+app.secret_key = SECRET_KEY
+app.config['SECRET_KEY'] = SECRET_KEY
+
 CORS(app, origins="*", supports_credentials=True)
 
 # Configuration
 API_KEY = os.environ.get('OPENAI_API_KEY')
-if API_KEY:
-    print(f"✓ OpenAI API Key loaded: {API_KEY[:8]}...{API_KEY[-4:]}")
+if not API_KEY:
+    raise ValueError("OPENAI_API_KEY environment variable must be set. See .env.example for setup instructions.")
+
+# Session configuration - Allow HTTP for local development
+FLASK_ENV = os.environ.get('FLASK_ENV', 'development')
+if FLASK_ENV == 'production':
+    app.config['SESSION_COOKIE_SECURE'] = True  # HTTPS only in production
 else:
-    print("⚠️  WARNING: OPENAI_API_KEY not found in environment variables!")
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-change-in-production')
-app.config['SESSION_COOKIE_SECURE'] = True
+    app.config['SESSION_COOKIE_SECURE'] = False  # Allow HTTP in development
+
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
@@ -70,8 +71,6 @@ EMAIL_PORT = int(os.environ.get('EMAIL_PORT', 587))
 EMAIL_USER = os.environ.get('EMAIL_USER')
 EMAIL_PASSWORD = os.environ.get('EMAIL_PASSWORD')
 EMAIL_FROM = os.environ.get('EMAIL_FROM', EMAIL_USER)
-
-FRESH_API_KEY = os.environ.get('FRESH_API_KEY')
 
 # Global processing status storage
 processing_status = {}
@@ -662,6 +661,20 @@ class UserAuthSystem:
             )
         ''')
 
+        # Migration: Add first_session_insights_json column to applicants table
+        cursor.execute('''
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'applicants'
+                    AND column_name = 'first_session_insights_json'
+                ) THEN
+                    ALTER TABLE applicants ADD COLUMN first_session_insights_json TEXT;
+                END IF;
+            END $$;
+        ''')
+
         # Events table - stores upcoming events for matching
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS events (
@@ -705,7 +718,354 @@ class UserAuthSystem:
             )
         ''')
 
+        # ============================================================================
+        # KNOWLEDGE PLATFORM TABLES (for non-therapy organizations)
+        # ============================================================================
+
+        # Documents table - stores uploaded files metadata
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS documents (
+                id SERIAL PRIMARY KEY,
+                organization_id INTEGER NOT NULL,
+                filename TEXT NOT NULL,
+                file_type TEXT NOT NULL CHECK (file_type IN ('pdf', 'docx', 'txt', 'md', 'csv')),
+                file_size INTEGER NOT NULL,
+                storage_url TEXT NOT NULL,
+                upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                uploaded_by INTEGER NOT NULL,
+                processing_status TEXT DEFAULT 'pending' CHECK (processing_status IN ('pending', 'processing', 'completed', 'failed')),
+                metadata_json TEXT,
+                is_deleted BOOLEAN DEFAULT FALSE,
+                deleted_at TIMESTAMP,
+                FOREIGN KEY (organization_id) REFERENCES organizations (id) ON DELETE CASCADE,
+                FOREIGN KEY (uploaded_by) REFERENCES users (id)
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_documents_org_id ON documents(organization_id)
+        ''')
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(processing_status)
+        ''')
+
+        # Document chunks - stores text chunks with embedding references
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS document_chunks (
+                id SERIAL PRIMARY KEY,
+                document_id INTEGER NOT NULL,
+                chunk_text TEXT NOT NULL,
+                chunk_index INTEGER NOT NULL,
+                token_count INTEGER,
+                embedding_id TEXT,
+                metadata_json TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (document_id) REFERENCES documents (id) ON DELETE CASCADE
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_chunks_document_id ON document_chunks(document_id)
+        ''')
+
+        # Document classifications - auto-classification results
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS document_classifications (
+                id SERIAL PRIMARY KEY,
+                document_id INTEGER NOT NULL,
+                organization_id INTEGER NOT NULL,
+                team TEXT,
+                project TEXT,
+                doc_type TEXT,
+                time_period TEXT,
+                confidentiality_level TEXT CHECK (confidentiality_level IN ('public', 'internal', 'confidential', 'restricted')),
+                mentioned_people JSONB DEFAULT '[]'::jsonb,
+                tags JSONB DEFAULT '[]'::jsonb,
+                summary TEXT,
+                confidence_scores JSONB,
+                classified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (document_id) REFERENCES documents (id) ON DELETE CASCADE,
+                FOREIGN KEY (organization_id) REFERENCES organizations (id) ON DELETE CASCADE,
+                UNIQUE(document_id)
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_classifications_team ON document_classifications(team)
+        ''')
+
+        # ============================================================================
+        # SPRINT 3: Migrate existing document_classifications table
+        # ============================================================================
+        # Add new columns if they don't exist (for upgrading from Sprint 2)
+        try:
+            cursor.execute('''
+                ALTER TABLE document_classifications
+                ADD COLUMN IF NOT EXISTS organization_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE
+            ''')
+            cursor.execute('''
+                ALTER TABLE document_classifications
+                ADD COLUMN IF NOT EXISTS summary TEXT
+            ''')
+            # Populate organization_id for existing rows (from documents table)
+            cursor.execute('''
+                UPDATE document_classifications dc
+                SET organization_id = d.organization_id
+                FROM documents d
+                WHERE dc.document_id = d.id
+                  AND dc.organization_id IS NULL
+            ''')
+            # Rename confidentiality to confidentiality_level if needed
+            cursor.execute('''
+                DO $$
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM information_schema.columns
+                              WHERE table_name = 'document_classifications'
+                              AND column_name = 'confidentiality') THEN
+                        ALTER TABLE document_classifications RENAME COLUMN confidentiality TO confidentiality_level;
+                    END IF;
+                END $$;
+            ''')
+            # Rename confidence_scores_json to confidence_scores if needed
+            cursor.execute('''
+                DO $$
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM information_schema.columns
+                              WHERE table_name = 'document_classifications'
+                              AND column_name = 'confidence_scores_json') THEN
+                        ALTER TABLE document_classifications RENAME COLUMN confidence_scores_json TO confidence_scores;
+                    END IF;
+                END $$;
+            ''')
+            # Convert TEXT[] to JSONB for mentioned_people and tags (if they exist as arrays)
+            cursor.execute('''
+                DO $$
+                BEGIN
+                    -- Check if mentioned_people is TEXT[] and convert to JSONB
+                    IF EXISTS (SELECT 1 FROM information_schema.columns
+                              WHERE table_name = 'document_classifications'
+                              AND column_name = 'mentioned_people'
+                              AND data_type = 'ARRAY') THEN
+                        ALTER TABLE document_classifications
+                        ALTER COLUMN mentioned_people TYPE JSONB USING to_jsonb(mentioned_people);
+                    END IF;
+                    -- Check if tags is TEXT[] and convert to JSONB
+                    IF EXISTS (SELECT 1 FROM information_schema.columns
+                              WHERE table_name = 'document_classifications'
+                              AND column_name = 'tags'
+                              AND data_type = 'ARRAY') THEN
+                        ALTER TABLE document_classifications
+                        ALTER COLUMN tags TYPE JSONB USING to_jsonb(tags);
+                    END IF;
+                END $$;
+            ''')
+            print("✓ Migrated document_classifications table for Sprint 3")
+        except psycopg2.Error as e:
+            print(f"Migration note: {e}")
+
+        # Employee embeddings - for semantic search
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS employee_embeddings (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                organization_id INTEGER NOT NULL,
+                embedding_id TEXT NOT NULL,
+                profile_snapshot_json TEXT,
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+                FOREIGN KEY (organization_id) REFERENCES organizations (id) ON DELETE CASCADE,
+                UNIQUE(user_id, organization_id)
+            )
+        ''')
+
+        # Chat conversations
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS chat_conversations (
+                id SERIAL PRIMARY KEY,
+                organization_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                conversation_title TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_message_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                is_archived BOOLEAN DEFAULT FALSE,
+                FOREIGN KEY (organization_id) REFERENCES organizations (id) ON DELETE CASCADE,
+                FOREIGN KEY (user_id) REFERENCES users (id)
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_conversations_org_id ON chat_conversations(organization_id)
+        ''')
+
+        # Chat messages - stores chat history with reasoning
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS chat_messages (
+                id SERIAL PRIMARY KEY,
+                conversation_id INTEGER NOT NULL,
+                role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+                content TEXT NOT NULL,
+                reasoning_json TEXT,
+                source_documents_json TEXT,
+                source_employees_json TEXT,
+                source_external_json TEXT,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (conversation_id) REFERENCES chat_conversations (id) ON DELETE CASCADE
+            )
+        ''')
+
+        # Google Drive sync configuration
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS google_drive_sync (
+                id SERIAL PRIMARY KEY,
+                organization_id INTEGER NOT NULL,
+                access_token TEXT,
+                refresh_token TEXT,
+                folder_id TEXT,
+                last_sync_at TIMESTAMP,
+                sync_status TEXT DEFAULT 'idle' CHECK (sync_status IN ('idle', 'syncing', 'error')),
+                sync_error TEXT,
+                files_synced INTEGER DEFAULT 0,
+                created_by INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                is_active BOOLEAN DEFAULT TRUE,
+                FOREIGN KEY (organization_id) REFERENCES organizations (id) ON DELETE CASCADE,
+                FOREIGN KEY (created_by) REFERENCES users (id),
+                UNIQUE(organization_id)
+            )
+        ''')
+
+        # Processing jobs tracking
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS processing_jobs (
+                id SERIAL PRIMARY KEY,
+                organization_id INTEGER NOT NULL,
+                job_type TEXT NOT NULL,
+                job_id TEXT UNIQUE NOT NULL,
+                status TEXT DEFAULT 'queued' CHECK (status IN ('queued', 'running', 'completed', 'failed')),
+                progress INTEGER DEFAULT 0 CHECK (progress >= 0 AND progress <= 100),
+                result_json TEXT,
+                error_message TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                started_at TIMESTAMP,
+                completed_at TIMESTAMP,
+                FOREIGN KEY (organization_id) REFERENCES organizations (id)
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_jobs_job_id ON processing_jobs(job_id)
+        ''')
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_jobs_status ON processing_jobs(status)
+        ''')
+
+        # Embedding usage tracking for cost management
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS embedding_usage (
+                id SERIAL PRIMARY KEY,
+                organization_id INTEGER NOT NULL,
+                date DATE DEFAULT CURRENT_DATE,
+                tokens_used INTEGER DEFAULT 0,
+                api_calls INTEGER DEFAULT 0,
+                estimated_cost FLOAT DEFAULT 0.0,
+                FOREIGN KEY (organization_id) REFERENCES organizations (id),
+                UNIQUE(organization_id, date)
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_embedding_usage_org_date ON embedding_usage(organization_id, date)
+        ''')
+
+        # ============================================================================
+        # SPRINT 2: Additional Performance Indexes
+        # ============================================================================
+
+        # Employee embeddings indexes
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_employee_embeddings_org_user ON employee_embeddings(organization_id, user_id)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_employee_embeddings_updated ON employee_embeddings(last_updated)
+        ''')
+
+        # Chat conversations indexes
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_conversations_user ON chat_conversations(user_id)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_conversations_last_message ON chat_conversations(last_message_at DESC)
+        ''')
+
+        # Chat messages indexes
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_messages_conversation ON chat_messages(conversation_id)
+        ''')
+
+        # Processing jobs indexes
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_jobs_org_status ON processing_jobs(organization_id, status)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_jobs_created ON processing_jobs(created_at DESC)
+        ''')
+
+        # Document chunks index for embeddings
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_chunks_embedding_id ON document_chunks(embedding_id)
+        ''')
+
+        # ============================================================================
+        # SPRINT 3: Classification Indexes
+        # ============================================================================
+
+        # Classification primary fields indexes
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_classifications_org_team ON document_classifications(organization_id, team)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_classifications_org_project ON document_classifications(organization_id, project)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_classifications_org_type ON document_classifications(organization_id, doc_type)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_classifications_org_period ON document_classifications(organization_id, time_period)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_classifications_confidentiality ON document_classifications(confidentiality_level)
+        ''')
+
+        # GIN indexes for array fields (mentioned_people, tags) - enables efficient JSONB queries
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_classifications_mentioned_people ON document_classifications USING GIN (mentioned_people)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_classifications_tags ON document_classifications USING GIN (tags)
+        ''')
+
+        # Composite index for common smart folder queries
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_classifications_org_doc ON document_classifications(organization_id, document_id)
+        ''')
+
+        # Time-based index for chronological views
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_classifications_classified_at ON document_classifications(classified_at DESC)
+        ''')
+
         print("✓ Created V2 network and events tables")
+        print("✓ Created knowledge platform tables")
+        print("✓ Created performance indexes for Sprint 2")
+        print("✓ Created classification indexes for Sprint 3")
 
     def create_user(self, email: str, password: str, first_name: str = None, 
                last_name: str = None, phone: str = None, min_age: int = 18, 
@@ -2454,7 +2814,8 @@ def process_matching_background(user_id: int):
         processing_status[user_id]['progress'] = 25
         
         # Run matching against all other users
-        matches = enhanced_matching_system.run_matching(user_id)
+        # DEPRECATED: ML matching system removed
+        matches = []  # enhanced_matching_system.run_matching(user_id)
         processing_status[user_id]['progress'] = 75
         
         print(f"✓ Found {len(matches)} matches")
@@ -2469,41 +2830,6 @@ def process_matching_background(user_id: int):
         
     except Exception as e:
         print(f"❌ Error in background processing: {e}")
-        import traceback
-        traceback.print_exc()
-        processing_status[user_id] = {
-            'status': 'error',
-            'error': str(e),
-            'progress': 0
-        }
-
-def process_event_matching_background(user_id: int, event_id: int):
-    """Background task to process event-based matching"""
-    # Prevent multiple matching processes for same user
-    if user_id in processing_status and processing_status[user_id].get('status') == 'processing':
-        print(f"Event matching already in progress for user {user_id}")
-        return
-    try:
-        processing_status[user_id] = {'status': 'processing', 'progress': 0}
-
-        processing_status[user_id]['progress'] = 25
-
-        # Run event-based matching only against other attendees
-        matches = enhanced_matching_system.run_event_matching(user_id, event_id)
-        processing_status[user_id]['progress'] = 75
-
-        print(f"✓ Found {len(matches)} event matches")
-        processing_status[user_id]['progress'] = 100
-
-        # Store results
-        processing_status[user_id] = {
-            'status': 'completed',
-            'matches': matches,
-            'progress': 100
-        }
-
-    except Exception as e:
-        print(f"❌ Error in event matching: {e}")
         import traceback
         traceback.print_exc()
         processing_status[user_id] = {
@@ -4093,64 +4419,6 @@ def render_matches_dashboard(user_info: Dict, matches: List[Dict]) -> str:
     </div>
     '''
 
-def enhance_matching_with_verification():
-    """Add verification boost to existing matching system"""
-    
-    # Modify the existing MatchingSystem class to include verification bonus
-    original_calculate_scores = MatchingSystem.calculate_compatibility_scores
-    
-    def calculate_compatibility_scores_with_verification(self, user1_profile: Dict, user2_profile: Dict) -> Dict[str, float]:
-        """Enhanced scoring that includes verification bonus"""
-        # Get base compatibility scores
-        scores = original_calculate_scores(self, user1_profile, user2_profile)
-        
-        # Check verification status of both users
-        try:
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            
-            # Get verification status (assuming we can get user_ids from profiles)
-            user1_id = user1_profile.get('user_id')
-            user2_id = user2_profile.get('user_id')
-            
-            verification_bonus = 0
-            
-            if user1_id and user2_id:
-                cursor.execute('''
-                    SELECT 
-                        (SELECT is_verified FROM users WHERE id = %s) as user1_verified,
-                        (SELECT is_verified FROM users WHERE id = %s) as user2_verified
-                ''', (user1_id, user2_id))
-                
-                result = cursor.fetchone()
-                if result:
-                    user1_verified = result['user1_verified']
-                    user2_verified = result['user2_verified']
-                    
-                    # Both verified: +10 point bonus to overall compatibility
-                    if user1_verified and user2_verified:
-                        verification_bonus = 10
-                    # One verified: +5 point bonus
-                    elif user1_verified or user2_verified:
-                        verification_bonus = 5
-            
-            conn.close()
-            
-            # Apply verification bonus to all scores
-            if verification_bonus > 0:
-                for key in scores:
-                    scores[key] = min(100, scores[key] + verification_bonus)
-                    
-                print(f"Applied +{verification_bonus} verification bonus to compatibility scores")
-            
-        except Exception as e:
-            print(f"Error applying verification bonus: {e}")
-        
-        return scores
-    
-    # Replace the method
-    MatchingSystem.calculate_compatibility_scores = calculate_compatibility_scores_with_verification
-
 # ============================================================================
 # NETWORK MANAGEMENT SYSTEM (V2)
 # ============================================================================
@@ -4462,34 +4730,19 @@ class NetworkManager:
 
 # Initialize systems
 
-from data_safety import DataEncryption, GDPRCompliance
-from email_followup import EmailFollowupSystem
+from core.data_safety import DataEncryption
+from core.email_followup import EmailFollowupSystem
 from onboarding import add_onboarding_routes
 
 data_encryption = DataEncryption()
 user_auth = UserAuthSystem()
-# Initialize GDPR compliance
-# After initializing data_encryption and user_auth
-gdpr_compliance = GDPRCompliance(user_auth, data_encryption, get_db_connection)
 #matching_system = MatchingSystem(API_KEY)
 verification_system = IdentityVerificationSystem(user_auth)
 subscription_manager = SubscriptionManager(user_auth, get_db_connection)
 network_manager = NetworkManager(user_auth, data_encryption)
-try:
-    enhanced_matching_system, interaction_tracker = integrate_enhanced_matching(app, user_auth, API_KEY, db_connection_func=get_db_connection)
-    enhanced_matching_system.processing_status = processing_status
-    print("✓ Enhanced matching system initialized")
-except Exception as e:
-    from enhanced_matching_system import EnhancedMatchingSystem, InteractionTracker, MatchingSystem
-    
-    enhanced_matching_system = EnhancedMatchingSystem(API_KEY)
-    enhanced_matching_system.set_user_auth(user_auth)
-    enhanced_matching_system.set_db_connection(get_db_connection)
-    interaction_tracker = InteractionTracker(enhanced_matching_system, get_db_connection)
-    print("✓ Enhanced matching system created directly")
-    
+# Removed: enhanced_matching_system initialization (deprecated ML system)
 email_followup = EmailFollowupSystem(user_auth, get_db_connection)
-enhance_matching_with_verification()
+# Removed: enhance_matching_with_verification() (deprecated)
 
 add_onboarding_routes(app, login_required, user_auth, render_template_with_header, get_db_connection, process_matching_background)
 # ============================================================================
@@ -6027,8 +6280,12 @@ def profile_settings():
         }}
         
         .btn-cancel {{
-            background: rgba(45, 45, 45, 0.6);
+            background: black;
             color: white;
+        }}
+
+        .btn-cancel:hover {{
+            background: #1a1a1a;
         }}
         
         .btn-verify {{
@@ -6184,126 +6441,6 @@ def profile_settings():
     '''
     
     return render_template_with_header("Profile Settings", content, user_info)
-
-def render_verification_section(verification_status: Dict) -> str:
-    """Render verification section based on user's current status"""
-    
-    if verification_status.get('is_verified'):
-        # User is already verified
-        verified_date = verification_status.get('verified_at', 'Recently')
-        if verified_date != 'Recently':
-            try:
-                from datetime import datetime
-                verified_date = datetime.fromisoformat(verified_date.replace('Z', '+00:00')).strftime('%B %d, %Y')
-            except:
-                verified_date = 'Recently'
-        
-        return f'''
-        <div class="verification-section">
-            <div class="verified-badge">
-                Verified Account
-            </div>
-            <h3 style="color: var(--color-emerald); margin-bottom: 1rem;">Identity Verified</h3>
-            <p>Your account has been verified on {verified_date}. Your profile displays a blue verified badge to other users, showing that you're a real person.</p>
-            
-            <div class="verification-benefits">
-                <strong>Active Benefits:</strong><br>
-                • Blue verified badge on your profile<br>
-                • Higher match-to-meet conversion rates<br>
-                • Increased trust from other users<br>
-                • Priority in matching algorithms<br>
-                • Enhanced platform safety
-            </div>
-        </div>
-        '''
-    
-    elif verification_status.get('pending_request'):
-        # User has a pending verification request
-        pending = verification_status['pending_request']
-        status = pending['status']
-        
-        if status == 'pending':
-            if pending.get('photo_received'):
-                status_text = '<span class="status-pending">Under Review</span> - Our team is reviewing your submission'
-            else:
-                status_text = '<span class="status-pending">Awaiting Photos</span> - Please send your verification photos'
-            
-            expires_date = pending.get('expires_at', '')
-            try:
-                from datetime import datetime
-                expires_date = datetime.fromisoformat(expires_date.replace('Z', '+00:00')).strftime('%B %d, %Y')
-            except:
-                expires_date = 'Soon'
-            
-            return f'''
-            <div class="verification-section">
-                <h3 style="color: var(--color-emerald); margin-bottom: 1rem;">Verification In Progress</h3>
-                
-                <div class="verification-pending">
-                    <strong>Status:</strong> {status_text}<br>
-                    <strong>Expires:</strong> {expires_date}
-                </div>
-                
-                <p>Your verification request is being processed. Check your email for detailed instructions on submitting your ID photos.</p>
-                
-                <div style="margin-top: 1.5rem;">
-                    <strong>Next Steps:</strong><br>
-                    1. Check your email for verification instructions<br>
-                    2. Send clear photos of your ID and selfie to our verification email<br>
-                    3. Include your verification code in the photo<br>
-                    4. Wait 1-2 business days for review
-                </div>
-            </div>
-            '''
-        
-        elif status == 'rejected':
-            reason = pending.get('rejection_reason', 'Photos did not meet verification requirements')
-            
-            return f'''
-            <div class="verification-section">
-                <h3 style="color: #dc3545; margin-bottom: 1rem;">Verification Needs Attention</h3>
-                
-                <div style="background: #f8d7da; color: #721c24; padding: 1rem; border-radius: 8px; margin: 1rem 0;">
-                    <strong>Reason:</strong> {reason}
-                </div>
-                
-                <p>Your previous verification attempt couldn't be approved. You can submit a new verification request with updated photos.</p>
-                
-                <form method="POST" action="/request-verification" style="margin-top: 1.5rem;">
-                    <button type="submit" class="btn-verify">Request New Verification</button>
-                </form>
-            </div>
-            '''
-    
-    else:
-        # User can request verification
-        return '''
-        <div class="verification-section">
-            <h3 style="color: var(--color-emerald); margin-bottom: 1rem;">Get Verified</h3>
-            <p>Verify your identity to get a blue verified badge and increase your match success rate.</p>
-            
-            <div class="verification-benefits">
-                <strong>Benefits of Verification:</strong><br>
-                • Blue verified badge on your profile<br>
-                • 40% higher match-to-meet conversion rates<br>
-                • Increased trust from other users<br>
-                • Priority in matching algorithms<br>
-                • Help make the platform safer for everyone
-            </div>
-            
-            <div style="background: #fff3cd; color: #856404; padding: 1rem; border-radius: 8px; margin: 1rem 0;">
-                <strong>How it works:</strong><br>
-                1. Click "Start Verification" below<br>
-                2. Receive instructions via email<br>
-                3. Send photos of your ID + selfie<br>
-                4. Get approved within 1-2 business days
-            </div>
-            
-            <form method="POST" action="/request-verification" style="margin-top: 1.5rem;">
-                <button type="submit" class="btn-verify">Start Verification Process</button>
-            </form>
-        </div>
-        '''
 
 def render_subscription_management_section(subscription_status: Dict, user_id: int = None) -> str:
     """Render subscription management section based on user's current status"""
@@ -6798,545 +6935,9 @@ def dashboard():
         return redirect('/login')
 
 
-def render_matches_dashboard_with_event(user_info: Dict, matches: List[Dict], event: Dict) -> str:
-    """Render matches dashboard with event details displayed at the top"""
-    user_id = session['user_id']
 
-    # Format event date and time
-    event_date = event['date_time'].strftime('%A, %B %d, %Y')
-    event_time = event['date_time'].strftime('%I:%M %p')
 
-    # Event header section
-    event_header = f'''
-    <div class="event-header" style="background: white; border: 2px solid black; border-radius: 15px; padding: 2rem; margin-bottom: 2rem; text-align: center;">
-        <h2 style="font-family: 'Sentient', serif; font-size: 1.8rem; color: black; margin-bottom: 1rem; font-weight: 600;">Your Upcoming Event</h2>
-        <h3 style="font-family: 'Satoshi', sans-serif; font-size: 1.4rem; color: black; margin-bottom: 1.5rem; font-weight: 700;">{event['title']}</h3>
-        <div style="display: flex; justify-content: center; gap: 2rem; flex-wrap: wrap; font-family: 'Satoshi', sans-serif; color: black; margin-bottom: 1rem;">
-            <div style="display: flex; align-items: center; gap: 0.5rem;">
-                <strong>Date:</strong> {event_date}
-            </div>
-            <div style="display: flex; align-items: center; gap: 0.5rem;">
-                <strong>Time:</strong> {event_time}
-            </div>
-            <div style="display: flex; align-items: center; gap: 0.5rem;">
-                <strong>Venue:</strong> {event['venue_name'] or 'TBA'}
-            </div>
-        </div>
-        {f'<div style="margin-bottom: 1.5rem; color: black; font-family: Satoshi, sans-serif;"><strong>Address:</strong> {event["venue_address"]}</div>' if event.get('venue_address') else ''}
-        <div style="margin-bottom: 1.5rem; padding: 1rem; background: black; color: white; border-radius: 8px; font-family: 'Satoshi', sans-serif; font-weight: 500;">
-            Below are your compatible matches who will also be attending this event
-        </div>
-        <div>
-            <a href="/withdraw-from-event" onclick="return confirm('Are you sure you want to withdraw from this event? You will no longer be matched with other attendees.')"
-               style="background: black; color: white; padding: 0.75rem 1.5rem; border-radius: 8px; text-decoration: none; font-family: 'Satoshi', sans-serif; font-weight: 600; font-size: 0.875rem; display: inline-block; transition: all 0.3s ease;">
-                Withdraw from Event
-            </a>
-        </div>
-    </div>
-    '''
 
-    # Get the existing matches dashboard content but modify the title
-    matches_content = render_matches_dashboard(user_info, matches)
-
-    # Insert event header at the beginning of matches content
-    # Find the dashboard container and insert event header after it starts
-    dashboard_start = matches_content.find('<div class="dashboard-container">') + len('<div class="dashboard-container">')
-
-    if dashboard_start > len('<div class="dashboard-container">') - 1:
-        modified_content = (
-            matches_content[:dashboard_start] +
-            event_header +
-            matches_content[dashboard_start:]
-        )
-    else:
-        # Fallback if structure is different
-        modified_content = event_header + matches_content
-
-    return modified_content
-
-def render_no_matches_dashboard_with_event(event: Dict) -> str:
-    """Render no matches dashboard with event details and small orange sphere in draggable teal cube"""
-    # Format event date and time
-    event_date = event['date_time'].strftime('%A, %B %d, %Y')
-    event_time = event['date_time'].strftime('%I:%M %p')
-
-    # Event header section
-    event_header = f'''
-    <div class="event-header" style="background: white; border: 2px solid black; border-radius: 15px; padding: 2rem; margin-bottom: 2rem; text-align: center;">
-        <h2 style="font-family: 'Sentient', serif; font-size: 1.8rem; color: black; margin-bottom: 1rem; font-weight: 600;">Your Upcoming Event</h2>
-        <h3 style="font-family: 'Satoshi', sans-serif; font-size: 1.4rem; color: black; margin-bottom: 1.5rem; font-weight: 700;">{event['title']}</h3>
-        <div style="display: flex; justify-content: center; gap: 2rem; flex-wrap: wrap; font-family: 'Satoshi', sans-serif; color: black; margin-bottom: 1rem;">
-            <div style="display: flex; align-items: center; gap: 0.5rem;">
-                <strong>Date:</strong> {event_date}
-            </div>
-            <div style="display: flex; align-items: center; gap: 0.5rem;">
-                <strong>Time:</strong> {event_time}
-            </div>
-            <div style="display: flex; align-items: center; gap: 0.5rem;">
-                <strong>Venue:</strong> {event['venue_name'] or 'TBA'}
-            </div>
-        </div>
-        {f'<div style="margin-bottom: 1.5rem; color: black; font-family: Satoshi, sans-serif;"><strong>Address:</strong> {event["venue_address"]}</div>' if event.get('venue_address') else ''}
-        <div style="margin-bottom: 1.5rem; padding: 1rem; background: black; color: white; border-radius: 8px; font-family: 'Satoshi', sans-serif; font-weight: 500;">
-            No compatible matches found yet for this event
-        </div>
-        <div>
-            <a href="/withdraw-from-event" onclick="return confirm('Are you sure you want to withdraw from this event? You will no longer be matched with other attendees.')"
-               style="background: black; color: white; padding: 0.75rem 1.5rem; border-radius: 8px; text-decoration: none; font-family: 'Satoshi', sans-serif; font-weight: 600; font-size: 0.875rem; display: inline-block; transition: all 0.3s ease;">
-                Withdraw from Event
-            </a>
-        </div>
-    </div>
-    '''
-
-    no_matches_content = '''
-    <style>
-        @import url("https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=sentient@400,500,600,700&display=swap");
-
-        .no-matches-container {
-            position: relative;
-            width: 100%;
-            min-height: 100vh;
-            padding: 2rem 0;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: flex-start;
-            text-align: center;
-            overflow: visible;
-        }
-        
-        .canvas-container {
-            width: 200px;
-            height: 200px;
-            margin: 3rem auto 2rem auto;
-            z-index: 2;
-        }
-        
-        #cube-canvas {
-            width: 100%;
-            height: 100%;
-            cursor: grab;
-        }
-        
-        #cube-canvas:active {
-            cursor: grabbing;
-        }
-        
-        .content-overlay {
-            position: relative;
-            z-index: 1;
-            max-width: 600px;
-            padding: 2rem;
-        }
-        
-        .no-matches-title {
-            font-family: "Sentient", sans-serif;
-            font-size: clamp(2rem, 6vw, 3rem);
-            font-weight: 500;
-            color: black;
-            margin-bottom: 1rem;
-            background: white;
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-        
-        .no-matches-subtitle {
-            font-family: "Satoshi", sans-serif;
-            font-size: 1.125rem;
-            color: black;
-            margin-bottom: 2rem;
-            line-height: 1.6;
-        }
-        
-        .reasons-list {
-            background: rgba(255, 255, 255, 0.9);
-            backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 16px;
-            padding: 1.5rem;
-            margin: 2rem auto;
-            text-align: left;
-            max-width: 400px;
-        }
-        
-        .reason-item {
-            display: flex;
-            align-items: flex-start;
-            gap: 0.75rem;
-            margin: 0.75rem 0;
-            font-family: "Satoshi", sans-serif;
-            font-size: 0.9rem;
-            color: black;
-        }
-        
-        .reason-bullet {
-            width: 6px;
-            height: 6px;
-            background: white;
-            border-radius: 50%;
-            flex-shrink: 0;
-            margin-top: 0.5rem;
-        }
-        
-        .btn-update {
-            font-family: "Satoshi", sans-serif;
-            background: white;
-            color: #ffffff;
-            padding: 1rem 2rem;
-            border-radius: 50px;
-            text-decoration: none;
-            font-weight: 600;
-            font-size: 0.875rem;
-            transition: all 0.4s cubic-bezier(0.23, 1, 0.32, 1);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-top: 2rem;
-            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-            display: inline-block;
-        }
-        
-        .btn-update:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(107, 155, 153, 0.4);
-        }
-        
-        
-        
-        @keyframes pulse {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.05); }
-        }
-        
-        
-        /* Responsive design */
-        @media (max-width: 768px) {
-            .canvas-container {
-                width: 150px;
-                height: 150px;
-            }
-            
-            .content-overlay {
-                padding: 1rem;
-            }
-            
-            .reasons-list {
-                max-width: 100%;
-                padding: 1.25rem;
-            }
-            
-            
-        }
-    </style>
-    
-    <!-- Include required libraries -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    
-    <div class="no-matches-container">
-        <div class="canvas-container">
-            <canvas id="cube-canvas"></canvas>
-        </div>
-        
-        <div class="content-overlay">
-            <h1 class="no-matches-title">No matches found yet</h1>
-            <p class="no-matches-subtitle">Your agent didn't match with anyone just yet</p>
-            
-            <div class="reasons-list">
-                <div class="reason-item">
-                    <div class="reason-bullet"></div>
-                    <span>Your preferences are very specific</span>
-                </div>
-                <div class="reason-item">
-                    <div class="reason-bullet"></div>
-                    <span>More users are joining daily</span>
-                </div>
-            </div>
-            
-            <p class="no-matches-subtitle">
-                Try updating your profile by clicking the cube or check back later
-            </p>
-            
-        </div>
-        
-    </div>
-    
-    <script>
-        // Scene setup
-        const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
-        camera.position.z = 3;
-
-        const canvas = document.querySelector("#cube-canvas");
-        const renderer = new THREE.WebGLRenderer({
-            canvas: canvas,
-            antialias: true,
-            alpha: true
-        });
-        renderer.setSize(200, 200);
-        renderer.setPixelRatio(window.devicePixelRatio);
-
-        // Create cube with teal wireframe
-        const cubeGeometry = new THREE.BoxGeometry(1.5, 1.5, 1.5);
-        const cubeMaterial = new THREE.MeshBasicMaterial({ 
-            color: 0x000000, 
-            transparent: true, 
-            opacity: 0 
-        });
-        const cube = new THREE.Mesh(cubeGeometry, cubeMaterial);
-
-        // Add wireframe edges
-        const edges = new THREE.EdgesGeometry(cubeGeometry);
-        const lineMaterial = new THREE.LineBasicMaterial({ 
-            color: 0x6b9b99,
-            linewidth: 2
-        });
-        const wireframe = new THREE.LineSegments(edges, lineMaterial);
-        cube.add(wireframe);
-
-        // Create orange sphere inside
-        const sphereGeometry = new THREE.SphereGeometry(0.3, 16, 16);
-        const sphereMaterial = new THREE.MeshPhongMaterial({ 
-            color: 0xff9500,
-            shininess: 30
-        });
-        const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
-        cube.add(sphere);
-
-        scene.add(cube);
-
-        // Lighting for the sphere
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-        scene.add(ambientLight);
-        
-        const pointLight = new THREE.PointLight(0xffffff, 0.8);
-        pointLight.position.set(2, 2, 2);
-        scene.add(pointLight);
-
-        // Mouse interaction variables
-        let isDragging = false;
-        let previousMousePosition = { x: 0, y: 0 };
-        let isClicked = false;
-
-        // Auto rotation
-        function autoRotate() {
-            if (!isDragging) {
-                cube.rotation.x += 0.005;
-                cube.rotation.y += 0.008;
-                
-                // Gentle floating for the inner sphere
-                const time = Date.now() * 0.003;
-                sphere.position.y = Math.sin(time) * 0.1;
-            }
-        }
-
-        // Mouse event handlers
-        function onMouseDown(event) {
-            isDragging = true;
-            canvas.style.cursor = 'grabbing';
-            
-            const rect = canvas.getBoundingClientRect();
-            previousMousePosition = {
-                x: event.clientX - rect.left,
-                y: event.clientY - rect.top
-            };
-        }
-
-        function onMouseMove(event) {
-            if (!isDragging) return;
-
-            const rect = canvas.getBoundingClientRect();
-            const currentMousePosition = {
-                x: event.clientX - rect.left,
-                y: event.clientY - rect.top
-            };
-
-            const deltaMove = {
-                x: currentMousePosition.x - previousMousePosition.x,
-                y: currentMousePosition.y - previousMousePosition.y
-            };
-
-            const deltaRotationQuaternion = new THREE.Quaternion()
-                .setFromEuler(new THREE.Euler(
-                    toRadians(deltaMove.y * 0.5),
-                    toRadians(deltaMove.x * 0.5),
-                    0,
-                    'XYZ'
-                ));
-
-            cube.quaternion.multiplyQuaternions(deltaRotationQuaternion, cube.quaternion);
-
-            previousMousePosition = currentMousePosition;
-        }
-
-        function onMouseUp() {
-            isDragging = false;
-            canvas.style.cursor = 'grab';
-        }
-
-        function onClick(event) {
-            if (!isClicked) {
-                isClicked = true;
-                
-                // Scale animation on click
-                const originalScale = { x: 1, y: 1, z: 1 };
-                const targetScale = { x: 0.8, y: 0.8, z: 0.8 };
-                
-                animateScale(cube.scale, targetScale, 100, () => {
-                    animateScale(cube.scale, { x: 1.1, y: 1.1, z: 1.1 }, 100, () => {
-                        animateScale(cube.scale, originalScale, 100, () => {
-                            window.location.href = '/choose-agent';
-                        });
-                    });
-                });
-            }
-        }
-
-        // Simple scale animation function
-        function animateScale(object, target, duration, callback) {
-            const start = { x: object.x, y: object.y, z: object.z };
-            const startTime = Date.now();
-            
-            function update() {
-                const elapsed = Date.now() - startTime;
-                const progress = Math.min(elapsed / duration, 1);
-                
-                object.x = start.x + (target.x - start.x) * progress;
-                object.y = start.y + (target.y - start.y) * progress;
-                object.z = start.z + (target.z - start.z) * progress;
-                
-                if (progress < 1) {
-                    requestAnimationFrame(update);
-                } else if (callback) {
-                    callback();
-                }
-            }
-            
-            update();
-        }
-
-        function toRadians(angle) {
-            return angle * (Math.PI / 180);
-        }
-
-        // Add event listeners
-        canvas.addEventListener('mousedown', onMouseDown);
-        canvas.addEventListener('mousemove', onMouseMove);
-        canvas.addEventListener('mouseup', onMouseUp);
-        canvas.addEventListener('mouseleave', onMouseUp);
-        canvas.addEventListener('click', onClick);
-
-        // Animation loop
-        function animate() {
-            requestAnimationFrame(animate);
-            autoRotate();
-            renderer.render(scene, camera);
-        }
-
-        animate();
-
-        // Handle window resize
-        window.addEventListener('resize', () => {
-            const containerSize = window.innerWidth < 768 ? 150 : 200;
-            renderer.setSize(containerSize, containerSize);
-            
-            const container = document.querySelector('.canvas-container');
-            container.style.width = containerSize + 'px';
-            container.style.height = containerSize + 'px';
-        });
-    </script>
-    '''
-
-    # Combine event header with no matches content
-    # Insert event header at the beginning of no matches content after the opening div
-    content_start = no_matches_content.find('<div class="no-matches-container">') + len('<div class="no-matches-container">')
-
-    if content_start > len('<div class="no-matches-container">') - 1:
-        final_content = (
-            no_matches_content[:content_start] +
-            event_header +
-            no_matches_content[content_start:]
-        )
-    else:
-        # Fallback if structure is different
-        final_content = event_header + no_matches_content
-
-    return final_content
-
-def render_new_profile_dashboard() -> str:
-    """Render dashboard for new users without profile"""
-    return '''
-    <div class="container">
-        <div style="text-align: center; margin-bottom: 40px; padding: 30px; background: #f4f2eb; border-radius: 15px; border: 2px solid black;">
-            <div style="font-size: 28px; font-weight: bold; margin-bottom: 15px;">Ready to Find Your Perfect Matches?</div>
-            <p style="font-size: 18px; margin: 0;">Let's create your profile to start matching.</p>
-        </div>
-        
-        <div style="font-size: 16px; margin-bottom: 32px;">
-            We'll ask you about your interests, values, personality, and what you're looking for in a connection. This helps us find people who are truly compatible with you based on shared interests, lifestyle, and relationship goals.
-        </div>
-        
-        <div style="background: #e8f4fd; border-radius: 6px; padding: 16px; margin: 24px 0; font-size: 14px;">
-            <strong>Your Privacy is Protected</strong><br>
-            All matching is done securely and you have full control over who can see your profile and contact you.
-        </div>
-        
-        <div style="text-align: center;">
-            <a href="/choose-agent" class="btn btn-primary" style="padding: 16px 32px; font-size: 16px;">
-                Create Your Profile (5 minutes)
-            </a>
-        </div>
-    </div>
-    '''
-
-def generate_agents_metadata_for_user(current_user_id):
-    """Generate agents metadata with real user data for 3D visualization"""
-    agents_metadata = {}
-    
-    try:
-        # Add the current user as the main agent (emerald)
-        user_info = user_auth.get_user_info(current_user_id)
-        agents_metadata[current_user_id] = {
-            'type': 'user',
-            'name': user_info.get('first_name', 'You') if user_info else 'You'
-        }
-        
-        # Get other real users from the database
-        other_users = user_auth.get_random_users(limit=15, exclude_user_id=current_user_id)
-        
-        # Add other users as agents (charcoal)
-        for user in other_users:
-            user_id = user.get('user_id')
-            first_name = user.get('first_name', 'Anonymous')
-            last_name = user.get('last_name', '')
-            
-            # Create a display name
-            if first_name and last_name:
-                name = f"{first_name} {last_name}"
-            elif first_name:
-                name = first_name
-            else:
-                name = f"User {user_id}"
-            
-            agents_metadata[user_id] = {
-                'type': 'other',
-                'name': name
-            }
-            
-        print(f"Generated {len(agents_metadata)} real agents for user {current_user_id}")
-        
-    except Exception as e:
-        print(f"Error generating agents metadata: {e}")
-        
-        # Fallback: create some demo agents if database query fails
-        for i in range(1, 16):
-            if i != current_user_id:
-                agents_metadata[i] = {
-                    'type': 'other',
-                    'name': f'Agent {i}'
-                }
-    
-    return agents_metadata
 
 # ============================================================================
 # ROUTES - ORGANIZATION & SIMULATION MANAGEMENT
@@ -7954,8 +7555,15 @@ def organization_applicants(org_id):
             if applicant['compatibility_results']:
                 try:
                     applicant['compatibility_data'] = json.loads(applicant['compatibility_results'])
-                    # Calculate average score
-                    scores = [m.get('compatibility_score', 0) for m in applicant['compatibility_data'].get('members', [])]
+                    # Calculate average score - handle both old and new structures
+                    scores = []
+                    for m in applicant['compatibility_data'].get('members', []):
+                        if 'analysis' in m:
+                            # New structure
+                            scores.append(m.get('analysis', {}).get('compatibility_score', 0))
+                        else:
+                            # Old structure
+                            scores.append(m.get('compatibility_score', 0))
                     applicant['avg_score'] = sum(scores) / len(scores) if scores else 0
                 except:
                     applicant['compatibility_data'] = {}
@@ -8115,24 +7723,31 @@ def organization_patients(org_id):
             SELECT
                 a.id, a.full_name, a.email, a.linkedin_url,
                 a.compatibility_results, a.behavioral_fit_analysis,
-                a.status, a.created_at, a.application_token
+                a.status, a.created_at, a.application_token, a.onboarding_data,
+                a.first_session_insights_json
             FROM applicants a
             WHERE a.organization_id = %s
             ORDER BY a.created_at DESC
         ''', (org_id,))
 
-        patients = cursor.fetchall()
+        all_patients = cursor.fetchall()
 
-        # Parse compatibility results and get feedback for each patient
-        for patient in patients:
+        # Filter patients to only show those matched with the current therapist
+        patients = []
+        for patient in all_patients:
             if patient['compatibility_results']:
                 try:
                     patient['compatibility_data'] = json.loads(patient['compatibility_results'])
 
-                    # Get feedback for each matched member
+                    # Find if this therapist is matched with this patient
+                    therapist_match = None
                     for member in patient['compatibility_data'].get('members', []):
                         member_id = member.get('id')
-                        if member_id:
+                        if member_id == user_id:
+                            # This therapist is matched with this patient
+                            therapist_match = member
+
+                            # Get feedback
                             cursor.execute('''
                                 SELECT feedback
                                 FROM match_feedback
@@ -8141,19 +7756,57 @@ def organization_patients(org_id):
 
                             feedback_result = cursor.fetchone()
                             member['feedback'] = feedback_result['feedback'] if feedback_result else None
+                            break
 
-                    # Calculate average score
-                    scores = [m.get('compatibility_score', 0) for m in patient['compatibility_data'].get('members', [])]
-                    patient['avg_score'] = sum(scores) / len(scores) if scores else 0
+                    # Only include this patient if they're matched with this therapist
+                    if therapist_match:
+                        # Extract match details
+                        if 'analysis' in therapist_match:
+                            patient['match_score'] = therapist_match.get('analysis', {}).get('compatibility_score', 0)
+                            patient['match_summary'] = therapist_match.get('analysis', {}).get('summary', '')
+                            patient['match_strengths'] = therapist_match.get('analysis', {}).get('strengths', [])
+                            patient['match_challenges'] = therapist_match.get('analysis', {}).get('challenges', [])
+                        else:
+                            patient['match_score'] = therapist_match.get('compatibility_score', 0)
+                            patient['match_summary'] = therapist_match.get('summary', '')
+                            patient['match_strengths'] = therapist_match.get('strengths', [])
+                            patient['match_challenges'] = therapist_match.get('challenges', [])
+
+                        patient['therapist_match'] = therapist_match
+
+                        # Load pre-generated first session insights from database
+                        if org.get('use_case') == 'therapy_matching':
+                            if patient.get('first_session_insights_json'):
+                                try:
+                                    insights_map = json.loads(patient['first_session_insights_json'])
+                                    patient['first_session_insights'] = insights_map.get(str(user_id), 'Insights not available for this match.')
+                                except:
+                                    patient['first_session_insights'] = 'Insights not available.'
+                            else:
+                                # Fallback: generate if not saved (for old records)
+                                cursor.execute('SELECT profile_data FROM user_profiles WHERE user_id = %s', (user_id,))
+                                profile_result = cursor.fetchone()
+                                therapist_profile = {}
+                                if profile_result and profile_result.get('profile_data'):
+                                    try:
+                                        therapist_profile = json.loads(profile_result['profile_data'])
+                                    except:
+                                        pass
+                                patient['first_session_insights'] = generate_first_session_insights(
+                                    patient, therapist_match, therapist_profile
+                                )
+
+                        patients.append(patient)
+
                 except Exception as e:
                     print(f"Error parsing patient compatibility data: {e}")
-                    patient['compatibility_data'] = {}
-                    patient['avg_score'] = 0
+                    import traceback
+                    traceback.print_exc()
 
         conn.close()
 
         # Render patients dashboard
-        content = render_patients_dashboard(org, patients, user_info)
+        content = render_patients_dashboard(org, patients, user_info, user_id)
         return render_template_with_header(f"Patients - {org['name']}", content, user_info)
 
     except Exception as e:
@@ -8590,7 +8243,9 @@ def embed_process(embed_token):
         # Get organization members and their profiles
         cursor.execute('''
             SELECT
-                u.id, u.first_name, u.last_name,
+                u.id,
+                u.first_name_encrypted, u.last_name_encrypted, u.email_encrypted,
+                u.first_name, u.last_name, u.email,
                 up.profile_data
             FROM organization_members om
             INNER JOIN users u ON om.user_id = u.id
@@ -8598,8 +8253,41 @@ def embed_process(embed_token):
             WHERE om.organization_id = %s AND om.is_active = TRUE
         ''', (config['org_id'],))
 
-        members = cursor.fetchall()
+        members_raw = cursor.fetchall()
+
+        # Decrypt member data
+        members = []
+        for member in members_raw:
+            # Decrypt encrypted fields with fallback to plain text
+            try:
+                first_name = data_encryption.decrypt_sensitive_data(member['first_name_encrypted']) if member.get('first_name_encrypted') else member.get('first_name')
+            except Exception as e:
+                print(f"Error decrypting first_name for member {member['id']}: {e}")
+                first_name = member.get('first_name')
+
+            try:
+                last_name = data_encryption.decrypt_sensitive_data(member['last_name_encrypted']) if member.get('last_name_encrypted') else member.get('last_name')
+            except Exception as e:
+                print(f"Error decrypting last_name for member {member['id']}: {e}")
+                last_name = member.get('last_name')
+
+            try:
+                email = data_encryption.decrypt_sensitive_data(member['email_encrypted']) if member.get('email_encrypted') else member.get('email')
+            except Exception as e:
+                print(f"Error decrypting email for member {member['id']}: {e}")
+                email = member.get('email')
+
+            members.append({
+                'id': member['id'],
+                'first_name': first_name,
+                'last_name': last_name,
+                'email': email,
+                'profile_data': member.get('profile_data')
+            })
+
         print(f"Found {len(members)} team members")
+        for member in members:
+            print(f"  Member: id={member.get('id')}, first_name={member.get('first_name')}, last_name={member.get('last_name')}, email={member.get('email')}")
 
         # Collect onboarding data from form
         onboarding_data = {
@@ -8652,26 +8340,72 @@ def embed_process(embed_token):
             WHERE id = %s
         ''', (json.dumps(results), session_id))
 
+        # Increment simulation count for all organization members
+        for member in members:
+            member_id = member.get('id')
+            if member_id:
+                cursor.execute('''
+                    UPDATE users
+                    SET free_matches_used = COALESCE(free_matches_used, 0) + 1,
+                        last_free_match_date = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                ''', (member_id,))
+                print(f"Incremented simulation count for user {member_id}")
+
         # If in party mode (applicant assessment), also create an applicant record
         applicant_id = None
         if config['mode'] == 'party' and onboarding_data.get('full_name') and onboarding_data.get('email'):
             # Generate behavioral fit analysis
             behavioral_fit = generate_behavioral_fit_analysis(onboarding_data, results, members)
 
+            # Generate first session insights for top 3 matches (if therapy matching)
+            first_session_insights = {}
+            if config.get('use_case') == 'therapy_matching' and results.get('members'):
+                # Sort members by compatibility score
+                sorted_members = sorted(
+                    results['members'],
+                    key=lambda x: x.get('analysis', {}).get('compatibility_score', 0),
+                    reverse=True
+                )
+
+                # Generate insights for top 3
+                for member_result in sorted_members[:3]:
+                    member_id = member_result.get('id')
+                    if member_id:
+                        # Get therapist profile
+                        cursor.execute('SELECT profile_data FROM user_profiles WHERE user_id = %s', (member_id,))
+                        profile_result = cursor.fetchone()
+                        therapist_profile = {}
+                        if profile_result and profile_result.get('profile_data'):
+                            try:
+                                therapist_profile = json.loads(profile_result['profile_data'])
+                            except:
+                                pass
+
+                        # Generate insights
+                        patient_data = {
+                            'full_name': onboarding_data.get('full_name'),
+                            'onboarding_data': onboarding_data
+                        }
+                        insights = generate_first_session_insights(patient_data, member_result, therapist_profile)
+                        first_session_insights[str(member_id)] = insights
+                        print(f"Generated first session insights for therapist {member_id}")
+
             # Create applicant record
             application_token = secrets.token_urlsafe(32)
             cursor.execute('''
                 INSERT INTO applicants (
                     organization_id, embed_session_id, full_name, email, linkedin_url,
-                    application_token, onboarding_data, compatibility_results, behavioral_fit_analysis
+                    application_token, onboarding_data, compatibility_results, behavioral_fit_analysis,
+                    first_session_insights_json
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
             ''', (
                 config['org_id'], session_id, onboarding_data['full_name'],
                 onboarding_data['email'], onboarding_data.get('linkedin_url', ''),
                 application_token, json.dumps(onboarding_data), json.dumps(results),
-                behavioral_fit
+                behavioral_fit, json.dumps(first_session_insights) if first_session_insights else None
             ))
             applicant_id = cursor.fetchone()['id']
 
@@ -8743,9 +8477,11 @@ Write a detailed analysis (300-500 words) that helps the team understand if this
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.7
+            temperature=0.7,
+            timeout=15,
+            max_tokens=400  # Faster with token limit
         )
 
         return response.choices[0].message.content.strip()
@@ -8754,8 +8490,80 @@ Write a detailed analysis (300-500 words) that helps the team understand if this
         return f"Behavioral fit analysis unavailable. Average compatibility score: {avg_score:.1f}/100"
 
 
+def generate_first_session_insights(patient_data: Dict, therapist_match: Dict, therapist_profile: Dict) -> str:
+    """Generate insights for therapist on how to make patient comfortable in first session"""
+    client = OpenAI(api_key=API_KEY)
+
+    # Extract patient onboarding responses
+    if isinstance(patient_data.get('onboarding_data'), str):
+        onboarding = json.loads(patient_data['onboarding_data'])
+    else:
+        onboarding = patient_data.get('onboarding_data', {})
+
+    # Extract match analysis
+    if 'analysis' in therapist_match:
+        match_summary = therapist_match['analysis'].get('summary', '')
+        strengths = therapist_match['analysis'].get('strengths', [])
+        challenges = therapist_match['analysis'].get('challenges', [])
+        compatibility_score = therapist_match['analysis'].get('compatibility_score', 0)
+    else:
+        match_summary = therapist_match.get('summary', '')
+        strengths = therapist_match.get('strengths', [])
+        challenges = therapist_match.get('challenges', [])
+        compatibility_score = therapist_match.get('compatibility_score', 0)
+
+    prompt = f"""You are an expert clinical psychologist providing guidance to a therapist preparing for their first session with a new patient.
+
+Patient Profile:
+- Name: {patient_data.get('full_name', 'Patient')}
+- Age: {onboarding.get('age', 'N/A')}
+- Location: {onboarding.get('location', 'N/A')}
+
+Patient's Responses:
+- Defining Moment: {onboarding.get('defining_moment', 'N/A')}
+- Resource Allocation: {onboarding.get('resource_allocation', 'N/A')}
+- Conflict Response: {onboarding.get('conflict_response', 'N/A')}
+- Trade-off Decisions: {onboarding.get('trade_off', 'N/A')}
+- Social Identity: {onboarding.get('social_identity', 'N/A')}
+- Moral Dilemma Response: {onboarding.get('moral_dilemma', 'N/A')}
+- System Trust: {onboarding.get('system_trust', 'N/A')}
+- Stress Response: {onboarding.get('stress_response', 'N/A')}
+- Future Values: {onboarding.get('future_values', 'N/A')}
+
+Match Analysis:
+- Compatibility Score: {compatibility_score}/100
+- Summary: {match_summary}
+- Strengths: {', '.join(strengths)}
+- Potential Challenges: {', '.join(challenges)}
+
+Provide practical, actionable guidance in 3 sections:
+
+1. **Patient Overview** (2-3 sentences): What type of person is this patient based on their responses? What are their core values and tendencies?
+
+2. **Building Rapport** (3-4 bullet points): Specific strategies to help this patient feel comfortable and safe in the first session, considering their personality and communication style.
+
+3. **Approach Recommendations** (3-4 bullet points): How to frame conversations, what topics to be mindful of, and how to leverage your compatibility strengths while navigating potential challenges.
+
+Keep the tone warm, professional, and focused on practical therapeutic guidance."""
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            timeout=20
+        )
+
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"Error generating first session insights: {e}")
+        return "First session insights unavailable."
+
+
 def run_embed_party_mode(user_data: Dict, members: List[Dict], config: Dict) -> Dict:
     """Run party mode for embed widget - analyze compatibility between user and team"""
+    import concurrent.futures
+
     client = OpenAI(api_key=API_KEY)
 
     # Create user profile summary from onboarding
@@ -8777,10 +8585,29 @@ LinkedIn: {user_data.get('linkedin_url', 'N/A')}
 - Future Values: {user_data.get('future_values', 'N/A')}
 """
 
-    results = {'members': []}
+    def analyze_member_compatibility(member):
+        """Analyze compatibility for a single member"""
+        # Store member ID for later use
+        member_id = member.get('id')
 
-    for member in members:
-        member_name = f"{member['first_name']} {member['last_name']}"
+        # Handle None values for first_name and last_name
+        first_name = member.get('first_name')
+        last_name = member.get('last_name')
+
+        if first_name and last_name:
+            member_name = f"{first_name} {last_name}"
+        elif first_name:
+            member_name = first_name
+        elif last_name:
+            member_name = last_name
+        elif member.get('email'):
+            # Use email prefix as fallback
+            member_name = member['email'].split('@')[0].replace('.', ' ').title()
+        else:
+            member_name = "Team Member"
+
+        print(f"  Processing member: id={member_id}, name={member_name}, email={member.get('email')}")
+
         member_profile = {}
 
         if member.get('profile_data'):
@@ -8819,36 +8646,73 @@ Return your analysis as JSON with this structure:
 """
 
         try:
+            print(f"Analyzing compatibility with {member_name}...")
             response = client.chat.completions.create(
-                model="gpt-4",
+                model="gpt-4o-mini",
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.7
+                temperature=0.7,
+                timeout=15,
+                max_tokens=300,  # Limit response length for speed
+                response_format={"type": "json_object"}
             )
 
-            analysis = json.loads(response.choices[0].message.content)
-            results['members'].append({
+            response_text = response.choices[0].message.content
+            print(f"Raw response for {member_name}: {response_text[:200]}...")
+
+            analysis = json.loads(response_text)
+            print(f"Completed analysis for {member_name}")
+            return {
+                'id': member_id,  # Include member ID for feedback
                 'name': member_name,
                 'analysis': analysis
-            })
+            }
 
-        except Exception as e:
-            print(f"Error analyzing compatibility for {member_name}: {e}")
-            results['members'].append({
+        except json.JSONDecodeError as e:
+            print(f"JSON parsing error for {member_name}: {e}")
+            print(f"Response was: {response_text if 'response_text' in locals() else 'No response'}")
+            return {
+                'id': member_id,
                 'name': member_name,
                 'analysis': {
                     'compatibility_score': 50,
-                    'summary': 'Analysis unavailable',
+                    'summary': 'Analysis unavailable - JSON parsing error',
                     'strengths': [],
                     'challenges': [],
                     'recommendation': 'Unable to complete analysis'
                 }
-            })
+            }
+        except Exception as e:
+            print(f"Error analyzing compatibility for {member_name}: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'id': member_id,
+                'name': member_name,
+                'analysis': {
+                    'compatibility_score': 50,
+                    'summary': f'Analysis unavailable - {str(e)}',
+                    'strengths': [],
+                    'challenges': [],
+                    'recommendation': 'Unable to complete analysis'
+                }
+            }
 
-    return results
+    # Process all members in parallel to speed up
+    print(f"Processing {len(members)} team members in parallel...")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(5, len(members))) as executor:
+        member_results = list(executor.map(analyze_member_compatibility, members))
+
+    # Sort by compatibility score (highest first)
+    member_results.sort(key=lambda x: x['analysis'].get('compatibility_score', 0), reverse=True)
+    print(f"Sorted results by compatibility score")
+
+    return {'members': member_results}
 
 
 def run_embed_simulation_mode(user_data: Dict, members: List[Dict], config: Dict) -> Dict:
     """Run simulation mode for embed widget - analyze how team would engage with this person"""
+    import concurrent.futures
+
     client = OpenAI(api_key=API_KEY)
 
     person_spec = config.get('person_specification', 'new person')
@@ -8872,10 +8736,22 @@ LinkedIn: {user_data.get('linkedin_url', 'N/A')}
 - Future Values: {user_data.get('future_values', 'N/A')}
 """
 
-    results = {'members': []}
+    def analyze_member_engagement(member):
+        # Handle None values for first_name and last_name
+        first_name = member.get('first_name')
+        last_name = member.get('last_name')
 
-    for member in members:
-        member_name = f"{member['first_name']} {member['last_name']}"
+        if first_name and last_name:
+            member_name = f"{first_name} {last_name}"
+        elif first_name:
+            member_name = first_name
+        elif last_name:
+            member_name = last_name
+        elif member.get('email'):
+            # Use email prefix as fallback
+            member_name = member['email'].split('@')[0].replace('.', ' ').title()
+        else:
+            member_name = "Team Member"
         member_profile = {}
 
         if member.get('profile_data'):
@@ -8915,33 +8791,62 @@ Return your analysis as JSON with this structure:
 """
 
         try:
+            print(f"Analyzing engagement for {member_name}...")
             response = client.chat.completions.create(
-                model="gpt-4",
+                model="gpt-4o-mini",
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.7
+                temperature=0.7,
+                timeout=15,
+                max_tokens=300,  # Limit response length for speed
+                response_format={"type": "json_object"}
             )
 
-            analysis = json.loads(response.choices[0].message.content)
-            results['members'].append({
+            response_text = response.choices[0].message.content
+            print(f"Raw response for {member_name}: {response_text[:200]}...")
+
+            analysis = json.loads(response_text)
+            print(f"Completed analysis for {member_name}")
+            return {
                 'name': member_name,
                 'analysis': analysis
-            })
+            }
 
-        except Exception as e:
-            print(f"Error analyzing engagement for {member_name}: {e}")
-            results['members'].append({
+        except json.JSONDecodeError as e:
+            print(f"JSON parsing error for {member_name}: {e}")
+            print(f"Response was: {response_text if 'response_text' in locals() else 'No response'}")
+            return {
                 'name': member_name,
                 'analysis': {
-                    'engagement_style': 'Analysis unavailable',
+                    'engagement_style': 'Analysis unavailable - JSON parsing error',
                     'strengths': [],
                     'challenges': [],
                     'relationship_quality': 'Unable to assess',
                     'effectiveness_score': 50,
                     'recommendation': 'Unable to complete analysis'
                 }
-            })
+            }
+        except Exception as e:
+            print(f"Error analyzing engagement for {member_name}: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'name': member_name,
+                'analysis': {
+                    'engagement_style': f'Analysis unavailable - {str(e)}',
+                    'strengths': [],
+                    'challenges': [],
+                    'relationship_quality': 'Unable to assess',
+                    'effectiveness_score': 50,
+                    'recommendation': 'Unable to complete analysis'
+                }
+            }
 
-    return results
+    # Process all members in parallel
+    print(f"Processing {len(members)} team members in parallel (simulation mode)...")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(5, len(members))) as executor:
+        member_results = list(executor.map(analyze_member_engagement, members))
+
+    return {'members': member_results}
 
 
 def render_applicants_dashboard(org: Dict, applicants: List[Dict], user_info: Dict) -> str:
@@ -9042,77 +8947,103 @@ def render_applicants_dashboard(org: Dict, applicants: List[Dict], user_info: Di
     return content
 
 
-def render_patients_dashboard(org: Dict, patients: List[Dict], user_info: Dict) -> str:
-    """Render the patients dashboard for therapy matching organizations with match feedback"""
+def render_patients_dashboard(org: Dict, patients: List[Dict], user_info: Dict, current_user_id: int = None) -> str:
+    """Render the patients dashboard for therapy matching organizations with personalized insights"""
+
+    # Ensure current_user_id is set
+    if current_user_id is None:
+        current_user_id = user_info.get('id', 0)
 
     patients_html = ''
     if patients:
         for patient in patients:
-            avg_score = patient.get('avg_score', 0)
+            match_score = patient.get('match_score', 0)
 
-            # Build matched members HTML with thumbs up/down
-            matched_members_html = ''
-            if patient.get('compatibility_data'):
-                for member in patient['compatibility_data'].get('members', []):
-                    score = member.get('compatibility_score', 0)
-                    feedback = member.get('feedback')
-                    member_id = member.get('id')
+            # Build match summary section
+            match_summary_html = ''
+            if patient.get('match_summary'):
+                match_summary_html = f'''
+                <div style="background: #f0f9ff; border-left: 4px solid #3b82f6; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+                    <h4 style="font-family: 'Satoshi', sans-serif; font-weight: 600; font-size: 0.875rem; color: #1e40af; margin-bottom: 0.5rem;">
+                        Match Analysis (Compatibility: {int(match_score)}/100)
+                    </h4>
+                    <p style="font-family: 'Satoshi', sans-serif; font-size: 0.875rem; color: #1e3a8a; margin: 0;">
+                        {patient['match_summary']}
+                    </p>
+                </div>
+                '''
 
-                    # Thumbs styling based on feedback
-                    thumbs_up_style = 'font-size: 1.5rem; cursor: pointer; opacity: 0.3; transition: opacity 0.2s;'
-                    thumbs_down_style = 'font-size: 1.5rem; cursor: pointer; opacity: 0.3; transition: opacity 0.2s;'
+            # Build first session insights section
+            insights_html = ''
+            if patient.get('first_session_insights'):
+                # Convert markdown-style formatting to HTML
+                insights_text = patient['first_session_insights']
+                insights_text = insights_text.replace('**', '<strong>').replace('**', '</strong>')
+                insights_text = insights_text.replace('\n\n', '</p><p style="font-family: \'Satoshi\', sans-serif; font-size: 0.875rem; line-height: 1.6; margin-bottom: 0.75rem;">')
+                insights_text = insights_text.replace('\n- ', '<br>• ')
 
-                    if feedback == 'up':
-                        thumbs_up_style = 'font-size: 1.5rem; cursor: pointer; opacity: 1;'
-                    elif feedback == 'down':
-                        thumbs_down_style = 'font-size: 1.5rem; cursor: pointer; opacity: 1;'
-
-                    matched_members_html += f'''
-                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; background: #f9fafb; border-radius: 8px; margin-bottom: 0.5rem;">
-                        <div style="flex-grow: 1;">
-                            <span style="font-family: 'Satoshi', sans-serif; font-weight: 600;">{member.get('member_name', 'Team Member')}</span>
-                            <span style="font-family: 'Satoshi', sans-serif; color: #6b7280; margin-left: 0.5rem;">({score}/100)</span>
-                        </div>
-                        <div style="display: flex; gap: 1rem; align-items: center;" id="feedback-{patient['id']}-{member_id}">
-                            <span onclick="updateFeedback({patient['id']}, {member_id}, 'up')" style="{thumbs_up_style}" id="thumbs-up-{patient['id']}-{member_id}">👍</span>
-                            <span onclick="updateFeedback({patient['id']}, {member_id}, 'down')" style="{thumbs_down_style}" id="thumbs-down-{patient['id']}-{member_id}">👎</span>
-                        </div>
+                insights_html = f'''
+                <div style="background: #f0fdf4; border-left: 4px solid #10b981; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+                    <h4 style="font-family: 'Satoshi', sans-serif; font-weight: 600; font-size: 0.875rem; color: #065f46; margin-bottom: 0.75rem;">
+                        First Session Guidance
+                    </h4>
+                    <div style="font-family: 'Satoshi', sans-serif; font-size: 0.875rem; color: #064e3b; line-height: 1.6;">
+                        <p style="font-family: 'Satoshi', sans-serif; font-size: 0.875rem; line-height: 1.6; margin-bottom: 0.75rem;">{insights_text}</p>
                     </div>
-                    '''
+                </div>
+                '''
+
+            # Get feedback status if available
+            feedback = patient.get('therapist_match', {}).get('feedback')
+
+            # Thumbs styling based on feedback
+            thumbs_up_style = 'font-size: 1.5rem; cursor: pointer; opacity: 0.3; transition: opacity 0.2s;'
+            thumbs_down_style = 'font-size: 1.5rem; cursor: pointer; opacity: 0.3; transition: opacity 0.2s;'
+
+            if feedback == 'up':
+                thumbs_up_style = 'font-size: 1.5rem; cursor: pointer; opacity: 1; color: #10b981;'
+            elif feedback == 'down':
+                thumbs_down_style = 'font-size: 1.5rem; cursor: pointer; opacity: 1; color: #ef4444;'
 
             patients_html += f'''
-            <div style="background: white; border: 1px solid #e5e7eb; border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem;">
-                <div style="margin-bottom: 1rem;">
-                    <h3 style="font-family: 'Satoshi', sans-serif; font-weight: 600; font-size: 1.25rem; margin-bottom: 0.5rem;">
-                        {patient['full_name']}
-                    </h3>
-                    <p style="font-family: 'Satoshi', sans-serif; color: #6b7280; font-size: 0.875rem;">
-                        {patient['email']}
-                    </p>
-                    <p style="font-family: 'Satoshi', sans-serif; color: #9ca3af; font-size: 0.75rem; margin-top: 0.25rem;">
-                        Submitted {patient['created_at'].strftime('%b %d, %Y') if hasattr(patient['created_at'], 'strftime') else patient['created_at']}
-                    </p>
+            <div style="background: white; border: 1px solid #e5e7eb; border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem;">
+                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 1rem;">
+                    <div style="flex-grow: 1;">
+                        <h3 style="font-family: 'Satoshi', sans-serif; font-weight: 600; font-size: 1.25rem; margin-bottom: 0.5rem;">
+                            {patient['full_name']}
+                        </h3>
+                        <p style="font-family: 'Satoshi', sans-serif; color: #6b7280; font-size: 0.875rem;">
+                            {patient['email']}
+                        </p>
+                        <p style="font-family: 'Satoshi', sans-serif; color: #9ca3af; font-size: 0.75rem; margin-top: 0.25rem;">
+                            Matched on {patient['created_at'].strftime('%b %d, %Y') if hasattr(patient['created_at'], 'strftime') else patient['created_at']}
+                        </p>
+                    </div>
+                    <div style="display: flex; gap: 1rem; align-items: center;" id="feedback-{patient['id']}-{current_user_id}">
+                        <span onclick="updateFeedback({patient['id']}, {current_user_id}, 'up')"
+                              style="{thumbs_up_style}"
+                              id="thumbs-up-{patient['id']}-{current_user_id}"
+                              title="Accept this match">👍</span>
+                        <span onclick="updateFeedback({patient['id']}, {current_user_id}, 'down')"
+                              style="{thumbs_down_style}"
+                              id="thumbs-down-{patient['id']}-{current_user_id}"
+                              title="Decline this match">👎</span>
+                    </div>
                 </div>
 
-                <div style="margin-bottom: 1rem;">
-                    <h4 style="font-family: 'Satoshi', sans-serif; font-weight: 600; font-size: 1rem; margin-bottom: 0.75rem;">Matched With:</h4>
-                    {matched_members_html if matched_members_html else '<p style="font-family: &quot;Satoshi&quot;, sans-serif; color: #9ca3af; font-size: 0.875rem;">No matches yet</p>'}
-                </div>
+                {match_summary_html}
+                {insights_html}
             </div>
             '''
     else:
         patients_html = f'''
         <div style="text-align: center; padding: 4rem 2rem; background: #f9fafb; border-radius: 12px; border: 2px dashed #d1d5db;">
             <p style="font-family: 'Satoshi', sans-serif; font-size: 1.125rem; color: #6b7280; margin-bottom: 1rem;">
-                No patients yet
+                No matched patients yet
             </p>
             <p style="font-family: 'Satoshi', sans-serif; color: #9ca3af; font-size: 0.875rem;">
-                Share your widget to start receiving patient assessments
+                Patients will appear here when they complete the assessment and match with you
             </p>
-            <a href="/organization/{org['id']}/embed-settings"
-               style="display: inline-block; margin-top: 1.5rem; padding: 0.75rem 1.5rem; background: black; color: white; text-decoration: none; border-radius: 8px; font-family: 'Satoshi', sans-serif; font-weight: 600;">
-                Configure Widget
-            </a>
         </div>
         '''
 
@@ -9124,14 +9055,11 @@ def render_patients_dashboard(org: Dict, patients: List[Dict], user_info: Dict) 
                     ← Back to {org['name']}
                 </a>
                 <h2 style="font-family: 'Sentient', sans-serif; font-size: 2rem; margin: 0;">
-                    Patients
+                    Your Matched Patients
                 </h2>
-            </div>
-            <div>
-                <a href="/organization/{org['id']}/embed-settings"
-                   style="display: inline-block; padding: 0.75rem 1.5rem; background: white; border: 2px solid black; color: black; text-decoration: none; border-radius: 8px; font-family: 'Satoshi', sans-serif; font-weight: 600; margin-right: 1rem;">
-                    Widget Settings
-                </a>
+                <p style="font-family: 'Satoshi', sans-serif; color: #6b7280; font-size: 0.875rem; margin-top: 0.5rem;">
+                    Patients you've been matched with based on compatibility
+                </p>
             </div>
         </div>
 
@@ -9140,20 +9068,33 @@ def render_patients_dashboard(org: Dict, patients: List[Dict], user_info: Dict) 
 
     <script>
     async function updateFeedback(patientId, memberId, feedback) {{
+        console.log('updateFeedback called:', patientId, memberId, feedback);
         try {{
             // Update UI immediately
             const thumbsUp = document.getElementById(`thumbs-up-${{patientId}}-${{memberId}}`);
             const thumbsDown = document.getElementById(`thumbs-down-${{patientId}}-${{memberId}}`);
 
-            if (feedback === 'up') {{
-                thumbsUp.style.opacity = '1';
-                thumbsDown.style.opacity = '0.3';
-            }} else {{
-                thumbsUp.style.opacity = '0.3';
-                thumbsDown.style.opacity = '1';
+            if (!thumbsUp || !thumbsDown) {{
+                console.error('Could not find thumbs elements:', `thumbs-up-${{patientId}}-${{memberId}}`);
+                return;
             }}
 
-            const response = await fetch(`/organization/{org['id']}/patient/${{patientId}}/feedback`, {{
+            if (feedback === 'up') {{
+                thumbsUp.style.opacity = '1';
+                thumbsUp.style.color = '#10b981';
+                thumbsDown.style.opacity = '0.3';
+                thumbsDown.style.color = '';
+            }} else {{
+                thumbsUp.style.opacity = '0.3';
+                thumbsUp.style.color = '';
+                thumbsDown.style.opacity = '1';
+                thumbsDown.style.color = '#ef4444';
+            }}
+
+            const url = `/organization/{org['id']}/patient/${{patientId}}/feedback`;
+            console.log('Fetching:', url);
+
+            const response = await fetch(url, {{
                 method: 'POST',
                 headers: {{
                     'Content-Type': 'application/json',
@@ -9164,20 +9105,19 @@ def render_patients_dashboard(org: Dict, patients: List[Dict], user_info: Dict) 
                 }})
             }});
 
+            console.log('Response status:', response.status);
+
             if (!response.ok) {{
-                throw new Error('Failed to update feedback');
+                const errorData = await response.json();
+                console.error('Server error:', errorData);
+                throw new Error('Failed to update feedback: ' + (errorData.error || response.statusText));
             }}
 
-            // Hide the thumbs after a moment
-            setTimeout(() => {{
-                const feedbackDiv = document.getElementById(`feedback-${{patientId}}-${{memberId}}`);
-                if (feedbackDiv) {{
-                    feedbackDiv.style.display = 'none';
-                }}
-            }}, 500);
+            const data = await response.json();
+            console.log('Feedback saved successfully:', data);
         }} catch (error) {{
             console.error('Error updating feedback:', error);
-            alert('Failed to update feedback. Please try again.');
+            alert('Failed to save feedback: ' + error.message);
         }}
     }}
     </script>
@@ -9626,6 +9566,10 @@ def render_embed_onboarding(config: Dict) -> str:
         }}
 
         /* Voice Input Styles */
+        .input-container {{
+            width: 100%;
+        }}
+
         .input-mode-toggle {{
             display: flex;
             gap: 0.5rem;
@@ -9792,8 +9736,8 @@ def render_embed_onboarding(config: Dict) -> str:
                     <p class="question-description">If you received an unexpected $10,000 windfall, how would you allocate it?</p>
 
                     <div class="input-mode-toggle">
-                        <button type="button" class="input-mode-btn active" onclick="switchInputMode('text', 'resource_allocation')">Text</button>
-                        <button type="button" class="input-mode-btn" onclick="switchInputMode('voice', 'resource_allocation')">Voice</button>
+                        <button type="button" class="input-mode-btn active" data-mode="text" data-field="resource_allocation">Text</button>
+                        <button type="button" class="input-mode-btn" data-mode="voice" data-field="resource_allocation">Voice</button>
                     </div>
 
                     <div id="text-input-resource_allocation" class="input-container">
@@ -9802,7 +9746,7 @@ def render_embed_onboarding(config: Dict) -> str:
 
                     <div id="voice-input-resource_allocation" class="input-container" style="display: none;">
                         <div class="audio-recorder">
-                            <button type="button" class="record-btn" id="record-btn-resource_allocation" onclick="toggleRecording('resource_allocation')">
+                            <button type="button" class="record-btn" id="record-btn-resource_allocation" data-field="resource_allocation">
                                 <span class="record-icon">🎤</span>
                                 <span class="record-text">Start Recording</span>
                             </button>
@@ -9818,8 +9762,8 @@ def render_embed_onboarding(config: Dict) -> str:
                     <p class="question-description">Describe a time when you had a significant disagreement with someone. How did you navigate it?</p>
 
                     <div class="input-mode-toggle">
-                        <button type="button" class="input-mode-btn active" onclick="switchInputMode('text', 'conflict_response')">Text</button>
-                        <button type="button" class="input-mode-btn" onclick="switchInputMode('voice', 'conflict_response')">Voice</button>
+                        <button type="button" class="input-mode-btn active" data-mode="text" data-field="conflict_response">Text</button>
+                        <button type="button" class="input-mode-btn" data-mode="voice" data-field="conflict_response">Voice</button>
                     </div>
 
                     <div id="text-input-conflict_response" class="input-container">
@@ -9828,7 +9772,7 @@ def render_embed_onboarding(config: Dict) -> str:
 
                     <div id="voice-input-conflict_response" class="input-container" style="display: none;">
                         <div class="audio-recorder">
-                            <button type="button" class="record-btn" id="record-btn-conflict_response" onclick="toggleRecording('conflict_response')">
+                            <button type="button" class="record-btn" id="record-btn-conflict_response" data-field="conflict_response">
                                 <span class="record-icon">🎤</span>
                                 <span class="record-text">Start Recording</span>
                             </button>
@@ -9844,8 +9788,8 @@ def render_embed_onboarding(config: Dict) -> str:
                     <p class="question-description">Would you prefer a high-paying job you find meaningless, or meaningful work with lower pay? Why?</p>
 
                     <div class="input-mode-toggle">
-                        <button type="button" class="input-mode-btn active" onclick="switchInputMode('text', 'trade_off')">Text</button>
-                        <button type="button" class="input-mode-btn" onclick="switchInputMode('voice', 'trade_off')">Voice</button>
+                        <button type="button" class="input-mode-btn active" data-mode="text" data-field="trade_off">Text</button>
+                        <button type="button" class="input-mode-btn" data-mode="voice" data-field="trade_off">Voice</button>
                     </div>
 
                     <div id="text-input-trade_off" class="input-container">
@@ -9854,7 +9798,7 @@ def render_embed_onboarding(config: Dict) -> str:
 
                     <div id="voice-input-trade_off" class="input-container" style="display: none;">
                         <div class="audio-recorder">
-                            <button type="button" class="record-btn" id="record-btn-trade_off" onclick="toggleRecording('trade_off')">
+                            <button type="button" class="record-btn" id="record-btn-trade_off" data-field="trade_off">
                                 <span class="record-icon">🎤</span>
                                 <span class="record-text">Start Recording</span>
                             </button>
@@ -9870,8 +9814,8 @@ def render_embed_onboarding(config: Dict) -> str:
                     <p class="question-description">What communities or groups are most important to your identity?</p>
 
                     <div class="input-mode-toggle">
-                        <button type="button" class="input-mode-btn active" onclick="switchInputMode('text', 'social_identity')">Text</button>
-                        <button type="button" class="input-mode-btn" onclick="switchInputMode('voice', 'social_identity')">Voice</button>
+                        <button type="button" class="input-mode-btn active" data-mode="text" data-field="social_identity">Text</button>
+                        <button type="button" class="input-mode-btn" data-mode="voice" data-field="social_identity">Voice</button>
                     </div>
 
                     <div id="text-input-social_identity" class="input-container">
@@ -9880,7 +9824,7 @@ def render_embed_onboarding(config: Dict) -> str:
 
                     <div id="voice-input-social_identity" class="input-container" style="display: none;">
                         <div class="audio-recorder">
-                            <button type="button" class="record-btn" id="record-btn-social_identity" onclick="toggleRecording('social_identity')">
+                            <button type="button" class="record-btn" id="record-btn-social_identity" data-field="social_identity">
                                 <span class="record-icon">🎤</span>
                                 <span class="record-text">Start Recording</span>
                             </button>
@@ -9896,8 +9840,8 @@ def render_embed_onboarding(config: Dict) -> str:
                     <p class="question-description">A close friend does something unethical at work. Do you report it or stay loyal? Why?</p>
 
                     <div class="input-mode-toggle">
-                        <button type="button" class="input-mode-btn active" onclick="switchInputMode('text', 'moral_dilemma')">Text</button>
-                        <button type="button" class="input-mode-btn" onclick="switchInputMode('voice', 'moral_dilemma')">Voice</button>
+                        <button type="button" class="input-mode-btn active" data-mode="text" data-field="moral_dilemma">Text</button>
+                        <button type="button" class="input-mode-btn" data-mode="voice" data-field="moral_dilemma">Voice</button>
                     </div>
 
                     <div id="text-input-moral_dilemma" class="input-container">
@@ -9906,7 +9850,7 @@ def render_embed_onboarding(config: Dict) -> str:
 
                     <div id="voice-input-moral_dilemma" class="input-container" style="display: none;">
                         <div class="audio-recorder">
-                            <button type="button" class="record-btn" id="record-btn-moral_dilemma" onclick="toggleRecording('moral_dilemma')">
+                            <button type="button" class="record-btn" id="record-btn-moral_dilemma" data-field="moral_dilemma">
                                 <span class="record-icon">🎤</span>
                                 <span class="record-text">Start Recording</span>
                             </button>
@@ -9922,8 +9866,8 @@ def render_embed_onboarding(config: Dict) -> str:
                     <p class="question-description">How much do you trust institutions (government, corporations, media)? Why?</p>
 
                     <div class="input-mode-toggle">
-                        <button type="button" class="input-mode-btn active" onclick="switchInputMode('text', 'system_trust')">Text</button>
-                        <button type="button" class="input-mode-btn" onclick="switchInputMode('voice', 'system_trust')">Voice</button>
+                        <button type="button" class="input-mode-btn active" data-mode="text" data-field="system_trust">Text</button>
+                        <button type="button" class="input-mode-btn" data-mode="voice" data-field="system_trust">Voice</button>
                     </div>
 
                     <div id="text-input-system_trust" class="input-container">
@@ -9932,7 +9876,7 @@ def render_embed_onboarding(config: Dict) -> str:
 
                     <div id="voice-input-system_trust" class="input-container" style="display: none;">
                         <div class="audio-recorder">
-                            <button type="button" class="record-btn" id="record-btn-system_trust" onclick="toggleRecording('system_trust')">
+                            <button type="button" class="record-btn" id="record-btn-system_trust" data-field="system_trust">
                                 <span class="record-icon">🎤</span>
                                 <span class="record-text">Start Recording</span>
                             </button>
@@ -9948,8 +9892,8 @@ def render_embed_onboarding(config: Dict) -> str:
                     <p class="question-description">Describe a highly stressful situation and how you coped with it.</p>
 
                     <div class="input-mode-toggle">
-                        <button type="button" class="input-mode-btn active" onclick="switchInputMode('text', 'stress_response')">Text</button>
-                        <button type="button" class="input-mode-btn" onclick="switchInputMode('voice', 'stress_response')">Voice</button>
+                        <button type="button" class="input-mode-btn active" data-mode="text" data-field="stress_response">Text</button>
+                        <button type="button" class="input-mode-btn" data-mode="voice" data-field="stress_response">Voice</button>
                     </div>
 
                     <div id="text-input-stress_response" class="input-container">
@@ -9958,7 +9902,7 @@ def render_embed_onboarding(config: Dict) -> str:
 
                     <div id="voice-input-stress_response" class="input-container" style="display: none;">
                         <div class="audio-recorder">
-                            <button type="button" class="record-btn" id="record-btn-stress_response" onclick="toggleRecording('stress_response')">
+                            <button type="button" class="record-btn" id="record-btn-stress_response" data-field="stress_response">
                                 <span class="record-icon">🎤</span>
                                 <span class="record-text">Start Recording</span>
                             </button>
@@ -9974,8 +9918,8 @@ def render_embed_onboarding(config: Dict) -> str:
                     <p class="question-description">What are your most important goals for the next 5 years?</p>
 
                     <div class="input-mode-toggle">
-                        <button type="button" class="input-mode-btn active" onclick="switchInputMode('text', 'future_values')">Text</button>
-                        <button type="button" class="input-mode-btn" onclick="switchInputMode('voice', 'future_values')">Voice</button>
+                        <button type="button" class="input-mode-btn active" data-mode="text" data-field="future_values">Text</button>
+                        <button type="button" class="input-mode-btn" data-mode="voice" data-field="future_values">Voice</button>
                     </div>
 
                     <div id="text-input-future_values" class="input-container">
@@ -9984,7 +9928,7 @@ def render_embed_onboarding(config: Dict) -> str:
 
                     <div id="voice-input-future_values" class="input-container" style="display: none;">
                         <div class="audio-recorder">
-                            <button type="button" class="record-btn" id="record-btn-future_values" onclick="toggleRecording('future_values')">
+                            <button type="button" class="record-btn" id="record-btn-future_values" data-field="future_values">
                                 <span class="record-icon">🎤</span>
                                 <span class="record-text">Start Recording</span>
                             </button>
@@ -10020,9 +9964,14 @@ def render_embed_onboarding(config: Dict) -> str:
         // Event delegation for input mode toggle buttons
         document.addEventListener('click', function(e) {{
             if (e.target.closest('.input-mode-btn')) {{
+                e.preventDefault();
+                e.stopPropagation();
+
                 const btn = e.target.closest('.input-mode-btn');
                 const mode = btn.getAttribute('data-mode');
                 const fieldName = btn.getAttribute('data-field');
+
+                console.log('Toggle button clicked:', mode, fieldName);
 
                 if (mode && fieldName) {{
                     switchInputMode(mode, fieldName);
@@ -10031,8 +9980,14 @@ def render_embed_onboarding(config: Dict) -> str:
 
             // Handle record button clicks
             if (e.target.closest('.record-btn')) {{
+                e.preventDefault();
+                e.stopPropagation();
+
                 const btn = e.target.closest('.record-btn');
                 const fieldName = btn.getAttribute('data-field');
+
+                console.log('Record button clicked:', fieldName);
+
                 if (fieldName) {{
                     toggleRecording(fieldName);
                 }}
@@ -10042,11 +9997,29 @@ def render_embed_onboarding(config: Dict) -> str:
         function switchInputMode(mode, fieldName) {{
             console.log('switchInputMode called:', mode, fieldName);
 
+            // Get input containers
+            const textInput = document.getElementById(`text-input-${{fieldName}}`);
+            const voiceInput = document.getElementById(`voice-input-${{fieldName}}`);
+
+            if (!textInput || !voiceInput) {{
+                console.error('Could not find input containers for:', fieldName);
+                return;
+            }}
+
             // Get the parent question div
-            const questionDiv = document.getElementById(`text-input-${{fieldName}}`).closest('.question');
+            const questionDiv = textInput.closest('.question');
+            if (!questionDiv) {{
+                console.error('Could not find parent question div for:', fieldName);
+                return;
+            }}
 
             // Get all buttons for this field within this question
             const buttons = questionDiv.querySelectorAll('.input-mode-btn');
+            if (buttons.length < 2) {{
+                console.error('Could not find toggle buttons for:', fieldName);
+                return;
+            }}
+
             const textBtn = buttons[0];
             const voiceBtn = buttons[1];
 
@@ -10060,21 +10033,24 @@ def render_embed_onboarding(config: Dict) -> str:
             }}
 
             // Toggle input containers
-            const textInput = document.getElementById(`text-input-${{fieldName}}`);
-            const voiceInput = document.getElementById(`voice-input-${{fieldName}}`);
-
             if (mode === 'text') {{
                 textInput.style.display = 'block';
                 voiceInput.style.display = 'none';
                 // Enable textarea required attribute
                 const textarea = document.getElementById(`${{fieldName}}_text`);
-                if (textarea) textarea.required = true;
+                if (textarea) {{
+                    textarea.required = true;
+                    console.log('Switched to text mode, textarea required:', textarea.required);
+                }}
             }} else {{
                 textInput.style.display = 'none';
                 voiceInput.style.display = 'block';
                 // Disable textarea required attribute when using voice
                 const textarea = document.getElementById(`${{fieldName}}_text`);
-                if (textarea) textarea.required = false;
+                if (textarea) {{
+                    textarea.required = false;
+                    console.log('Switched to voice mode, textarea required:', textarea.required);
+                }}
             }}
 
             console.log('Mode switched to:', mode, 'for field:', fieldName);
@@ -10386,6 +10362,8 @@ def organization_view(org_id):
 
         conn.close()
 
+        # Always render the organization view with Three.js
+        # Non-therapy orgs will have an additional Knowledge Base tab
         content = render_organization_view(org_info, members, recent_simulations, user_info)
         return render_template_with_header(f"{org_info['name']}", content, user_info)
 
@@ -10450,6 +10428,128 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                         </button>
     '''
 
+    # Tab navigation HTML (only for non-therapy orgs)
+    tabs_html = '' if is_therapy else '''
+    <div class="org-tabs">
+        <button class="org-tab active" onclick="switchOrgTab('team')">Team</button>
+        <button class="org-tab" onclick="switchOrgTab('knowledge')">Knowledge Base</button>
+    </div>
+    '''
+
+    # Knowledge Base tab HTML (only for non-therapy orgs)
+    knowledge_base_tab = '' if is_therapy else '''
+    <div id="knowledge-tab" class="tab-content">
+        <div style="padding: 2rem; max-width: 1400px; margin: 0 auto;">
+            <div style="margin-bottom: 2rem;">
+                <h2 style="font-size: 1.5rem; font-weight: 600; margin-bottom: 0.5rem;">📚 Knowledge Base</h2>
+                <p style="color: #666;">Upload documents and ask questions about your organization's knowledge</p>
+            </div>
+
+            <!-- Sub-tabs for Documents vs Chat -->
+            <div class="kb-subtabs" style="display: flex; gap: 1rem; margin-bottom: 2rem; border-bottom: 2px solid #e0e0e0;">
+                <button class="kb-subtab active" onclick="switchKBView('documents')" id="documentsSubtab" style="padding: 0.75rem 1.5rem; background: none; border: none; border-bottom: 3px solid black; font-family: 'Satoshi', sans-serif; font-size: 1rem; font-weight: 600; color: black; cursor: pointer; transition: all 0.2s; margin-bottom: -2px;">
+                    📄 Documents
+                </button>
+                <button class="kb-subtab" onclick="switchKBView('chat')" id="chatSubtab" style="padding: 0.75rem 1.5rem; background: none; border: none; border-bottom: 3px solid transparent; font-family: 'Satoshi', sans-serif; font-size: 1rem; font-weight: 500; color: #666; cursor: pointer; transition: all 0.2s; margin-bottom: -2px;">
+                    💬 Ask Questions
+                </button>
+            </div>
+
+            <!-- Documents View (existing) -->
+            <div id="documentsView" class="kb-view">
+                <div style="border: 2px dashed #ccc; border-radius: 8px; padding: 2rem; text-align: center; cursor: pointer; transition: all 0.3s; margin-bottom: 2rem;" onclick="document.getElementById('kbFileUpload').click()">
+                    <input type="file" id="kbFileUpload" multiple accept=".pdf,.docx,.txt,.md,.csv" style="display: none">
+                    <div style="font-size: 1.1rem; font-weight: 500;">📤 Drop files here or click to upload</div>
+                    <div style="font-size: 0.85rem; color: #666; margin-top: 0.5rem;">PDF, DOCX, TXT, MD, CSV • Max 50MB</div>
+                </div>
+
+                <div style="display: flex; gap: 1rem; margin-bottom: 2rem; align-items: center;">
+                    <select id="kbFolderView" onchange="loadKBFolders()" style="padding: 0.75rem 1rem; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 0.95rem; width: 180px;">
+                        <option value="team">By Team</option>
+                        <option value="project">By Project</option>
+                        <option value="type">By Type</option>
+                        <option value="date">By Date</option>
+                        <option value="person">By Person</option>
+                    </select>
+
+                    <input type="text" id="kbSearchBox" placeholder="Search documents..." oninput="searchKBDocuments()" style="flex: 1; padding: 0.75rem 1rem; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 0.95rem;">
+                </div>
+
+                <div id="kbFoldersContainer" style="margin-top: 2rem;">
+                    <div style="text-align: center; padding: 3rem; color: #666;">Loading documents...</div>
+                </div>
+            </div>
+
+            <!-- Chat View (NEW) -->
+            <div id="chatView" class="kb-view" style="display: none;">
+                <div class="chat-container" style="display: grid; grid-template-columns: 280px 1fr; gap: 0; height: calc(100vh - 320px); border: 1px solid #e0e0e0; border-radius: 12px; overflow: hidden;">
+
+                    <!-- Conversation List Sidebar -->
+                    <div class="conversations-sidebar" style="border-right: 1px solid #e0e0e0; background: #f8f9fa; overflow-y: auto;">
+                        <div style="padding: 1rem; border-bottom: 1px solid #e0e0e0; display: flex; justify-content: space-between; align-items: center;">
+                            <h3 style="font-size: 1rem; font-weight: 600;">Conversations</h3>
+                            <button onclick="createNewConversation()" style="background: black; color: white; border: none; width: 32px; height: 32px; border-radius: 6px; cursor: pointer; font-size: 1.2rem; transition: all 0.2s;">+</button>
+                        </div>
+                        <div id="conversationsList" style="padding: 0.5rem;">
+                            <div style="text-align: center; padding: 2rem 1rem; color: #666; font-size: 0.875rem;">
+                                No conversations yet.<br>Click + to start.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Chat Main Area -->
+                    <div class="chat-main" style="display: flex; flex-direction: column; background: white;">
+
+                        <!-- Messages Area -->
+                        <div id="messagesArea" style="flex: 1; overflow-y: auto; padding: 1.5rem;">
+                            <div class="empty-state" style="text-align: center; padding: 3rem 1rem; color: #666;">
+                                <h3 style="font-size: 1.25rem; margin-bottom: 1rem;">Ask a question about your documents</h3>
+                                <p style="margin-bottom: 1.5rem;">Examples:</p>
+                                <div style="display: flex; flex-direction: column; gap: 0.75rem; max-width: 500px; margin: 0 auto;">
+                                    <button onclick="askExample(\\'What are our Q1 priorities?\\')" style="padding: 0.75rem; background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 8px; cursor: pointer; text-align: left; transition: all 0.2s;">
+                                        "What are our Q1 priorities?"
+                                    </button>
+                                    <button onclick="askExample(\\'Who knows about TypeScript?\\')" style="padding: 0.75rem; background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 8px; cursor: pointer; text-align: left; transition: all 0.2s;">
+                                        "Who knows about TypeScript?"
+                                    </button>
+                                    <button onclick="askExample(\\'Summarize the marketing report\\')" style="padding: 0.75rem; background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 8px; cursor: pointer; text-align: left; transition: all 0.2s;">
+                                        "Summarize the marketing report"
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Message Input Area -->
+                        <div style="border-top: 1px solid #e0e0e0; padding: 1rem; background: #f8f9fa;">
+                            <div style="display: flex; gap: 0.5rem; align-items: flex-end;">
+                                <textarea
+                                    id="messageInput"
+                                    placeholder="Ask a question about your documents or team..."
+                                    style="flex: 1; min-height: 60px; max-height: 150px; padding: 0.75rem; border: 1px solid #e0e0e0; border-radius: 8px; resize: vertical; font-family: inherit; font-size: 0.95rem;"
+                                    onkeydown="if(event.key === \\'Enter\\' && !event.shiftKey) { event.preventDefault(); sendChatMessage(); }"
+                                ></textarea>
+                                <button
+                                    onclick="sendChatMessage()"
+                                    id="sendBtn"
+                                    style="padding: 0.75rem 1.5rem; background: black; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; min-width: 80px; height: 60px;">
+                                    Send
+                                </button>
+                            </div>
+                            <div style="margin-top: 0.5rem; font-size: 0.75rem; color: #666;">
+                                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                                    <input type="checkbox" id="useRagMode" checked>
+                                    Use simple RAG (faster, document Q&A only)
+                                </label>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    '''
+
     content = f'''
     <style>
         @import url("https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=sentient@400,500,600,700&display=swap");
@@ -10466,22 +10566,27 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             width: 100%;
             gap: 0;
             font-family: "Satoshi", sans-serif;
+            position: relative;
         }}
 
         /* Left Sidebar - Saved Simulations */
         .left-sidebar {{
             width: 280px;
+            min-width: 280px;
             background: rgba(255, 255, 255, 0.95);
             backdrop-filter: blur(20px);
             border-right: 1px solid rgba(0, 0, 0, 0.1);
             overflow-y: auto;
             display: flex;
             flex-direction: column;
-            transition: transform 0.3s ease;
+            transition: width 0.3s ease, min-width 0.3s ease;
         }}
 
         .left-sidebar.collapsed {{
-            transform: translateX(-280px);
+            width: 0;
+            min-width: 0;
+            overflow: hidden;
+            border-right: none;
         }}
 
         .sidebar-header {{
@@ -10517,6 +10622,37 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
         .new-simulation-btn:hover {{
             transform: scale(1.1);
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }}
+
+        .sidebar-toggle-btn {{
+            position: absolute;
+            left: 280px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(255, 255, 255, 0.95);
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            border-left: none;
+            border-radius: 0 8px 8px 0;
+            width: 24px;
+            height: 48px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: left 0.3s ease;
+            z-index: 1000;
+            font-size: 0.875rem;
+            color: #666;
+        }}
+
+        .sidebar-toggle-btn:hover {{
+            background: white;
+            color: black;
+            box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1);
+        }}
+
+        .left-sidebar.collapsed ~ .sidebar-toggle-btn {{
+            left: 0;
         }}
 
         .simulations-list {{
@@ -10596,6 +10732,12 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             flex-direction: column;
             background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%);
             position: relative;
+            margin-right: 0;
+            transition: margin-right 0.3s ease;
+        }}
+
+        .center-content.right-sidebar-visible {{
+            margin-right: 350px;
         }}
 
         .org-header-bar {{
@@ -10955,34 +11097,81 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             color: black;
         }}
 
+        /* Tab System Styles */
+        .org-tabs {{
+            display: {'flex' if not is_therapy else 'none'};
+            background: white;
+            border-bottom: 2px solid rgba(0, 0, 0, 0.1);
+            padding: 0 2rem;
+        }}
+
+        .org-tab {{
+            padding: 1rem 2rem;
+            background: none;
+            border: none;
+            font-family: "Satoshi", sans-serif;
+            font-size: 1rem;
+            font-weight: 600;
+            color: #666;
+            cursor: pointer;
+            transition: all 0.2s;
+            border-bottom: 3px solid transparent;
+            margin-bottom: -2px;
+        }}
+
+        .org-tab:hover {{
+            color: #000;
+            background: rgba(0, 0, 0, 0.02);
+        }}
+
+        .org-tab.active {{
+            color: #000;
+            border-bottom-color: #000;
+        }}
+
+        .tab-content {{
+            display: none;
+        }}
+
+        .tab-content.active {{
+            display: block;
+        }}
     </style>
 
-    <div class="org-view-container">
-        <!-- Left Sidebar: Saved Simulations -->
-        <div class="left-sidebar" id="leftSidebar">
-            <div class="sidebar-header">
-                <div class="sidebar-title">Chats</div>
-                <button class="new-simulation-btn" onclick="clearSimulation()" title="New Simulation">+</button>
-            </div>
-            <div class="simulations-list">
-                {simulations_html}
-            </div>
-        </div>
+    <!-- Tab Navigation (only for non-therapy orgs) -->
+    {tabs_html}
 
-        <!-- Center: Three.js Visualization -->
-        <div class="center-content">
-            <div class="org-header-bar">
-                <div>
-                    <span class="org-name">{org_info['name']}</span>
-                    <span class="member-count">{len(members)} member{'s' if len(members) != 1 else ''}</span>
+    <!-- Team Tab Content -->
+    <div id="team-tab" class="tab-content active">
+        <div class="org-view-container">
+            <!-- Left Sidebar: Saved Simulations -->
+            <div class="left-sidebar" id="leftSidebar">
+                <div class="sidebar-header">
+                    <div class="sidebar-title">Chats</div>
+                    <button class="new-simulation-btn" onclick="clearSimulation()" title="New Simulation">+</button>
                 </div>
-                <div class="invite-section">
-                    <input type="text" class="invite-link-input" id="inviteLink" value="{invite_url}" readonly>
-                    <button class="copy-btn" onclick="copyInviteLink()">Copy Link</button>
-                    <a href="/organization/{org_info['id']}/{applicants_link}" class="copy-btn" style="margin-left: 0.5rem; text-decoration: none;">{applicants_text}</a>
-                    {f'<a href="/organization/{org_info["id"]}/embed-settings" class="copy-btn" style="margin-left: 0.5rem; text-decoration: none;">Widget Settings</a>' if org_info['is_owner'] else ''}
+                <div class="simulations-list">
+                    {simulations_html}
                 </div>
             </div>
+
+            <!-- Sidebar Toggle Button -->
+            <button class="sidebar-toggle-btn" id="sidebarToggleBtn" onclick="toggleLeftSidebar()" title="Toggle Chats">‹</button>
+
+            <!-- Center: Three.js Visualization -->
+            <div class="center-content">
+                <div class="org-header-bar">
+                    <div>
+                        <span class="org-name">{org_info['name']}</span>
+                        <span class="member-count">{len(members)} member{'s' if len(members) != 1 else ''}</span>
+                    </div>
+                    <div class="invite-section">
+                        <input type="text" class="invite-link-input" id="inviteLink" value="{invite_url}" readonly>
+                        <button class="copy-btn" onclick="copyInviteLink()">Copy Link</button>
+                        <a href="/organization/{org_info['id']}/{applicants_link}" class="copy-btn" style="margin-left: 0.5rem; text-decoration: none;">{applicants_text}</a>
+                        {'<a href="/organization/' + str(org_info['id']) + '/embed-settings" class="copy-btn" style="margin-left: 0.5rem; text-decoration: none;">Widget Settings</a>' if org_info['is_owner'] else ''}
+                    </div>
+                </div>
 
             <div class="canvas-container">
                 <canvas id="three-canvas"></canvas>
@@ -10991,9 +11180,6 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                     <div class="mode-toggle">
                         <button class="mode-btn active" id="simulationModeBtn" onclick="switchMode('simulation')">
                             {simulation_mode_text}
-                        </button>
-                        <button class="mode-btn" id="partyModeBtn" onclick="switchMode('party')">
-                            {party_mode_text}
                         </button>
                         {networking_mode_btn}
                     </div>
@@ -11024,7 +11210,12 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                 </div>
             </div>
         </div>
+        </div>
     </div>
+    <!-- End Team Tab -->
+
+    <!-- Knowledge Base Tab (only for non-therapy orgs) -->
+    {knowledge_base_tab}
 
     <!-- Subscription Required Modal -->
     <div id="subscriptionModal" class="subscription-modal" style="display: none;">
@@ -11063,16 +11254,618 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
         const members = {members_json_str};
         let currentSimulationId = null;
         let simulationResults = {{}};
-        let currentMode = 'simulation'; // 'simulation', 'party', or 'networking'
+        let currentMode = 'simulation'; // 'simulation' or 'networking'
         let partyResults = null;
         let networkingResults = null;
         let compatibilityLines = [];
         let externalAttendees = [];
 
+        // Tab Switching
+        function switchOrgTab(tabName) {{
+            // Hide all tabs
+            document.querySelectorAll('.org-tab').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+
+            // Show selected tab
+            event.target.classList.add('active');
+            document.getElementById(tabName + '-tab').classList.add('active');
+
+            // Load knowledge base if switching to it
+            if (tabName === 'knowledge') {{
+                loadKBFolders();
+            }}
+        }}
+
+        // Knowledge Base Functions
+        async function loadKBFolders() {{
+            const viewType = document.getElementById('kbFolderView').value;
+            const container = document.getElementById('kbFoldersContainer');
+            container.innerHTML = '<div style="text-align: center; padding: 3rem; color: #666;">Loading...</div>';
+
+            try {{
+                const response = await fetch(`/api/folders/by-${{viewType}}?org_id=${{orgId}}`);
+                const data = await response.json();
+
+                if (data.error || !data.folders || data.folders.length === 0) {{
+                    container.innerHTML = '<div style="text-align: center; padding: 4rem 2rem; color: #999;"><h3>No documents yet</h3><p>Upload your first document above</p></div>';
+                    return;
+                }}
+
+                container.innerHTML = '';
+                data.folders.forEach(folder => {{
+                    const folderDiv = document.createElement('div');
+                    folderDiv.style.marginBottom = '3rem';
+                    folderDiv.innerHTML = `
+                        <div onclick="toggleKBFolder(this)" style="display: flex; align-items: center; gap: 1rem; padding: 1rem; background: #f9f9f9; border-radius: 8px; cursor: pointer; transition: all 0.2s;">
+                            <span style="font-size: 1.5rem;">📁</span>
+                            <span style="font-size: 1.2rem; font-weight: 600; flex: 1;">${{folder.name || 'Uncategorized'}}</span>
+                            <span style="background: #e0e0e0; padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.85rem;">${{folder.document_count}} docs</span>
+                            <span style="font-size: 1.2rem; transition: transform 0.2s;">▼</span>
+                        </div>
+                        <div class="kb-folder-docs" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1.5rem; padding-left: 3rem; margin-top: 1rem;">
+                        </div>
+                    `;
+                    container.appendChild(folderDiv);
+
+                    // Load documents for this folder
+                    const docsContainer = folderDiv.querySelector('.kb-folder-docs');
+                    if (folder.documents && folder.documents.length > 0) {{
+                        folder.documents.forEach(doc => {{
+                            const statusIcon = {{
+                                'pending': '⏳',
+                                'processing': '🔄',
+                                'completed': '✅',
+                                'failed': '❌'
+                            }}[doc.processing_status] || '📄';
+
+                            const docCard = document.createElement('div');
+                            docCard.style.cssText = 'background: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 1.5rem; cursor: pointer; transition: all 0.3s;';
+                            docCard.onmouseover = () => docCard.style.transform = 'translateY(-2px)';
+                            docCard.onmouseout = () => docCard.style.transform = 'translateY(0)';
+                            const fileSizeMB = doc.file_size ? (doc.file_size / (1024*1024)).toFixed(2) : '?';
+
+                            docCard.innerHTML = `
+                                <div style="position: relative;">
+                                    <button onclick="event.stopPropagation(); deleteDocument(${{doc.id}})" style="position: absolute; top: -0.5rem; right: -0.5rem; background: #ef4444; color: white; border: none; width: 24px; height: 24px; border-radius: 50%; cursor: pointer; font-size: 0.8rem; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s;" class="delete-doc-btn">×</button>
+                                    <div style="font-size: 2rem; margin-bottom: 0.5rem;">${{statusIcon}}</div>
+                                    <div style="font-weight: 600; margin-bottom: 0.5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${{doc.filename}}">${{doc.filename}}</div>
+                                    <div style="font-size: 0.85rem; color: #666; display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
+                                        <span>${{doc.file_type ? doc.file_type.toUpperCase() : 'FILE'}}</span>
+                                        <span>${{fileSizeMB}} MB</span>
+                                    </div>
+                                    <div style="font-size: 0.85rem; color: #666;">
+                                        <span>${{new Date(doc.upload_date).toLocaleDateString()}}</span>
+                                    </div>
+                                </div>
+                            `;
+                            docCard.onclick = () => window.location.href = `/api/documents/${{doc.id}}/download`;
+
+                            // Show delete button on hover
+                            docCard.onmouseover = () => {{
+                                docCard.style.transform = 'translateY(-2px)';
+                                const deleteBtn = docCard.querySelector('.delete-doc-btn');
+                                if (deleteBtn) deleteBtn.style.opacity = '1';
+                            }};
+                            docCard.onmouseout = () => {{
+                                docCard.style.transform = 'translateY(0)';
+                                const deleteBtn = docCard.querySelector('.delete-doc-btn');
+                                if (deleteBtn) deleteBtn.style.opacity = '0';
+                            }};
+                            docsContainer.appendChild(docCard);
+                        }});
+                    }} else {{
+                        docsContainer.innerHTML = '<p style="padding: 1rem; color: #999;">No documents</p>';
+                    }}
+                }});
+            }} catch (error) {{
+                console.error('Error loading folders:', error);
+                container.innerHTML = '<div style="text-align: center; padding: 4rem 2rem; color: #999;"><h3>Error loading folders</h3></div>';
+            }}
+        }}
+
+        function toggleKBFolder(header) {{
+            const folder = header.parentElement;
+            const docs = folder.querySelector('.kb-folder-docs');
+            const arrow = header.querySelector('span:last-child');
+
+            if (docs.style.display === 'none') {{
+                docs.style.display = 'grid';
+                arrow.style.transform = 'rotate(0deg)';
+            }} else {{
+                docs.style.display = 'none';
+                arrow.style.transform = 'rotate(-90deg)';
+            }}
+        }}
+
+        // File upload for Knowledge Base
+        document.getElementById('kbFileUpload')?.addEventListener('change', async (e) => {{
+            const files = Array.from(e.target.files);
+            if (files.length === 0) return;
+
+            if (files.length > 10) {{
+                alert('Maximum 10 files at once');
+                return;
+            }}
+
+            for (const file of files) {{
+                if (file.size > 50 * 1024 * 1024) {{
+                    alert(`${{file.name}} exceeds 50MB limit`);
+                    return;
+                }}
+            }}
+
+            const formData = new FormData();
+            formData.append('org_id', orgId);
+            files.forEach(file => formData.append('files', file));
+
+            // Show uploading feedback
+            const uploadStatus = document.createElement('div');
+            uploadStatus.style.cssText = 'position: fixed; top: 20px; right: 20px; background: white; border: 2px solid #000; border-radius: 8px; padding: 1.5rem; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 10000;';
+            uploadStatus.innerHTML = `
+                <div style="font-weight: 600; margin-bottom: 0.5rem;">Uploading ${{files.length}} file(s)...</div>
+                <div style="color: #666; font-size: 0.9rem;">Processing and classifying documents</div>
+            `;
+            document.body.appendChild(uploadStatus);
+
+            try {{
+                const response = await fetch('/api/documents/upload', {{
+                    method: 'POST',
+                    body: formData
+                }});
+
+                const result = await response.json();
+
+                if (result.success) {{
+                    uploadStatus.innerHTML = `
+                        <div style="font-weight: 600; margin-bottom: 0.5rem; color: #22c55e;">✓ Upload Complete!</div>
+                        <div style="color: #666; font-size: 0.9rem;">${{result.uploaded.length}} file(s) uploaded. Classifying...</div>
+                    `;
+                    setTimeout(() => {{
+                        uploadStatus.remove();
+                        loadKBFolders(); // Reload folders
+                    }}, 3000);
+                }} else {{
+                    uploadStatus.innerHTML = `
+                        <div style="font-weight: 600; margin-bottom: 0.5rem; color: #ef4444;">✗ Upload Failed</div>
+                        <div style="color: #666; font-size: 0.9rem;">${{result.error}}</div>
+                    `;
+                    setTimeout(() => uploadStatus.remove(), 5000);
+                }}
+            }} catch (error) {{
+                console.error('Upload error:', error);
+                uploadStatus.innerHTML = `
+                    <div style="font-weight: 600; margin-bottom: 0.5rem; color: #ef4444;">✗ Upload Failed</div>
+                    <div style="color: #666; font-size: 0.9rem;">${{error.message}}</div>
+                `;
+                setTimeout(() => uploadStatus.remove(), 5000);
+            }}
+
+            e.target.value = '';
+        }});
+
+        // Delete document
+        async function deleteDocument(docId) {{
+            if (!confirm('Are you sure you want to delete this document? This action cannot be undone.')) {{
+                return;
+            }}
+
+            try {{
+                const response = await fetch(`/api/documents/${{docId}}`, {{
+                    method: 'DELETE'
+                }});
+
+                const result = await response.json();
+
+                if (result.success) {{
+                    // Show success notification
+                    const notification = document.createElement('div');
+                    notification.style.cssText = 'position: fixed; top: 20px; right: 20px; background: #22c55e; color: white; padding: 1rem 1.5rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 10000;';
+                    notification.textContent = '✓ Document deleted';
+                    document.body.appendChild(notification);
+                    setTimeout(() => notification.remove(), 3000);
+
+                    // Reload folders
+                    loadKBFolders();
+                }} else {{
+                    alert('Failed to delete document: ' + (result.error || 'Unknown error'));
+                }}
+            }} catch (error) {{
+                console.error('Delete error:', error);
+                alert('Failed to delete document');
+            }}
+        }}
+
+        // Search documents in Knowledge Base
+        async function searchKBDocuments() {{
+            const query = document.getElementById('kbSearchBox').value.trim();
+            const container = document.getElementById('kbFoldersContainer');
+
+            if (!query) {{
+                loadKBFolders(); // Reset to folder view
+                return;
+            }}
+
+            try {{
+                const response = await fetch('/api/documents/search', {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{ query, org_id: orgId, top_k: 20 }})
+                }});
+
+                const data = await response.json();
+
+                if (data.error) {{
+                    console.error('Search error:', data.error);
+                    return;
+                }}
+
+                // Show search results as a single folder
+                container.innerHTML = `
+                    <div style="margin-bottom: 3rem;">
+                        <div style="display: flex; align-items: center; gap: 1rem; padding: 1rem; background: #f9f9f9; border-radius: 8px;">
+                            <span style="font-size: 1.5rem;">🔍</span>
+                            <span style="font-size: 1.2rem; font-weight: 600; flex: 1;">Search Results</span>
+                            <span style="background: #e0e0e0; padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.85rem;">${{data.results?.length || 0}} results</span>
+                        </div>
+                        <div id="searchResults" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1.5rem; padding-left: 3rem; margin-top: 1rem;"></div>
+                    </div>
+                `;
+
+                // Group by document
+                const docMap = new Map();
+                (data.results || []).forEach(result => {{
+                    if (!docMap.has(result.doc_id)) {{
+                        docMap.set(result.doc_id, result);
+                    }}
+                }});
+
+                const resultsContainer = container.querySelector('#searchResults');
+                docMap.forEach(doc => {{
+                    const card = document.createElement('div');
+                    card.style.cssText = 'background: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 1.5rem; cursor: pointer; transition: all 0.3s;';
+                    card.onmouseover = () => card.style.transform = 'translateY(-2px)';
+                    card.onmouseout = () => card.style.transform = 'translateY(0)';
+                    card.innerHTML = `
+                        <div style="font-size: 2rem; margin-bottom: 0.5rem;">📄</div>
+                        <div style="font-weight: 600; margin-bottom: 0.5rem;">${{doc.filename}}</div>
+                        <div style="font-size: 0.85rem; color: #666;">
+                            <span>${{doc.doc_type?.toUpperCase() || 'DOC'}}</span>
+                        </div>
+                    `;
+                    card.onclick = () => window.location.href = `/api/documents/${{doc.doc_id}}/download`;
+                    resultsContainer.appendChild(card);
+                }});
+            }} catch (error) {{
+                console.error('Search error:', error);
+            }}
+        }}
+
+        // ========================================================================
+        // CHAT FUNCTIONS (Phase 7)
+        // ========================================================================
+
+        // Global chat state
+        let currentConversationId = null;
+        let conversations = [];
+
+        // Switch between Documents and Chat views
+        function switchKBView(view) {{
+            const documentsView = document.getElementById('documentsView');
+            const chatView = document.getElementById('chatView');
+            const documentsTab = document.getElementById('documentsSubtab');
+            const chatTab = document.getElementById('chatSubtab');
+
+            if (view === 'documents') {{
+                documentsView.style.display = 'block';
+                chatView.style.display = 'none';
+                documentsTab.classList.add('active');
+                documentsTab.style.borderBottomColor = 'black';
+                documentsTab.style.fontWeight = '600';
+                documentsTab.style.color = 'black';
+                chatTab.classList.remove('active');
+                chatTab.style.borderBottomColor = 'transparent';
+                chatTab.style.fontWeight = '500';
+                chatTab.style.color = '#666';
+            }} else {{
+                documentsView.style.display = 'none';
+                chatView.style.display = 'block';
+                documentsTab.classList.remove('active');
+                documentsTab.style.borderBottomColor = 'transparent';
+                documentsTab.style.fontWeight = '500';
+                documentsTab.style.color = '#666';
+                chatTab.classList.add('active');
+                chatTab.style.borderBottomColor = 'black';
+                chatTab.style.fontWeight = '600';
+                chatTab.style.color = 'black';
+
+                // Load conversations on first view
+                if (conversations.length === 0) {{
+                    loadConversations();
+                }}
+            }}
+        }}
+
+        // Load all conversations
+        async function loadConversations() {{
+            try {{
+                const response = await fetch(`/api/chat/conversations?org_id=${{orgId}}`);
+                const data = await response.json();
+                conversations = data.conversations || [];
+
+                renderConversationsList();
+            }} catch (error) {{
+                console.error('Error loading conversations:', error);
+            }}
+        }}
+
+        // Render conversations list
+        function renderConversationsList() {{
+            const container = document.getElementById('conversationsList');
+
+            if (conversations.length === 0) {{
+                container.innerHTML = `
+                    <div style="text-align: center; padding: 2rem 1rem; color: #666; font-size: 0.875rem;">
+                        No conversations yet.<br>Click + to start.
+                    </div>
+                `;
+                return;
+            }}
+
+            container.innerHTML = conversations.map(conv => `
+                <div class="conversation-item ${{conv.id === currentConversationId ? 'active' : ''}}"
+                     onclick="loadConversation(${{conv.id}})"
+                     style="padding: 0.75rem; margin-bottom: 0.5rem; background: ${{conv.id === currentConversationId ? 'white' : 'transparent'}}; border-radius: 8px; cursor: pointer; transition: all 0.2s; border: 1px solid ${{conv.id === currentConversationId ? '#000' : 'transparent'}};">
+                    <div style="font-weight: 600; font-size: 0.875rem; margin-bottom: 0.25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                        ${{conv.title || 'Untitled Conversation'}}
+                    </div>
+                    <div style="font-size: 0.75rem; color: #666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                        ${{conv.last_message_preview || 'No messages yet'}}
+                    </div>
+                </div>
+            `).join('');
+        }}
+
+        // Create new conversation
+        async function createNewConversation() {{
+            try {{
+                const response = await fetch('/api/chat/conversations', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{
+                        org_id: orgId,
+                        title: 'New Conversation'
+                    }})
+                }});
+
+                const data = await response.json();
+                currentConversationId = data.conversation_id;
+
+                // Reload conversations
+                await loadConversations();
+
+                // Clear messages
+                document.getElementById('messagesArea').innerHTML = '<div style="text-align: center; padding: 2rem; color: #666;">Start the conversation!</div>';
+                document.getElementById('messageInput').focus();
+
+            }} catch (error) {{
+                console.error('Error creating conversation:', error);
+                alert('Failed to create conversation');
+            }}
+        }}
+
+        // Load conversation messages
+        async function loadConversation(conversationId) {{
+            currentConversationId = conversationId;
+            renderConversationsList();
+
+            try {{
+                const response = await fetch(`/api/chat/${{conversationId}}/messages`);
+                const data = await response.json();
+
+                renderMessages(data.messages || []);
+            }} catch (error) {{
+                console.error('Error loading conversation:', error);
+            }}
+        }}
+
+        // Render messages
+        function renderMessages(messages) {{
+            const container = document.getElementById('messagesArea');
+
+            if (messages.length === 0) {{
+                container.innerHTML = '<div style="text-align: center; padding: 2rem; color: #666;">No messages yet. Start the conversation!</div>';
+                return;
+            }}
+
+            container.innerHTML = messages.map(msg => {{
+                if (msg.role === 'user') {{
+                    return `
+                        <div class="message user-message" style="margin-bottom: 1.5rem;">
+                            <div style="background: #f0f0f0; padding: 1rem; border-radius: 8px; max-width: 70%; margin-left: auto;">
+                                ${{escapeHtml(msg.content)}}
+                            </div>
+                        </div>
+                    `;
+                }} else {{
+                    const reasoning = msg.reasoning && msg.reasoning.steps ? `
+                        <details style="margin-top: 1rem; font-size: 0.875rem; color: #666;">
+                            <summary style="cursor: pointer; font-weight: 600;"> How I figured this out</summary>
+                            <div style="margin-top: 0.5rem; padding: 0.75rem; background: #f8f9fa; border-radius: 6px;">
+                                ${{msg.reasoning.steps.map(step => `<div style="margin-bottom: 0.25rem;">✓ ${{step}}</div>`).join('')}}
+                            </div>
+                        </details>
+                    ` : '';
+
+                    const hasSources = msg.sources && (msg.sources.documents.length > 0 || msg.sources.employees.length > 0);
+                    const sources = hasSources ? `
+                        <details style="margin-top: 1rem; font-size: 0.875rem;">
+                            <summary style="cursor: pointer; font-weight: 600;"> Sources</summary>
+                            <div style="margin-top: 0.5rem; padding: 0.75rem; background: #fafafa; border-radius: 6px;">
+                                ${{msg.sources.documents.map(doc => `
+                                    <div style="margin-bottom: 0.5rem; padding: 0.5rem; border-left: 2px solid #ccc; padding-left: 0.75rem;">
+                                        <strong>${{doc.filename}}</strong> ${{doc.page ? `(page ${{doc.page}})` : ''}}
+                                    </div>
+                                `).join('')}}
+                                ${{msg.sources.employees.map(emp => `
+                                    <div style="margin-bottom: 0.5rem; padding: 0.5rem; border-left: 2px solid #ccc; padding-left: 0.75rem;">
+                                        <strong>${{emp.name}}</strong> - ${{emp.title}}
+                                    </div>
+                                `).join('')}}
+                            </div>
+                        </details>
+                    ` : '';
+
+                    return `
+                        <div class="message assistant-message" style="margin-bottom: 1.5rem;">
+                            <div style="padding: 1rem; border-left: 3px solid black; max-width: 85%;">
+                                <div style="margin-bottom: 0.5rem;">${{escapeHtml(msg.content)}}</div>
+                                ${{reasoning}}
+                                ${{sources}}
+                            </div>
+                        </div>
+                    `;
+                }}
+            }}).join('');
+
+            // Scroll to bottom
+            container.scrollTop = container.scrollHeight;
+        }}
+
+        // Send message
+        async function sendChatMessage() {{
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+
+            if (!message) return;
+
+            if (!currentConversationId) {{
+                await createNewConversation();
+            }}
+
+            const sendBtn = document.getElementById('sendBtn');
+            const useRag = document.getElementById('useRagMode').checked;
+
+            // Disable input
+            input.disabled = true;
+            sendBtn.disabled = true;
+            sendBtn.textContent = 'Sending...';
+
+            // Add user message to UI immediately
+            const messagesArea = document.getElementById('messagesArea');
+            const userMsgHtml = `
+                <div class="message user-message" style="margin-bottom: 1.5rem;">
+                    <div style="background: #f0f0f0; padding: 1rem; border-radius: 8px; max-width: 70%; margin-left: auto;">
+                        ${{escapeHtml(message)}}
+                    </div>
+                </div>
+            `;
+
+            if (messagesArea.innerHTML.includes('Start the conversation') || messagesArea.innerHTML.includes('No messages yet')) {{
+                messagesArea.innerHTML = userMsgHtml;
+            }} else {{
+                messagesArea.innerHTML += userMsgHtml;
+            }}
+
+            messagesArea.scrollTop = messagesArea.scrollHeight;
+
+            // Clear input
+            input.value = '';
+
+            try {{
+                const response = await fetch(`/api/chat/${{currentConversationId}}/messages`, {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{
+                        message: message,
+                        use_rag: useRag
+                    }})
+                }});
+
+                const data = await response.json();
+
+                // Build sources HTML
+                const hasSources = data.sources && (data.sources.documents.length > 0 || data.sources.employees.length > 0);
+                const sourcesHtml = hasSources ? `
+                    <details style="margin-top: 1rem; font-size: 0.875rem;">
+                        <summary style="cursor: pointer; font-weight: 600;"> Sources</summary>
+                        <div style="margin-top: 0.5rem; padding: 0.75rem; background: #fafafa; border-radius: 6px;">
+                            ${{data.sources.documents.map(doc => `
+                                <div style="margin-bottom: 0.5rem; padding: 0.5rem; border-left: 2px solid #ccc; padding-left: 0.75rem;">
+                                    <strong>${{doc.filename}}</strong> ${{doc.page ? `(page ${{doc.page}})` : ''}}
+                                </div>
+                            `).join('')}}
+                            ${{data.sources.employees ? data.sources.employees.map(emp => `
+                                <div style="margin-bottom: 0.5rem; padding: 0.5rem; border-left: 2px solid #ccc; padding-left: 0.75rem;">
+                                    <strong>${{emp.name}}</strong> - ${{emp.title}}
+                                </div>
+                            `).join('') : ''}}
+                        </div>
+                    </details>
+                ` : '';
+
+                const reasoningHtml = data.reasoning_steps ? `
+                    <details style="margin-top: 1rem; font-size: 0.875rem; color: #666;">
+                        <summary style="cursor: pointer; font-weight: 600;"> How I figured this out</summary>
+                        <div style="margin-top: 0.5rem; padding: 0.75rem; background: #f8f9fa; border-radius: 6px;">
+                            ${{data.reasoning_steps.map(step => `<div style="margin-bottom: 0.25rem;">✓ ${{step}}</div>`).join('')}}
+                        </div>
+                    </details>
+                ` : '';
+
+                // Add assistant response
+                messagesArea.innerHTML += `
+                    <div class="message assistant-message" style="margin-bottom: 1.5rem;">
+                        <div style="padding: 1rem; border-left: 3px solid black; max-width: 85%;">
+                            <div>${{escapeHtml(data.answer)}}</div>
+                            ${{reasoningHtml}}
+                            ${{sourcesHtml}}
+                        </div>
+                    </div>
+                `;
+
+                messagesArea.scrollTop = messagesArea.scrollHeight;
+
+                // Update conversation list
+                await loadConversations();
+
+            }} catch (error) {{
+                console.error('Error sending message:', error);
+                messagesArea.innerHTML += `
+                    <div class="message assistant-message" style="margin-bottom: 1.5rem;">
+                        <div style="padding: 1rem; border-left: 3px solid #ef4444; max-width: 85%; background: #fef2f2;">
+                            Error: ${{error.message || 'Failed to send message'}}
+                        </div>
+                    </div>
+                `;
+            }} finally {{
+                input.disabled = false;
+                sendBtn.disabled = false;
+                sendBtn.textContent = 'Send';
+                input.focus();
+            }}
+        }}
+
+        // Example question shortcuts
+        function askExample(question) {{
+            document.getElementById('messageInput').value = question;
+            sendChatMessage();
+        }}
+
+        // HTML escape utility
+        function escapeHtml(text) {{
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }}
+
+        // ========================================================================
+        // THREE.JS SETUP
+        // ========================================================================
+
         // Three.js Setup
         const canvas = document.getElementById('three-canvas');
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0xf8f9fa);
+        scene.background = new THREE.Color(0xffffff);
 
         // Camera setup
         const camera = new THREE.PerspectiveCamera(
@@ -11264,12 +12057,23 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
 
         // Mode switching
         function switchMode(mode) {{
+            console.log('switchMode called with mode:', mode);
             currentMode = mode;
 
-            // Update button states
-            document.getElementById('simulationModeBtn').classList.toggle('active', mode === 'simulation');
-            document.getElementById('partyModeBtn').classList.toggle('active', mode === 'party');
-            document.getElementById('networkingModeBtn').classList.toggle('active', mode === 'networking');
+            // Update button states (with null checks for buttons that may not exist)
+            const simulationBtn = document.getElementById('simulationModeBtn');
+            const partyBtn = document.getElementById('partyModeBtn');
+            const networkingBtn = document.getElementById('networkingModeBtn');
+
+            console.log('Buttons found:', {{
+                simulation: !!simulationBtn,
+                party: !!partyBtn,
+                networking: !!networkingBtn
+            }});
+
+            if (simulationBtn) simulationBtn.classList.toggle('active', mode === 'simulation');
+            if (partyBtn) partyBtn.classList.toggle('active', mode === 'party');
+            if (networkingBtn) networkingBtn.classList.toggle('active', mode === 'networking');
 
             // Update placeholder and button text
             const scenarioInput = document.getElementById('scenarioInput');
@@ -11281,9 +12085,11 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                 attendeeInput.style.display = 'none';
                 btn.textContent = 'Analyze Compatibility';
             }} else if (mode === 'networking') {{
+                console.log('Switching to networking mode UI');
                 scenarioInput.placeholder = 'Enter your networking goal... (e.g., "Find potential investors for my startup")';
                 attendeeInput.style.display = 'block';
                 btn.textContent = 'Analyze Networking Matches';
+                console.log('Attendee input display:', attendeeInput.style.display);
             }} else {{
                 scenarioInput.placeholder = 'Enter a scenario to simulate... (e.g., "A major deadline is moved up by two weeks")';
                 attendeeInput.style.display = 'none';
@@ -11344,6 +12150,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                     setTimeout(() => {{
                         const sidebar = document.getElementById('rightSidebar');
                         const container = document.getElementById('responseContainer');
+                        const centerContent = document.querySelector('.center-content');
 
                         container.innerHTML = `
                             <div class="response-header">Simulation Complete!</div>
@@ -11353,6 +12160,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                         `;
 
                         sidebar.classList.add('visible');
+                        centerContent.classList.add('right-sidebar-visible');
                     }}, spheres.length * 100);
                 }} else {{
                     // Check if subscription is required
@@ -11402,6 +12210,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                     setTimeout(() => {{
                         const sidebar = document.getElementById('rightSidebar');
                         const container = document.getElementById('responseContainer');
+                        const centerContent = document.querySelector('.center-content');
 
                         container.innerHTML = `
                             <div class="response-header">Compatibility Analysis Complete!</div>
@@ -11411,6 +12220,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                         `;
 
                         sidebar.classList.add('visible');
+                        centerContent.classList.add('right-sidebar-visible');
                     }}, 500);
                 }} else {{
                     // Check if subscription is required
@@ -11507,11 +12317,12 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
 
             const sidebar = document.getElementById('rightSidebar');
             const container = document.getElementById('responseContainer');
+            const centerContent = document.querySelector('.center-content');
 
             let matchesHtml = '';
             compatibility.top_matches.forEach((match, index) => {{
                 matchesHtml += `
-                    <div style="margin-bottom: 1rem; padding: 1rem; background: #f8f9fa; border-radius: 8px;">
+                    <div style="margin-bottom: 1rem; padding: 1rem; background: #ffffff; border-radius: 8px;">
                         <div style="font-weight: 600; margin-bottom: 0.5rem;">${{index + 1}}. ${{match.name}}</div>
                         <div style="font-size: 0.875rem; color: #666; margin-bottom: 0.5rem;">
                             Compatibility: ${{(match.score * 100).toFixed(0)}}%
@@ -11531,6 +12342,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             `;
 
             sidebar.classList.add('visible');
+            centerContent.classList.add('right-sidebar-visible');
         }}
 
         // Networking Mode
@@ -11567,6 +12379,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                     setTimeout(() => {{
                         const sidebar = document.getElementById('rightSidebar');
                         const container = document.getElementById('responseContainer');
+                        const centerContent = document.querySelector('.center-content');
 
                         container.innerHTML = `
                             <div class="response-header">Networking Analysis Complete!</div>
@@ -11576,6 +12389,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                         `;
 
                         sidebar.classList.add('visible');
+                        centerContent.classList.add('right-sidebar-visible');
                     }}, 500);
                 }} else {{
                     // Check if subscription is required
@@ -11603,11 +12417,12 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
 
             const sidebar = document.getElementById('rightSidebar');
             const container = document.getElementById('responseContainer');
+            const centerContent = document.querySelector('.center-content');
 
             let recsHtml = '';
             recommendations.top_matches.forEach((match, index) => {{
                 recsHtml += `
-                    <div style="margin-bottom: 1rem; padding: 1rem; background: #f8f9fa; border-radius: 8px;">
+                    <div style="margin-bottom: 1rem; padding: 1rem; background: #ffffff; border-radius: 8px;">
                         <div style="font-weight: 600; margin-bottom: 0.5rem;">${{index + 1}}. ${{match.name}}</div>
                         <div style="font-size: 0.875rem; color: #666; margin-bottom: 0.25rem;">
                             ${{match.title || 'Attendee'}}
@@ -11630,6 +12445,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             `;
 
             sidebar.classList.add('visible');
+            centerContent.classList.add('right-sidebar-visible');
         }}
 
         function showMemberResponse(memberId, memberName) {{
@@ -11641,6 +12457,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
 
             const sidebar = document.getElementById('rightSidebar');
             const container = document.getElementById('responseContainer');
+            const centerContent = document.querySelector('.center-content');
 
             // Format response nicely
             let formattedResponse = '';
@@ -11698,6 +12515,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             `;
 
             sidebar.classList.add('visible');
+            centerContent.classList.add('right-sidebar-visible');
         }}
 
         // Smooth color transition helper
@@ -11742,6 +12560,21 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
             }});
 
             document.getElementById('rightSidebar').classList.remove('visible');
+            document.querySelector('.center-content').classList.remove('right-sidebar-visible');
+        }}
+
+        function toggleLeftSidebar() {{
+            const sidebar = document.getElementById('leftSidebar');
+            const toggleBtn = document.getElementById('sidebarToggleBtn');
+
+            sidebar.classList.toggle('collapsed');
+
+            // Update button text based on state
+            if (sidebar.classList.contains('collapsed')) {{
+                toggleBtn.innerHTML = '›';
+            }} else {{
+                toggleBtn.innerHTML = '‹';
+            }}
         }}
 
         function copyInviteLink() {{
@@ -11813,6 +12646,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                     setTimeout(() => {{
                         const sidebar = document.getElementById('rightSidebar');
                         const container = document.getElementById('responseContainer');
+                        const centerContent = document.querySelector('.center-content');
 
                         container.innerHTML = `
                             <div class="response-header">Simulation Loaded</div>
@@ -11822,6 +12656,7 @@ def render_organization_view(org_info: Dict, members: List[Dict], simulations: L
                         `;
 
                         sidebar.classList.add('visible');
+                        centerContent.classList.add('right-sidebar-visible');
                     }}, spheres.length * 80);
 
                     console.log('Loaded simulation with', Object.keys(simulationResults).length, 'responses');
@@ -12228,59 +13063,6 @@ Provide your analysis as JSON:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-def scrape_linkedin_profile(linkedin_url: str) -> dict:
-    """Scrape LinkedIn profile using Fresh LinkedIn Profile Data API"""
-    if not FRESH_API_KEY:
-        print("Warning: FRESH_API_KEY not set, skipping LinkedIn scraping")
-        return None
-
-    try:
-        url = "https://fresh-linkedin-profile-data.p.rapidapi.com/get-linkedin-profile"
-        querystring = {"linkedin_url": linkedin_url, "include_skills": "true"}
-
-        headers = {
-            "x-rapidapi-key": FRESH_API_KEY,
-            "x-rapidapi-host": "fresh-linkedin-profile-data.p.rapidapi.com"
-        }
-
-        response = requests.get(url, headers=headers, params=querystring, timeout=15)
-
-        if response.status_code == 200:
-            data = response.json()
-
-            # Extract current position from experiences
-            current_company = None
-            current_title = None
-            if data.get('experiences') and len(data['experiences']) > 0:
-                current_exp = data['experiences'][0]
-                current_title = current_exp.get('title')
-                current_company = current_exp.get('company')
-
-            # Extract skills
-            skills = []
-            if data.get('skills'):
-                skills = [skill if isinstance(skill, str) else skill.get('name') for skill in data['skills'][:10]]
-                skills = [s for s in skills if s]  # Filter out None values
-
-            return {
-                'name': data.get('full_name') or data.get('name'),
-                'headline': data.get('headline'),
-                'summary': data.get('summary') or data.get('about'),
-                'current_company': current_company,
-                'current_title': current_title,
-                'location': data.get('location') or data.get('city'),
-                'skills': skills,
-                'industry': data.get('industry')
-            }
-        else:
-            print(f"Fresh API error: {response.status_code} - {response.text}")
-            return None
-
-    except Exception as e:
-        print(f"Error scraping LinkedIn profile {linkedin_url}: {e}")
-        return None
-
-
 @app.route('/api/run-networking-mode', methods=['POST'])
 @login_required
 def run_networking_mode():
@@ -12360,7 +13142,7 @@ def run_networking_mode():
 
         members = parsed_members
 
-        # Parse attendee list (format: "Name, LinkedIn URL" per line)
+        # Parse attendee list (format: "Name" per line, or "Name, Role/Company" per line)
         attendees = []
         for line in attendee_list.split('\n'):
             line = line.strip()
@@ -12369,20 +13151,17 @@ def run_networking_mode():
 
             parts = [p.strip() for p in line.split(',')]
             if len(parts) >= 2:
+                # Name and additional info (role, company, etc.)
                 name = parts[0]
-                linkedin = parts[1]
-                # Scrape LinkedIn profile if URL provided
-                linkedin_data = scrape_linkedin_profile(linkedin) if linkedin else None
+                additional_info = ', '.join(parts[1:])
                 attendees.append({
-                    'name': linkedin_data.get('name') if linkedin_data else name,
-                    'linkedin': linkedin,
-                    'linkedin_data': linkedin_data
+                    'name': name,
+                    'info': additional_info
                 })
             elif len(parts) == 1:
                 attendees.append({
                     'name': parts[0],
-                    'linkedin': None,
-                    'linkedin_data': None
+                    'info': None
                 })
 
         if not attendees:
@@ -12403,25 +13182,10 @@ def run_networking_mode():
             matches = []
 
             for attendee in attendees:
-                # Build attendee profile from LinkedIn data
+                # Build attendee profile
                 attendee_info = f"External Attendee: {attendee['name']}"
-
-                if attendee.get('linkedin_data'):
-                    ld = attendee['linkedin_data']
-                    attendee_info += f"\n- Current Role: {ld.get('current_title', 'Unknown')} at {ld.get('current_company', 'Unknown')}"
-                    if ld.get('headline'):
-                        attendee_info += f"\n- Headline: {ld['headline']}"
-                    if ld.get('location'):
-                        attendee_info += f"\n- Location: {ld['location']}"
-                    if ld.get('industry'):
-                        attendee_info += f"\n- Industry: {ld['industry']}"
-                    if ld.get('skills'):
-                        attendee_info += f"\n- Key Skills: {', '.join(ld['skills'][:5])}"
-                    if ld.get('summary'):
-                        summary_preview = ld['summary'][:200] + "..." if len(ld['summary']) > 200 else ld['summary']
-                        attendee_info += f"\n- Summary: {summary_preview}"
-                elif attendee.get('linkedin'):
-                    attendee_info += f"\nLinkedIn: {attendee['linkedin']}"
+                if attendee.get('info'):
+                    attendee_info += f"\n- {attendee['info']}"
 
                 # Build networking analysis prompt
                 prompt = f"""You are analyzing networking opportunities for a professional.
@@ -13979,9 +14743,9 @@ def api_user_matches(user_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/health')
-def health_check():
-    """Health check for deployment monitoring"""
+@app.route('/health-simple')
+def health_check_simple():
+    """Simple health check for basic deployment monitoring"""
     return jsonify({
         'status': 'healthy',
         'service': 'user-matching-platform',
@@ -14007,45 +14771,12 @@ def track_interaction():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@app.route('/api/neural-network-status')
-@login_required
-def neural_network_status():
-    """Get neural network training status and performance"""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Get latest model performance
-        cursor.execute('''
-            SELECT model_version, accuracy, training_data_size, created_at
-            FROM model_performance
-            ORDER BY created_at DESC
-            LIMIT 1
-        ''')
-        latest_model = cursor.fetchone()
-        
-        # Get total interaction count
-        cursor.execute('SELECT COUNT(*) FROM user_interactions WHERE outcome IS NOT NULL')
-        total_interactions = cursor.fetchone()[0]
-        
-        conn.close()
-        
-        status = {
-            'is_trained': enhanced_matching_system.neural_predictor.is_trained,
-            'total_interactions': total_interactions,
-            'min_required': enhanced_matching_system.min_neural_data,
-            'latest_model': {
-                'version': latest_model[0] if latest_model else None,
-                'accuracy': latest_model[1] if latest_model else None,
-                'data_size': latest_model[2] if latest_model else None,
-                'created_at': latest_model[3] if latest_model else None
-            } if latest_model else None
-        }
-        
-        return jsonify(status)
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+# DEPRECATED: ML matching system removed
+# @app.route('/api/neural-network-status')
+# @login_required
+# def neural_network_status():
+#     """Get neural network training status and performance"""
+#     return jsonify({'error': 'Neural network matching system has been deprecated'}), 404
 
 # ============================================================================
 # UTILITY FUNCTIONS
@@ -15207,7 +15938,7 @@ def subscription_plans():
         }}
         
         .btn-subscribe {{
-            background: white;
+            background: black;
             color: white;
             padding: 1rem 2rem;
             border-radius: 50px;
@@ -15221,10 +15952,11 @@ def subscription_plans():
             width: 100%;
             text-align: center;
         }}
-        
+
         .btn-subscribe:hover {{
             transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(22, 122, 96, 0.3);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+            background: #1a1a1a;
         }}
         
         .btn-current {{
@@ -15773,122 +16505,2132 @@ def secure_stripe_webhook():
         return jsonify({'error': 'Processing failed'}), 500
 
 
-def handle_checkout_completion(session):
-    """Handle successful checkout"""
-    try:
-        user_id = int(session['metadata']['user_id'])
-        customer_id = session['customer']
-        subscription_id = session['subscription']
-        
-        print(f"Processing checkout completion for user {user_id}")
-        
-        # Update or create subscription record
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Check if subscription record exists
-        cursor.execute('SELECT id FROM user_subscriptions WHERE user_id = %s', (user_id,))
-        existing = cursor.fetchone()
-        
-        if existing:
-            # Update existing record
-            cursor.execute('''
-                UPDATE user_subscriptions 
-                SET stripe_customer_id = %s, stripe_subscription_id = %s, 
-                    status = 'active', updated_at = CURRENT_TIMESTAMP
-                WHERE user_id = %s
-            ''', (customer_id, subscription_id, user_id))
-        else:
-            # Create new record
-            cursor.execute('''
-                INSERT INTO user_subscriptions 
-                (user_id, stripe_customer_id, stripe_subscription_id, status, created_at, updated_at)
-                VALUES (%s, %s, %s, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            ''', (user_id, customer_id, subscription_id))
-        
-        conn.commit()
-        conn.close()
-        
-        print(f"✓ Subscription activated for user {user_id}")
-        
-    except Exception as e:
-        print(f"Error handling checkout completion: {e}")
 
-def handle_subscription_created(subscription):
-    """Handle subscription creation"""
+
+
+
+# ============================================================================
+# KNOWLEDGE PLATFORM WEB PAGES
+# ============================================================================
+
+@app.route('/organization/<int:org_id>/documents')
+@login_required
+def organization_documents(org_id):
+    """Documents page for non-therapy organizations"""
+    user_id = session['user_id']
+    user_info = user_auth.get_user_info(user_id)
+
     try:
-        customer_id = subscription['customer']
-        subscription_id = subscription['id']
-        status = subscription['status']
-        
-        # Find user by customer ID
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('SELECT user_id FROM user_subscriptions WHERE stripe_customer_id = %s', (customer_id,))
-        result = cursor.fetchone()
-        
-        if result:
-            user_id = result['user_id']
+
+        # Check membership and org type
+        cursor.execute('''
+            SELECT om.role, o.* FROM organization_members om
+            JOIN organizations o ON om.organization_id = o.id
+            WHERE om.organization_id = %s AND om.user_id = %s AND om.is_active = TRUE
+        ''', (org_id, user_id))
+
+        membership = cursor.fetchone()
+
+        if not membership:
+            conn.close()
+            flash('You do not have access to this organization', 'error')
+            return redirect('/dashboard')
+
+        if membership['use_case'] == 'therapy_matching':
+            conn.close()
+            flash('Documents feature not available for therapy organizations', 'error')
+            return redirect(f'/organization/{org_id}')
+
+        org_name = membership['name']
+
+        # Get all documents for this org
+        cursor.execute('''
+            SELECT d.*, u.first_name, u.last_name
+            FROM documents d
+            JOIN users u ON d.uploaded_by = u.id
+            WHERE d.organization_id = %s AND d.is_deleted = FALSE
+            ORDER BY d.upload_date DESC
+        ''', (org_id,))
+
+        documents = cursor.fetchall()
+        conn.close()
+
+        # Render documents page
+        content = render_documents_page(org_id, org_name, documents, user_info)
+        return render_template_with_header(f"{org_name} - Documents", content, user_info)
+
+    except Exception as e:
+        print(f"Error loading documents: {e}")
+        import traceback
+        traceback.print_exc()
+        flash('Error loading documents', 'error')
+        return redirect(f'/organization/{org_id}')
+
+
+def render_documents_page(org_id: int, org_name: str, documents: List[Dict], user_info: Dict) -> str:
+    """Render the documents management page"""
+
+    # Build documents HTML
+    docs_html = ''
+    if documents:
+        for doc in documents:
+            status_icon = {
+                'pending': '⏳',
+                'processing': '🔄',
+                'completed': '✅',
+                'failed': '❌'
+            }.get(doc['processing_status'], '❓')
+
+            file_size_mb = doc['file_size'] / (1024 * 1024)
+            upload_date = doc['upload_date'].strftime('%b %d, %Y %I:%M %p') if doc['upload_date'] else 'Unknown'
+
+            docs_html += f'''
+                <div class="doc-card">
+                    <div class="doc-header">
+                        <span class="doc-icon">{status_icon}</span>
+                        <span class="doc-filename">{doc['filename']}</span>
+                    </div>
+                    <div class="doc-meta">
+                        <span>{doc['file_type'].upper()}</span>
+                        <span>{file_size_mb:.2f} MB</span>
+                        <span>{doc['first_name']} {doc['last_name']}</span>
+                    </div>
+                    <div class="doc-date">{upload_date}</div>
+                    <div class="doc-status">{doc['processing_status'].title()}</div>
+                </div>
+            '''
+    else:
+        docs_html = '<p class="no-docs">No documents uploaded yet. Upload your first document above!</p>'
+
+    content = f'''
+    <style>
+        .docs-container {{
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }}
+        .docs-header {{
+            margin-bottom: 2rem;
+        }}
+        .docs-title {{
+            font-size: 2rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }}
+        .docs-subtitle {{
+            color: #666;
+        }}
+        .upload-section {{
+            background: white;
+            border: 2px dashed #ccc;
+            border-radius: 12px;
+            padding: 3rem;
+            text-align: center;
+            margin-bottom: 3rem;
+            transition: all 0.3s;
+        }}
+        .upload-section:hover {{
+            border-color: #000;
+            background: #f9f9f9;
+        }}
+        .upload-zone {{
+            cursor: pointer;
+        }}
+        .upload-btn {{
+            background: black;
+            color: white;
+            border: none;
+            padding: 1rem 2rem;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            margin-top: 1rem;
+        }}
+        .upload-btn:hover {{
+            background: #333;
+        }}
+        .upload-info {{
+            margin-top: 1rem;
+            font-size: 0.9rem;
+            color: #666;
+        }}
+        .docs-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }}
+        .doc-card {{
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 12px;
+            padding: 1.5rem;
+            transition: all 0.3s;
+        }}
+        .doc-card:hover {{
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            transform: translateY(-2px);
+        }}
+        .doc-header {{
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }}
+        .doc-icon {{
+            font-size: 1.5rem;
+        }}
+        .doc-filename {{
+            font-weight: 600;
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }}
+        .doc-meta {{
+            display: flex;
+            gap: 1rem;
+            font-size: 0.85rem;
+            color: #666;
+            margin-bottom: 0.5rem;
+        }}
+        .doc-date {{
+            font-size: 0.85rem;
+            color: #999;
+        }}
+        .doc-status {{
+            margin-top: 0.5rem;
+            padding: 0.25rem 0.75rem;
+            background: #f0f0f0;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            display: inline-block;
+        }}
+        .no-docs {{
+            text-align: center;
+            color: #999;
+            padding: 3rem;
+        }}
+        .back-link {{
+            display: inline-block;
+            margin-bottom: 2rem;
+            color: #666;
+            text-decoration: none;
+        }}
+        .back-link:hover {{
+            color: #000;
+        }}
+        #uploadProgress {{
+            margin-top: 1rem;
+            display: none;
+        }}
+        .progress-bar {{
+            width: 100%;
+            height: 8px;
+            background: #f0f0f0;
+            border-radius: 4px;
+            overflow: hidden;
+        }}
+        .progress-fill {{
+            height: 100%;
+            background: black;
+            transition: width 0.3s;
+        }}
+        .progress-text {{
+            margin-top: 0.5rem;
+            font-size: 0.9rem;
+            color: #666;
+        }}
+    </style>
+
+    <div class="docs-container">
+        <a href="/organization/{org_id}" class="back-link">← Back to {org_name}</a>
+
+        <div class="docs-header">
+            <h1 class="docs-title">📄 Documents</h1>
+            <p class="docs-subtitle">Upload and manage your organization's documents</p>
+        </div>
+
+        <div class="upload-section">
+            <div class="upload-zone" onclick="document.getElementById('fileInput').click()">
+                <input type="file" id="fileInput" multiple accept=".pdf,.docx,.txt,.md,.csv" style="display: none">
+                <h2>Drop files here or click to upload</h2>
+                <p>Supported: PDF, DOCX, TXT, MD, CSV • Max 50MB per file • Up to 10 files</p>
+                <button class="upload-btn" type="button">Choose Files</button>
+            </div>
+            <div id="uploadProgress" style="display: none;">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <div class="progress-text" id="progressText">Uploading...</div>
+            </div>
+        </div>
+
+        <div class="docs-grid">
+            {docs_html}
+        </div>
+    </div>
+
+    <script>
+        console.log('Documents page script loaded');
+
+        const fileInput = document.getElementById('fileInput');
+        const uploadProgress = document.getElementById('uploadProgress');
+        const progressFill = document.getElementById('progressFill');
+        const progressText = document.getElementById('progressText');
+
+        console.log('File input element:', fileInput);
+
+        fileInput.addEventListener('change', async (e) => {{
+            console.log('File input change event fired!', e.target.files);
+            const files = Array.from(e.target.files);
+            console.log('Files array:', files);
+
+            if (files.length === 0) return;
+
+            if (files.length > 10) {{
+                alert('Maximum 10 files at once');
+                return;
+            }}
+
+            // Validate file sizes
+            for (const file of files) {{
+                if (file.size > 50 * 1024 * 1024) {{
+                    alert(`${{file.name}} exceeds 50MB limit`);
+                    return;
+                }}
+            }}
+
+            // Show progress
+            uploadProgress.style.display = 'block';
+            progressText.textContent = `Uploading ${{files.length}} file(s)...`;
+            progressFill.style.width = '0%';
+
+            // Create form data
+            const formData = new FormData();
+            formData.append('org_id', '{org_id}');
+            files.forEach(file => formData.append('files', file));
+
+            try {{
+                const response = await fetch('/api/documents/upload', {{
+                    method: 'POST',
+                    body: formData
+                }});
+
+                const result = await response.json();
+
+                if (result.success) {{
+                    progressFill.style.width = '100%';
+                    progressText.textContent = `✅ Uploaded ${{result.uploaded.length}} file(s) successfully!`;
+
+                    // Reload page after 1 second
+                    setTimeout(() => {{
+                        window.location.reload();
+                    }}, 1000);
+                }} else {{
+                    progressText.textContent = `❌ Upload failed: ${{result.error || 'Unknown error'}}`;
+                }}
+            }} catch (error) {{
+                console.error('Upload error:', error);
+                progressText.textContent = `❌ Upload failed: ${{error.message}}`;
+            }}
+
+            // Reset file input
+            fileInput.value = '';
+        }});
+
+        console.log('Event listener attached to file input');
+
+        // Drag and drop support
+        const uploadSection = document.querySelector('.upload-section');
+
+        uploadSection.addEventListener('dragover', (e) => {{
+            e.preventDefault();
+            uploadSection.style.borderColor = '#000';
+            uploadSection.style.background = '#f9f9f9';
+        }});
+
+        uploadSection.addEventListener('dragleave', () => {{
+            uploadSection.style.borderColor = '#ccc';
+            uploadSection.style.background = 'white';
+        }});
+
+        uploadSection.addEventListener('drop', (e) => {{
+            e.preventDefault();
+            uploadSection.style.borderColor = '#ccc';
+            uploadSection.style.background = 'white';
+
+            const files = Array.from(e.dataTransfer.files);
+            const dataTransfer = new DataTransfer();
+            files.forEach(file => dataTransfer.items.add(file));
+            fileInput.files = dataTransfer.files;
+
+            // Trigger change event
+            fileInput.dispatchEvent(new Event('change'));
+        }});
+    </script>
+    '''
+
+    return content
+
+
+# ============================================================================
+# KNOWLEDGE PLATFORM API ENDPOINTS
+# ============================================================================
+
+@app.route('/api/documents/upload', methods=['POST'])
+@login_required
+def upload_documents():
+    """
+    Upload multiple documents to organization knowledge base
+    Max 10 files, 50MB each, supports: PDF, DOCX, TXT, MD, CSV
+    """
+    from storage_manager import StorageManager
+    from tasks import process_document_task
+    import secrets
+
+    user_id = session['user_id']
+    org_id = request.form.get('org_id')
+
+    if not org_id:
+        return jsonify({'error': 'organization_id required'}), 400
+
+    try:
+        org_id = int(org_id)
+    except:
+        return jsonify({'error': 'Invalid organization_id'}), 400
+
+    # Verify user is member of organization
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT om.*, o.use_case FROM organization_members om
+        JOIN organizations o ON om.organization_id = o.id
+        WHERE om.organization_id = %s AND om.user_id = %s AND om.is_active = TRUE
+    ''', (org_id, user_id))
+    membership = cursor.fetchone()
+
+    if not membership:
+        conn.close()
+        return jsonify({'error': 'Not a member of this organization'}), 403
+
+    # Check if organization is therapy (knowledge platform only for non-therapy)
+    if membership['use_case'] == 'therapy_matching':
+        conn.close()
+        return jsonify({'error': 'Document upload not available for therapy organizations'}), 403
+
+    # Get uploaded files
+    files = request.files.getlist('files')
+
+    if not files or len(files) == 0:
+        conn.close()
+        return jsonify({'error': 'No files provided'}), 400
+
+    if len(files) > 10:
+        conn.close()
+        return jsonify({'error': 'Maximum 10 files allowed per upload'}), 400
+
+    # Initialize storage manager
+    try:
+        storage = StorageManager()
+    except Exception as e:
+        conn.close()
+        return jsonify({
+            'error': f'Storage configuration error: {str(e)}',
+            'message': 'Please configure DigitalOcean Spaces credentials in .env file'
+        }), 500
+
+    uploaded_documents = []
+    failed_files = []
+
+    for file in files:
+        try:
+            # Validate file
+            is_valid, error_msg, file_type = storage.validate_file(file, file.filename)
+
+            if not is_valid:
+                failed_files.append({'filename': file.filename, 'error': error_msg})
+                continue
+
+            # Get actual file size by seeking to end
+            file.seek(0, 2)  # Seek to end of file
+            file_size = file.tell()
+            file.seek(0)  # Reset to beginning
+
+            # Create document record
             cursor.execute('''
-                UPDATE user_subscriptions 
-                SET stripe_subscription_id = %s, status = %s, updated_at = CURRENT_TIMESTAMP
-                WHERE user_id = %s
-            ''', (subscription_id, status, user_id))
+                INSERT INTO documents (organization_id, filename, file_type, file_size, uploaded_by, storage_url, processing_status)
+                VALUES (%s, %s, %s, %s, %s, %s, 'pending')
+                RETURNING id
+            ''', (org_id, file.filename, file_type, file_size, user_id, 'pending'))
+
+            doc_id = cursor.fetchone()['id']
             conn.commit()
-            print(f"✓ Subscription created for user {user_id}")
-        
-        conn.close()
-        
-    except Exception as e:
-        print(f"Error handling subscription creation: {e}")
 
-def handle_subscription_updated(subscription):
-    """Handle subscription updates"""
+            # Upload to DigitalOcean Spaces
+            storage_url = storage.upload_file(file, org_id, doc_id, file.filename)
+
+            # Update storage URL
+            cursor.execute('''
+                UPDATE documents SET storage_url = %s WHERE id = %s
+            ''', (storage_url, doc_id))
+            conn.commit()
+
+            # Create processing job record
+            job_id = f"process_doc_{doc_id}_{secrets.token_hex(8)}"
+            cursor.execute('''
+                INSERT INTO processing_jobs (organization_id, job_type, job_id, status)
+                VALUES (%s, 'document_upload', %s, 'queued')
+            ''', (org_id, job_id))
+            conn.commit()
+
+            # Queue background processing task
+            print(f"Queueing background task for document {doc_id}")
+            try:
+                task = process_document_task.apply_async(
+                    args=[doc_id, org_id],
+                    task_id=job_id
+                )
+                print(f"✓ Task queued successfully: {task.id}")
+            except Exception as task_error:
+                print(f"❌ Error queueing task: {task_error}")
+                import traceback
+                traceback.print_exc()
+
+            uploaded_documents.append({
+                'doc_id': doc_id,
+                'filename': file.filename,
+                'file_type': file_type,
+                'status': 'pending',
+                'job_id': job_id
+            })
+
+        except Exception as e:
+            print(f"Error uploading {file.filename}: {e}")
+            failed_files.append({'filename': file.filename, 'error': str(e)})
+
+    conn.close()
+
+    return jsonify({
+        'success': len(uploaded_documents) > 0,
+        'uploaded': uploaded_documents,
+        'failed': failed_files,
+        'message': f'{len(uploaded_documents)} files uploaded successfully'
+    })
+
+
+@app.route('/api/documents', methods=['GET'])
+@login_required
+def list_documents():
+    """List all documents for an organization"""
+    user_id = session['user_id']
+    org_id = request.args.get('org_id')
+
+    if not org_id:
+        return jsonify({'error': 'organization_id required'}), 400
+
     try:
-        subscription_id = subscription['id']
-        status = subscription['status']
-        current_period_end = subscription['current_period_end']
-        cancel_at_period_end = subscription['cancel_at_period_end']
-        
+        org_id = int(org_id)
+    except:
+        return jsonify({'error': 'Invalid organization_id'}), 400
+
+    # Verify user is member
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT * FROM organization_members
+        WHERE organization_id = %s AND user_id = %s AND is_active = TRUE
+    ''', (org_id, user_id))
+
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({'error': 'Not a member of this organization'}), 403
+
+    # Get documents
+    cursor.execute('''
+        SELECT d.*, u.first_name, u.last_name
+        FROM documents d
+        JOIN users u ON d.uploaded_by = u.id
+        WHERE d.organization_id = %s AND d.is_deleted = FALSE
+        ORDER BY d.upload_date DESC
+    ''', (org_id,))
+
+    documents = cursor.fetchall()
+    conn.close()
+
+    return jsonify({
+        'documents': [{
+            'id': doc['id'],
+            'filename': doc['filename'],
+            'file_type': doc['file_type'],
+            'file_size': doc['file_size'],
+            'upload_date': doc['upload_date'].isoformat() if doc['upload_date'] else None,
+            'uploaded_by': f"{doc['first_name']} {doc['last_name']}",
+            'processing_status': doc['processing_status'],
+            'metadata': json.loads(doc['metadata_json']) if doc['metadata_json'] else {}
+        } for doc in documents]
+    })
+
+
+@app.route('/api/documents/<int:doc_id>', methods=['GET'])
+@login_required
+def get_document(doc_id):
+    """Get document details"""
+    user_id = session['user_id']
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Get document and verify access
+    cursor.execute('''
+        SELECT d.*, u.first_name, u.last_name
+        FROM documents d
+        JOIN users u ON d.uploaded_by = u.id
+        WHERE d.id = %s AND d.is_deleted = FALSE
+    ''', (doc_id,))
+
+    doc = cursor.fetchone()
+
+    if not doc:
+        conn.close()
+        return jsonify({'error': 'Document not found'}), 404
+
+    # Verify user is member of organization
+    cursor.execute('''
+        SELECT * FROM organization_members
+        WHERE organization_id = %s AND user_id = %s AND is_active = TRUE
+    ''', (doc['organization_id'], user_id))
+
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({'error': 'Access denied'}), 403
+
+    # Get classification if available
+    cursor.execute('''
+        SELECT * FROM document_classifications WHERE document_id = %s
+    ''', (doc_id,))
+    classification = cursor.fetchone()
+
+    conn.close()
+
+    return jsonify({
+        'id': doc['id'],
+        'filename': doc['filename'],
+        'file_type': doc['file_type'],
+        'file_size': doc['file_size'],
+        'upload_date': doc['upload_date'].isoformat() if doc['upload_date'] else None,
+        'uploaded_by': f"{doc['first_name']} {doc['last_name']}",
+        'processing_status': doc['processing_status'],
+        'metadata': json.loads(doc['metadata_json']) if doc['metadata_json'] else {},
+        'classification': {
+            'team': classification['team'],
+            'project': classification['project'],
+            'doc_type': classification['doc_type'],
+            'confidentiality': classification['confidentiality'],
+            'tags': classification['tags']
+        } if classification else None
+    })
+
+
+@app.route('/api/documents/<int:doc_id>/download', methods=['GET'])
+@login_required
+def download_document(doc_id):
+    """Generate presigned download URL for document"""
+    from storage_manager import StorageManager
+
+    user_id = session['user_id']
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Get document and verify access
+    cursor.execute('''
+        SELECT d.* FROM documents d
+        WHERE d.id = %s AND d.is_deleted = FALSE
+    ''', (doc_id,))
+
+    doc = cursor.fetchone()
+
+    if not doc:
+        conn.close()
+        return jsonify({'error': 'Document not found'}), 404
+
+    # Verify user is member of organization
+    cursor.execute('''
+        SELECT * FROM organization_members
+        WHERE organization_id = %s AND user_id = %s AND is_active = TRUE
+    ''', (doc['organization_id'], user_id))
+
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({'error': 'Access denied'}), 403
+
+    conn.close()
+
+    # Generate presigned URL
+    try:
+        storage = StorageManager()
+        download_url = storage.generate_download_url(doc['storage_url'], expires_in=3600)
+
+        return jsonify({
+            'download_url': download_url,
+            'filename': doc['filename'],
+            'expires_in': 3600
+        })
+    except Exception as e:
+        return jsonify({'error': f'Failed to generate download URL: {str(e)}'}), 500
+
+
+@app.route('/api/documents/<int:doc_id>', methods=['DELETE'])
+@login_required
+def delete_document(doc_id):
+    """Soft delete a document"""
+    from storage_manager import StorageManager
+
+    user_id = session['user_id']
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Get document and verify access
+    cursor.execute('''
+        SELECT d.*, om.role FROM documents d
+        JOIN organization_members om ON d.organization_id = om.organization_id
+        WHERE d.id = %s AND om.user_id = %s AND om.is_active = TRUE
+    ''', (doc_id, user_id))
+
+    doc = cursor.fetchone()
+
+    if not doc:
+        conn.close()
+        return jsonify({'error': 'Document not found or access denied'}), 404
+
+    # Only uploader or org owner can delete
+    if doc['uploaded_by'] != user_id and doc['role'] != 'owner':
+        conn.close()
+        return jsonify({'error': 'Only document uploader or organization owner can delete'}), 403
+
+    # Soft delete
+    cursor.execute('''
+        UPDATE documents
+        SET is_deleted = TRUE, deleted_at = CURRENT_TIMESTAMP
+        WHERE id = %s
+    ''', (doc_id,))
+    conn.commit()
+
+    # Optionally delete from storage (can be done in background)
+    # try:
+    #     storage = StorageManager()
+    #     storage.delete_file(doc['storage_url'])
+    # except Exception as e:
+    #     print(f"Error deleting from storage: {e}")
+
+    conn.close()
+
+    return jsonify({'success': True, 'message': 'Document deleted successfully'})
+
+
+@app.route('/api/jobs/<job_id>/status', methods=['GET'])
+@login_required
+def get_job_status(job_id):
+    """Get processing job status"""
+    user_id = session['user_id']
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Get job and verify access
+    cursor.execute('''
+        SELECT pj.*, om.user_id FROM processing_jobs pj
+        JOIN organization_members om ON pj.organization_id = om.organization_id
+        WHERE pj.job_id = %s AND om.user_id = %s AND om.is_active = TRUE
+    ''', (job_id, user_id))
+
+    job = cursor.fetchone()
+    conn.close()
+
+    if not job:
+        return jsonify({'error': 'Job not found or access denied'}), 404
+
+    return jsonify({
+        'job_id': job['job_id'],
+        'status': job['status'],
+        'progress': job['progress'],
+        'error': job['error_message'],
+        'result': json.loads(job['result_json']) if job['result_json'] else None,
+        'created_at': job['created_at'].isoformat() if job['created_at'] else None,
+        'completed_at': job['completed_at'].isoformat() if job['completed_at'] else None
+    })
+
+
+# ============================================================================
+# SPRINT 2: SEARCH API ENDPOINTS
+# ============================================================================
+
+@app.route('/api/documents/search', methods=['POST'])
+@login_required
+def search_documents():
+    """
+    Semantic search across documents using embeddings
+
+    Request body:
+    {
+        "query": "search query",
+        "org_id": 123,
+        "top_k": 10,  # optional, default 10
+        "doc_type": "pdf",  # optional filter
+        "min_score": 0.7  # optional, default 0.7
+    }
+    """
+    user_id = session['user_id']
+    data = request.json
+
+    if not data or 'query' not in data or 'org_id' not in data:
+        return jsonify({'error': 'Missing required fields: query, org_id'}), 400
+
+    query = data['query']
+    org_id = data['org_id']
+    top_k = data.get('top_k', 10)
+    doc_type = data.get('doc_type')
+    min_score = data.get('min_score', 0.7)
+
+    # Validate inputs
+    if not query or not query.strip():
+        return jsonify({'error': 'Query cannot be empty'}), 400
+
+    if top_k < 1 or top_k > 100:
+        return jsonify({'error': 'top_k must be between 1 and 100'}), 400
+
+    # Verify user has access to organization
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT 1 FROM organization_members
+        WHERE organization_id = %s AND user_id = %s AND is_active = TRUE
+    ''', (org_id, user_id))
+
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({'error': 'Access denied to organization'}), 403
+
+    try:
+        # Import services (lazy import to avoid circular dependencies)
+        from embedding_service import EmbeddingService
+        from vector_store import VectorStore
+
+        # Generate query embedding
+        print(f"Generating embedding for search query: {query[:100]}...")
+        embedding_service = EmbeddingService(model="text-embedding-3-large")
+        query_embedding = embedding_service.generate_single_embedding(query, org_id)
+
+        # Search in vector store
+        print(f"Searching documents for org {org_id}")
+        vector_store = VectorStore(index_name="flock-knowledge-base")
+        results = vector_store.search_documents(
+            org_id=org_id,
+            query_embedding=query_embedding,
+            top_k=top_k,
+            doc_type=doc_type,
+            min_score=min_score
+        )
+
+        # Enrich results with document information from database
+        enriched_results = []
+        for result in results:
+            # Extract doc_id from vector metadata
+            doc_id = result['metadata'].get('doc_id')
+            if doc_id:
+                cursor.execute('''
+                    SELECT id, filename, file_type, upload_date, metadata_json
+                    FROM documents
+                    WHERE id = %s AND is_deleted = FALSE
+                ''', (doc_id,))
+
+                doc = cursor.fetchone()
+                if doc:
+                    enriched_results.append({
+                        'doc_id': doc['id'],
+                        'filename': doc['filename'],
+                        'file_type': doc['file_type'],
+                        'upload_date': doc['upload_date'].isoformat() if doc['upload_date'] else None,
+                        'snippet': result['metadata'].get('text', '')[:300],
+                        'score': result['score'],
+                        'chunk_index': result['metadata'].get('chunk_index', 0)
+                    })
+
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'query': query,
+            'results_count': len(enriched_results),
+            'results': enriched_results
+        })
+
+    except Exception as e:
+        conn.close()
+        print(f"Error in document search: {e}")
+        return jsonify({'error': f'Search failed: {str(e)}'}), 500
+
+
+@app.route('/api/employees/search', methods=['POST'])
+@login_required
+def search_employees():
+    """
+    Semantic search for employees by skills, expertise, or description
+
+    Request body:
+    {
+        "query": "Who knows about machine learning?",
+        "org_id": 123,
+        "top_k": 10  # optional, default 10
+    }
+    """
+    user_id = session['user_id']
+    data = request.json
+
+    if not data or 'query' not in data or 'org_id' not in data:
+        return jsonify({'error': 'Missing required fields: query, org_id'}), 400
+
+    query = data['query']
+    org_id = data['org_id']
+    top_k = data.get('top_k', 10)
+
+    # Validate inputs
+    if not query or not query.strip():
+        return jsonify({'error': 'Query cannot be empty'}), 400
+
+    if top_k < 1 or top_k > 50:
+        return jsonify({'error': 'top_k must be between 1 and 50'}), 400
+
+    # Verify user has access to organization
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT 1 FROM organization_members
+        WHERE organization_id = %s AND user_id = %s AND is_active = TRUE
+    ''', (org_id, user_id))
+
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({'error': 'Access denied to organization'}), 403
+
+    try:
+        # Import services
+        from embedding_service import EmbeddingService
+        from vector_store import VectorStore
+
+        # Generate query embedding
+        print(f"Generating embedding for employee search: {query[:100]}...")
+        embedding_service = EmbeddingService(model="text-embedding-3-large")
+        query_embedding = embedding_service.generate_single_embedding(query, org_id)
+
+        # Search in vector store
+        print(f"Searching employees for org {org_id}")
+        vector_store = VectorStore(index_name="flock-knowledge-base")
+        results = vector_store.search_employees(
+            org_id=org_id,
+            query_embedding=query_embedding,
+            top_k=top_k
+        )
+
+        # Enrich results with full employee information
+        enriched_results = []
+        for result in results:
+            user_id_result = result['metadata'].get('user_id')
+            if user_id_result:
+                cursor.execute('''
+                    SELECT u.id, u.full_name, u.email,
+                           up.current_position, up.specialties, up.bio, up.years_experience
+                    FROM users u
+                    LEFT JOIN user_profiles up ON u.id = up.user_id
+                    WHERE u.id = %s
+                ''', (user_id_result,))
+
+                employee = cursor.fetchone()
+                if employee:
+                    enriched_results.append({
+                        'user_id': employee['id'],
+                        'name': employee['full_name'],
+                        'email': employee['email'],
+                        'title': employee.get('current_position', ''),
+                        'specialties': employee.get('specialties', ''),
+                        'bio': employee.get('bio', '')[:200] if employee.get('bio') else '',
+                        'experience': employee.get('years_experience', 0),
+                        'relevance_score': result['score']
+                    })
+
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'query': query,
+            'results_count': len(enriched_results),
+            'results': enriched_results
+        })
+
+    except Exception as e:
+        conn.close()
+        print(f"Error in employee search: {e}")
+        return jsonify({'error': f'Search failed: {str(e)}'}), 500
+
+
+@app.route('/api/embeddings/generate', methods=['POST'])
+@login_required
+def trigger_employee_embedding():
+    """
+    Trigger embedding generation for an employee
+
+    Request body:
+    {
+        "org_id": 123,
+        "user_id": 456  # optional, defaults to current user
+    }
+    """
+    current_user_id = session['user_id']
+    data = request.json
+
+    if not data or 'org_id' not in data:
+        return jsonify({'error': 'Missing required field: org_id'}), 400
+
+    org_id = data['org_id']
+    target_user_id = data.get('user_id', current_user_id)
+
+    # Verify user has access to organization
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT role FROM organization_members
+        WHERE organization_id = %s AND user_id = %s AND is_active = TRUE
+    ''', (org_id, current_user_id))
+
+    member = cursor.fetchone()
+    conn.close()
+
+    if not member:
+        return jsonify({'error': 'Access denied to organization'}), 403
+
+    # Only allow generating embeddings for self unless owner/admin
+    if target_user_id != current_user_id and member['role'] not in ['owner', 'admin']:
+        return jsonify({'error': 'Insufficient permissions'}), 403
+
+    try:
+        # Import task
+        from tasks import generate_employee_embeddings_task
+
+        # Queue background task
+        task = generate_employee_embeddings_task.delay(org_id, target_user_id)
+
+        return jsonify({
+            'success': True,
+            'message': 'Employee embedding generation started',
+            'task_id': task.id,
+            'user_id': target_user_id
+        })
+
+    except Exception as e:
+        print(f"Error triggering embedding generation: {e}")
+        return jsonify({'error': f'Failed to start task: {str(e)}'}), 500
+
+
+# ============================================================================
+# SMART FOLDERS API (SPRINT 3)
+# ============================================================================
+
+@app.route('/api/folders/by-team', methods=['GET'])
+@login_required
+def get_folders_by_team():
+    """
+    Get documents organized by team (smart folder view)
+
+    Query params:
+        org_id: Organization ID (required)
+        team: Filter by specific team (optional)
+    """
+    user_id = session['user_id']
+    org_id = request.args.get('org_id', type=int)
+
+    if not org_id:
+        return jsonify({'error': 'Missing required parameter: org_id'}), 400
+
+    # Verify user has access to organization
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+    cursor.execute('''
+        SELECT 1 FROM organization_members
+        WHERE organization_id = %s AND user_id = %s AND is_active = TRUE
+    ''', (org_id, user_id))
+
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({'error': 'Access denied to organization'}), 403
+
+    try:
+        team_filter = request.args.get('team')
+
+        # Get all documents organized by team
+        query = '''
+            SELECT
+                COALESCE(dc.team, 'Uncategorized') as team,
+                COUNT(DISTINCT d.id) as document_count,
+                json_agg(
+                    json_build_object(
+                        'id', d.id,
+                        'filename', d.filename,
+                        'file_type', d.file_type,
+                        'file_size', d.file_size,
+                        'upload_date', d.upload_date,
+                        'processing_status', d.processing_status,
+                        'doc_type', COALESCE(dc.doc_type, d.file_type),
+                        'project', dc.project,
+                        'confidentiality_level', dc.confidentiality_level,
+                        'tags', dc.tags,
+                        'summary', dc.summary
+                    ) ORDER BY d.upload_date DESC
+                ) as documents
+            FROM documents d
+            LEFT JOIN document_classifications dc ON dc.document_id = d.id
+            WHERE d.organization_id = %s
+              AND d.is_deleted = FALSE
+        '''
+        params = [org_id]
+
+        if team_filter:
+            query += ' AND COALESCE(dc.team, \'Uncategorized\') = %s'
+            params.append(team_filter)
+
+        query += ' GROUP BY COALESCE(dc.team, \'Uncategorized\') ORDER BY COALESCE(dc.team, \'Uncategorized\')'
+
+        cursor.execute(query, params)
+        folders = cursor.fetchall()
+
+        conn.close()
+
+        # Add 'name' field to each folder for consistency
+        formatted_folders = []
+        for f in folders:
+            folder_dict = dict(f)
+            folder_dict['name'] = folder_dict.get('team', 'Uncategorized')
+            formatted_folders.append(folder_dict)
+
+        return jsonify({
+            'success': True,
+            'org_id': org_id,
+            'view_type': 'by_team',
+            'folders': formatted_folders
+        })
+
+    except Exception as e:
+        print(f"Error getting team folders: {e}")
+        conn.close()
+        return jsonify({'error': f'Failed to get team folders: {str(e)}'}), 500
+
+
+@app.route('/api/folders/by-project', methods=['GET'])
+@login_required
+def get_folders_by_project():
+    """
+    Get documents organized by project (smart folder view)
+
+    Query params:
+        org_id: Organization ID (required)
+        project: Filter by specific project (optional)
+    """
+    user_id = session['user_id']
+    org_id = request.args.get('org_id', type=int)
+
+    if not org_id:
+        return jsonify({'error': 'Missing required parameter: org_id'}), 400
+
+    # Verify user has access to organization
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+    cursor.execute('''
+        SELECT 1 FROM organization_members
+        WHERE organization_id = %s AND user_id = %s AND is_active = TRUE
+    ''', (org_id, user_id))
+
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({'error': 'Access denied to organization'}), 403
+
+    try:
+        project_filter = request.args.get('project')
+
+        query = '''
+            SELECT
+                COALESCE(dc.project, 'Uncategorized') as project,
+                COUNT(DISTINCT d.id) as document_count,
+                json_agg(
+                    json_build_object(
+                        'id', d.id,
+                        'filename', d.filename,
+                        'file_type', d.file_type,
+                        'file_size', d.file_size,
+                        'upload_date', d.upload_date,
+                        'processing_status', d.processing_status,
+                        'doc_type', COALESCE(dc.doc_type, d.file_type),
+                        'team', dc.team,
+                        'confidentiality_level', dc.confidentiality_level,
+                        'tags', dc.tags,
+                        'summary', dc.summary
+                    ) ORDER BY d.upload_date DESC
+                ) as documents
+            FROM documents d
+            LEFT JOIN document_classifications dc ON dc.document_id = d.id
+            WHERE d.organization_id = %s
+              AND d.is_deleted = FALSE
+        '''
+        params = [org_id]
+
+        if project_filter:
+            query += ' AND COALESCE(dc.project, \'Uncategorized\') = %s'
+            params.append(project_filter)
+
+        query += ' GROUP BY COALESCE(dc.project, \'Uncategorized\') ORDER BY COALESCE(dc.project, \'Uncategorized\')'
+
+        cursor.execute(query, params)
+        folders = cursor.fetchall()
+
+        conn.close()
+
+        # Add 'name' field to each folder for consistency
+        formatted_folders = []
+        for f in folders:
+            folder_dict = dict(f)
+            folder_dict['name'] = folder_dict.get('project', 'Uncategorized')
+            formatted_folders.append(folder_dict)
+
+        return jsonify({
+            'success': True,
+            'org_id': org_id,
+            'view_type': 'by_project',
+            'folders': formatted_folders
+        })
+
+    except Exception as e:
+        print(f"Error getting project folders: {e}")
+        conn.close()
+        return jsonify({'error': f'Failed to get project folders: {str(e)}'}), 500
+
+
+@app.route('/api/folders/by-type', methods=['GET'])
+@login_required
+def get_folders_by_type():
+    """
+    Get documents organized by document type (smart folder view)
+
+    Query params:
+        org_id: Organization ID (required)
+        doc_type: Filter by specific document type (optional)
+    """
+    user_id = session['user_id']
+    org_id = request.args.get('org_id', type=int)
+
+    if not org_id:
+        return jsonify({'error': 'Missing required parameter: org_id'}), 400
+
+    # Verify user has access to organization
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+    cursor.execute('''
+        SELECT 1 FROM organization_members
+        WHERE organization_id = %s AND user_id = %s AND is_active = TRUE
+    ''', (org_id, user_id))
+
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({'error': 'Access denied to organization'}), 403
+
+    try:
+        doc_type_filter = request.args.get('doc_type')
+
+        query = '''
+            SELECT
+                dc.doc_type,
+                COUNT(DISTINCT d.id) as document_count,
+                json_agg(
+                    json_build_object(
+                        'id', d.id,
+                        'filename', d.filename,
+                        'file_type', d.file_type,
+                        'upload_date', d.upload_date,
+                        'team', dc.team,
+                        'project', dc.project,
+                        'confidentiality_level', dc.confidentiality_level,
+                        'tags', dc.tags,
+                        'summary', dc.summary
+                    ) ORDER BY d.upload_date DESC
+                ) as documents
+            FROM documents d
+            INNER JOIN document_classifications dc ON dc.document_id = d.id
+            WHERE d.organization_id = %s
+              AND d.is_deleted = FALSE
+              AND dc.doc_type IS NOT NULL
+        '''
+        params = [org_id]
+
+        if doc_type_filter:
+            query += ' AND dc.doc_type = %s'
+            params.append(doc_type_filter)
+
+        query += ' GROUP BY dc.doc_type ORDER BY dc.doc_type'
+
+        cursor.execute(query, params)
+        folders = cursor.fetchall()
+
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'org_id': org_id,
+            'view_type': 'by_type',
+            'folders': [dict(f) for f in folders]
+        })
+
+    except Exception as e:
+        print(f"Error getting type folders: {e}")
+        conn.close()
+        return jsonify({'error': f'Failed to get type folders: {str(e)}'}), 500
+
+
+@app.route('/api/folders/by-date', methods=['GET'])
+@login_required
+def get_folders_by_date():
+    """
+    Get documents organized by time period (smart folder view)
+
+    Query params:
+        org_id: Organization ID (required)
+        time_period: Filter by specific period like "2024-Q1", "2024-03" (optional)
+    """
+    user_id = session['user_id']
+    org_id = request.args.get('org_id', type=int)
+
+    if not org_id:
+        return jsonify({'error': 'Missing required parameter: org_id'}), 400
+
+    # Verify user has access to organization
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+    cursor.execute('''
+        SELECT 1 FROM organization_members
+        WHERE organization_id = %s AND user_id = %s AND is_active = TRUE
+    ''', (org_id, user_id))
+
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({'error': 'Access denied to organization'}), 403
+
+    try:
+        time_period_filter = request.args.get('time_period')
+
+        query = '''
+            SELECT
+                dc.time_period,
+                COUNT(DISTINCT d.id) as document_count,
+                json_agg(
+                    json_build_object(
+                        'id', d.id,
+                        'filename', d.filename,
+                        'file_type', d.file_type,
+                        'upload_date', d.upload_date,
+                        'doc_type', dc.doc_type,
+                        'team', dc.team,
+                        'project', dc.project,
+                        'confidentiality_level', dc.confidentiality_level,
+                        'tags', dc.tags,
+                        'summary', dc.summary
+                    ) ORDER BY d.upload_date DESC
+                ) as documents
+            FROM documents d
+            INNER JOIN document_classifications dc ON dc.document_id = d.id
+            WHERE d.organization_id = %s
+              AND d.is_deleted = FALSE
+              AND dc.time_period IS NOT NULL
+        '''
+        params = [org_id]
+
+        if time_period_filter:
+            query += ' AND dc.time_period = %s'
+            params.append(time_period_filter)
+
+        query += ' GROUP BY dc.time_period ORDER BY dc.time_period DESC'
+
+        cursor.execute(query, params)
+        folders = cursor.fetchall()
+
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'org_id': org_id,
+            'view_type': 'by_date',
+            'folders': [dict(f) for f in folders]
+        })
+
+    except Exception as e:
+        print(f"Error getting date folders: {e}")
+        conn.close()
+        return jsonify({'error': f'Failed to get date folders: {str(e)}'}), 500
+
+
+@app.route('/api/folders/by-person', methods=['GET'])
+@login_required
+def get_folders_by_person():
+    """
+    Get documents organized by mentioned people (smart folder view)
+
+    Query params:
+        org_id: Organization ID (required)
+        person: Filter by specific person name (optional)
+    """
+    user_id = session['user_id']
+    org_id = request.args.get('org_id', type=int)
+
+    if not org_id:
+        return jsonify({'error': 'Missing required parameter: org_id'}), 400
+
+    # Verify user has access to organization
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+    cursor.execute('''
+        SELECT 1 FROM organization_members
+        WHERE organization_id = %s AND user_id = %s AND is_active = TRUE
+    ''', (org_id, user_id))
+
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({'error': 'Access denied to organization'}), 403
+
+    try:
+        person_filter = request.args.get('person')
+
+        # Unnest the mentioned_people array to create folders for each person
+        query = '''
+            SELECT
+                person,
+                COUNT(DISTINCT d.id) as document_count,
+                json_agg(
+                    json_build_object(
+                        'id', d.id,
+                        'filename', d.filename,
+                        'file_type', d.file_type,
+                        'upload_date', d.upload_date,
+                        'doc_type', dc.doc_type,
+                        'team', dc.team,
+                        'project', dc.project,
+                        'confidentiality_level', dc.confidentiality_level,
+                        'tags', dc.tags,
+                        'summary', dc.summary
+                    ) ORDER BY d.upload_date DESC
+                ) as documents
+            FROM documents d
+            INNER JOIN document_classifications dc ON dc.document_id = d.id,
+            jsonb_array_elements_text(dc.mentioned_people) as person
+            WHERE d.organization_id = %s
+              AND d.is_deleted = FALSE
+        '''
+        params = [org_id]
+
+        if person_filter:
+            query += ' AND person = %s'
+            params.append(person_filter)
+
+        query += ' GROUP BY person ORDER BY person'
+
+        cursor.execute(query, params)
+        folders = cursor.fetchall()
+
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'org_id': org_id,
+            'view_type': 'by_person',
+            'folders': [dict(f) for f in folders]
+        })
+
+    except Exception as e:
+        print(f"Error getting person folders: {e}")
+        conn.close()
+        return jsonify({'error': f'Failed to get person folders: {str(e)}'}), 500
+
+
+@app.route('/api/documents/<int:doc_id>/classification', methods=['GET'])
+@login_required
+def get_document_classification(doc_id):
+    """
+    Get classification details for a specific document
+
+    Returns full classification metadata including confidence scores
+    """
+    user_id = session['user_id']
+
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+    # Verify user has access to the document
+    cursor.execute('''
+        SELECT d.organization_id
+        FROM documents d
+        INNER JOIN organization_members om ON om.organization_id = d.organization_id
+        WHERE d.id = %s AND om.user_id = %s AND om.is_active = TRUE AND d.is_deleted = FALSE
+    ''', (doc_id, user_id))
+
+    doc = cursor.fetchone()
+    if not doc:
+        conn.close()
+        return jsonify({'error': 'Document not found or access denied'}), 404
+
+    # Get classification
+    cursor.execute('''
+        SELECT
+            document_id,
+            team,
+            project,
+            doc_type,
+            time_period,
+            confidentiality_level,
+            mentioned_people,
+            tags,
+            summary,
+            confidence_scores,
+            classified_at
+        FROM document_classifications
+        WHERE document_id = %s
+    ''', (doc_id,))
+
+    classification = cursor.fetchone()
+    conn.close()
+
+    if not classification:
+        return jsonify({'error': 'Classification not found for this document'}), 404
+
+    return jsonify({
+        'success': True,
+        'classification': dict(classification)
+    })
+
+
+@app.route('/api/documents/<int:doc_id>/reclassify', methods=['POST'])
+@login_required
+def reclassify_document(doc_id):
+    """
+    Trigger re-classification of a document
+
+    Useful when:
+    - Manual corrections are needed
+    - Organization context has changed
+    - Classification failed during initial processing
+    """
+    user_id = session['user_id']
+
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+    # Verify user has access to the document
+    cursor.execute('''
+        SELECT d.id, d.organization_id, d.processing_status
+        FROM documents d
+        INNER JOIN organization_members om ON om.organization_id = d.organization_id
+        WHERE d.id = %s AND om.user_id = %s AND om.is_active = TRUE AND d.is_deleted = FALSE
+    ''', (doc_id, user_id))
+
+    doc = cursor.fetchone()
+    conn.close()
+
+    if not doc:
+        return jsonify({'error': 'Document not found or access denied'}), 404
+
+    if doc['processing_status'] != 'completed':
+        return jsonify({'error': 'Document must be fully processed before re-classification'}), 400
+
+    try:
+        from tasks import classify_document_task
+
+        # Trigger classification task
+        task = classify_document_task.delay(doc_id)
+
+        return jsonify({
+            'success': True,
+            'message': 'Document re-classification started',
+            'task_id': task.id,
+            'doc_id': doc_id
+        })
+
+    except Exception as e:
+        print(f"Error triggering re-classification: {e}")
+        return jsonify({'error': f'Failed to start re-classification: {str(e)}'}), 500
+
+
+# ============================================================================
+# HEALTH CHECK & MONITORING ENDPOINTS
+# ============================================================================
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    """
+    Health check endpoint for load balancer / monitoring
+
+    Returns service health status and component checks
+    """
+    health_status = {
+        'status': 'healthy',
+        'timestamp': datetime.now().isoformat(),
+        'checks': {}
+    }
+
+    # Check database connection
+    try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
-        cursor.execute('''
-            UPDATE user_subscriptions 
-            SET status = %s, current_period_end = to_timestamp(%s), 
-                cancel_at_period_end = %s, updated_at = CURRENT_TIMESTAMP
-            WHERE stripe_subscription_id = %s
-        ''', (status, current_period_end, cancel_at_period_end, subscription_id))
-        
-        conn.commit()
+        cursor.execute('SELECT 1')
+        cursor.fetchone()
         conn.close()
-        
-        print(f"✓ Subscription {subscription_id} updated to status: {status}")
-        
+        health_status['checks']['database'] = 'healthy'
     except Exception as e:
-        print(f"Error handling subscription update: {e}")
+        health_status['checks']['database'] = f'unhealthy: {str(e)}'
+        health_status['status'] = 'degraded'
 
-def handle_subscription_deleted(subscription):
-    """Handle subscription cancellation"""
+    # Check Redis connection
     try:
-        subscription_id = subscription['id']
-        
+        import redis
+        redis_url = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+        r = redis.from_url(redis_url)
+        r.ping()
+        health_status['checks']['redis'] = 'healthy'
+    except Exception as e:
+        health_status['checks']['redis'] = f'unhealthy: {str(e)}'
+        health_status['status'] = 'degraded'
+
+    # Check Pinecone connection (optional, don't fail health check if missing)
+    try:
+        if os.environ.get('PINECONE_API_KEY'):
+            from vector_store import VectorStore
+            vector_store = VectorStore(index_name="flock-knowledge-base")
+            # Just checking if we can initialize
+            health_status['checks']['pinecone'] = 'healthy'
+        else:
+            health_status['checks']['pinecone'] = 'not_configured'
+    except Exception as e:
+        health_status['checks']['pinecone'] = f'degraded: {str(e)}'
+        # Don't mark overall status as degraded for Pinecone
+
+    # Check OpenAI API key
+    if os.environ.get('OPENAI_API_KEY'):
+        health_status['checks']['openai'] = 'configured'
+    else:
+        health_status['checks']['openai'] = 'not_configured'
+
+    # Determine HTTP status code
+    if health_status['status'] == 'healthy':
+        return jsonify(health_status), 200
+    elif health_status['status'] == 'degraded':
+        return jsonify(health_status), 200  # Still return 200 for degraded
+    else:
+        return jsonify(health_status), 503
+
+
+@app.route('/api/system/status', methods=['GET'])
+@login_required
+def system_status():
+    """
+    System status endpoint for admin monitoring
+
+    Requires authentication - returns detailed system metrics
+    """
+    user_id = session['user_id']
+
+    # Check if user is admin (simple check - can be enhanced)
+    # For now, any authenticated user can view system status
+
+    status = {
+        'timestamp': datetime.now().isoformat(),
+        'system': {
+            'version': '2.0-sprint2',
+            'environment': os.environ.get('FLASK_ENV', 'production')
+        },
+        'services': {},
+        'statistics': {}
+    }
+
+    # Database stats
+    try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
+
+        # Count documents
+        cursor.execute('SELECT COUNT(*) as count FROM documents WHERE is_deleted = FALSE')
+        doc_count = cursor.fetchone()['count']
+
+        # Count embeddings
+        cursor.execute('SELECT COUNT(*) as count FROM employee_embeddings')
+        emp_embeddings = cursor.fetchone()['count']
+
+        # Count processing jobs
         cursor.execute('''
-            UPDATE user_subscriptions 
-            SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
-            WHERE stripe_subscription_id = %s
-        ''', (subscription_id,))
-        
-        conn.commit()
+            SELECT status, COUNT(*) as count
+            FROM processing_jobs
+            WHERE created_at > NOW() - INTERVAL '24 hours'
+            GROUP BY status
+        ''')
+        job_stats = {row['status']: row['count'] for row in cursor.fetchall()}
+
+        # Get usage stats
+        cursor.execute('''
+            SELECT SUM(tokens_used) as total_tokens, SUM(estimated_cost) as total_cost
+            FROM embedding_usage
+            WHERE date >= DATE_TRUNC('month', CURRENT_DATE)
+        ''')
+        usage = cursor.fetchone()
+
         conn.close()
-        
-        print(f"✓ Subscription {subscription_id} cancelled")
-        
+
+        status['statistics'] = {
+            'documents': doc_count,
+            'employee_embeddings': emp_embeddings,
+            'jobs_24h': job_stats,
+            'usage_this_month': {
+                'tokens': usage['total_tokens'] or 0,
+                'estimated_cost': float(usage['total_cost'] or 0)
+            }
+        }
+
+        status['services']['database'] = 'operational'
+
     except Exception as e:
-        print(f"Error handling subscription deletion: {e}")
+        status['services']['database'] = f'error: {str(e)}'
+
+    # Redis / Celery stats
+    try:
+        import redis
+        redis_url = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+        r = redis.from_url(redis_url)
+
+        # Get queue lengths (approximate)
+        try:
+            from celery_config import celery_app
+            inspect = celery_app.control.inspect()
+
+            # Get active tasks
+            active = inspect.active()
+            status['services']['celery'] = {
+                'status': 'operational',
+                'active_tasks': len(active) if active else 0
+            }
+        except:
+            status['services']['celery'] = 'unknown'
+
+        status['services']['redis'] = 'operational'
+
+    except Exception as e:
+        status['services']['redis'] = f'error: {str(e)}'
+        status['services']['celery'] = 'unavailable'
+
+    # Pinecone stats
+    try:
+        if os.environ.get('PINECONE_API_KEY'):
+            from vector_store import VectorStore
+            vector_store = VectorStore(index_name="flock-knowledge-base")
+
+            # Note: Getting stats for a specific org requires org_id
+            # For system-wide stats, we'd need to aggregate
+            status['services']['pinecone'] = 'operational'
+        else:
+            status['services']['pinecone'] = 'not_configured'
+    except Exception as e:
+        status['services']['pinecone'] = f'error: {str(e)}'
+
+    return jsonify(status)
+
+
+# ============================================================================
+# PHASE 7: CHAT API ENDPOINTS
+# ============================================================================
+
+@app.route('/api/chat/conversations', methods=['GET'])
+@login_required
+def get_conversations():
+    """
+    Get all conversations for the user in their organization
+
+    Query params:
+        org_id: Organization ID (required)
+        include_archived: Include archived conversations (default: false)
+    """
+    user_id = session['user_id']
+    org_id = request.args.get('org_id', type=int)
+    include_archived = request.args.get('include_archived', 'false').lower() == 'true'
+
+    if not org_id:
+        return jsonify({'error': 'org_id is required'}), 400
+
+    # Verify user has access to organization
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT 1 FROM organization_members
+        WHERE organization_id = %s AND user_id = %s AND is_active = TRUE
+    ''', (org_id, user_id))
+
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({'error': 'Access denied'}), 403
+
+    # Get conversations
+    archived_filter = '' if include_archived else 'AND is_archived = FALSE'
+
+    cursor.execute(f'''
+        SELECT
+            cc.id,
+            cc.conversation_title,
+            cc.created_at,
+            cc.last_message_at,
+            cc.is_archived,
+            (
+                SELECT content
+                FROM chat_messages
+                WHERE conversation_id = cc.id
+                ORDER BY timestamp DESC
+                LIMIT 1
+            ) as last_message_preview
+        FROM chat_conversations cc
+        WHERE cc.organization_id = %s AND cc.user_id = %s {archived_filter}
+        ORDER BY cc.last_message_at DESC
+    ''', (org_id, user_id))
+
+    conversations = cursor.fetchall()
+    conn.close()
+
+    return jsonify({
+        'conversations': [
+            {
+                'id': conv['id'],
+                'title': conv['conversation_title'],
+                'last_message_preview': conv['last_message_preview'][:100] + '...'
+                    if conv['last_message_preview'] and len(conv['last_message_preview']) > 100
+                    else conv['last_message_preview'],
+                'last_message_at': conv['last_message_at'].isoformat() if conv['last_message_at'] else None,
+                'created_at': conv['created_at'].isoformat() if conv['created_at'] else None,
+                'is_archived': conv['is_archived']
+            }
+            for conv in conversations
+        ]
+    })
+
+
+@app.route('/api/chat/conversations', methods=['POST'])
+@login_required
+def create_conversation():
+    """
+    Create a new conversation
+
+    Request body:
+    {
+        "org_id": 123,
+        "title": "Optional conversation title"
+    }
+    """
+    user_id = session['user_id']
+    data = request.json
+
+    if not data or 'org_id' not in data:
+        return jsonify({'error': 'org_id is required'}), 400
+
+    org_id = data['org_id']
+    title = data.get('title', 'New Conversation')
+
+    # Verify user has access to organization
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT 1 FROM organization_members
+        WHERE organization_id = %s AND user_id = %s AND is_active = TRUE
+    ''', (org_id, user_id))
+
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({'error': 'Access denied'}), 403
+
+    # Create conversation
+    cursor.execute('''
+        INSERT INTO chat_conversations (organization_id, user_id, conversation_title)
+        VALUES (%s, %s, %s)
+        RETURNING id, conversation_title, created_at
+    ''', (org_id, user_id, title))
+
+    conversation = cursor.fetchone()
+    conn.commit()
+    conn.close()
+
+    return jsonify({
+        'conversation_id': conversation['id'],
+        'title': conversation['conversation_title'],
+        'created_at': conversation['created_at'].isoformat() if conversation['created_at'] else None
+    }), 201
+
+
+@app.route('/api/chat/<int:conversation_id>/messages', methods=['GET'])
+@login_required
+def get_messages(conversation_id):
+    """Get all messages in a conversation"""
+    user_id = session['user_id']
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Verify access
+    cursor.execute('''
+        SELECT cc.*, om.user_id
+        FROM chat_conversations cc
+        JOIN organization_members om ON cc.organization_id = om.organization_id
+        WHERE cc.id = %s AND om.user_id = %s AND om.is_active = TRUE
+    ''', (conversation_id, user_id))
+
+    conversation = cursor.fetchone()
+
+    if not conversation:
+        conn.close()
+        return jsonify({'error': 'Conversation not found or access denied'}), 404
+
+    # Get messages
+    cursor.execute('''
+        SELECT
+            id, role, content, reasoning_json,
+            source_documents_json, source_employees_json, source_external_json,
+            timestamp
+        FROM chat_messages
+        WHERE conversation_id = %s
+        ORDER BY timestamp ASC
+    ''', (conversation_id,))
+
+    messages = cursor.fetchall()
+    conn.close()
+
+    return jsonify({
+        'conversation_id': conversation_id,
+        'title': conversation['conversation_title'],
+        'messages': [
+            {
+                'id': msg['id'],
+                'role': msg['role'],
+                'content': msg['content'],
+                'reasoning': json.loads(msg['reasoning_json']) if msg['reasoning_json'] else None,
+                'sources': {
+                    'documents': json.loads(msg['source_documents_json']) if msg['source_documents_json'] else [],
+                    'employees': json.loads(msg['source_employees_json']) if msg['source_employees_json'] else [],
+                    'external': json.loads(msg['source_external_json']) if msg['source_external_json'] else []
+                },
+                'timestamp': msg['timestamp'].isoformat() if msg['timestamp'] else None
+            }
+            for msg in messages
+        ]
+    })
+
+
+@app.route('/api/chat/<int:conversation_id>/messages', methods=['POST'])
+@login_required
+def send_message(conversation_id):
+    """
+    Send a message in a conversation
+
+    Request body:
+    {
+        "message": "User's question",
+        "use_rag": true  # optional, use simple RAG vs full multi-agent (default: false)
+    }
+    """
+    user_id = session['user_id']
+    data = request.json
+
+    if not data or 'message' not in data:
+        return jsonify({'error': 'message is required'}), 400
+
+    message = data['message']
+    use_rag = data.get('use_rag', False)
+
+    if not message or not message.strip():
+        return jsonify({'error': 'Message cannot be empty'}), 400
+
+    # Verify access
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT cc.organization_id, om.user_id
+        FROM chat_conversations cc
+        JOIN organization_members om ON cc.organization_id = om.organization_id
+        WHERE cc.id = %s AND cc.user_id = %s AND om.user_id = %s AND om.is_active = TRUE
+    ''', (conversation_id, user_id, user_id))
+
+    conversation = cursor.fetchone()
+    conn.close()
+
+    if not conversation:
+        return jsonify({'error': 'Conversation not found or access denied'}), 404
+
+    org_id = conversation['organization_id']
+
+    try:
+        # Initialize services
+        from vector_store import VectorStore
+        from embedding_service import EmbeddingService
+
+        vector_store = VectorStore(index_name="flock-knowledge-base")
+        embedding_service = EmbeddingService(model="text-embedding-3-large")
+
+        if use_rag:
+            # Simple RAG pipeline
+            from rag_pipeline import RAGPipeline
+
+            rag = RAGPipeline(vector_store, embedding_service)
+            result = rag.query(org_id=org_id, query=message, top_k=10)
+
+            # Store messages
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            # Store user message
+            cursor.execute('''
+                INSERT INTO chat_messages (conversation_id, role, content, timestamp)
+                VALUES (%s, %s, %s, NOW())
+            ''', (conversation_id, 'user', message))
+
+            # Store assistant message with sources
+            cursor.execute('''
+                INSERT INTO chat_messages (
+                    conversation_id, role, content, source_documents_json, timestamp
+                )
+                VALUES (%s, %s, %s, %s, NOW())
+                RETURNING id, timestamp
+            ''', (
+                conversation_id,
+                'assistant',
+                result['answer'],
+                json.dumps(result['sources'])
+            ))
+
+            assistant_msg = cursor.fetchone()
+
+            # Update conversation timestamp
+            cursor.execute('''
+                UPDATE chat_conversations SET last_message_at = NOW()
+                WHERE id = %s
+            ''', (conversation_id,))
+
+            conn.commit()
+            conn.close()
+
+            return jsonify({
+                'message_id': assistant_msg['id'],
+                'answer': result['answer'],
+                'sources': {
+                    'documents': result['sources'],
+                    'employees': [],
+                    'external': []
+                },
+                'timestamp': assistant_msg['timestamp'].isoformat() if assistant_msg['timestamp'] else None,
+                'usage': result.get('usage', {})
+            })
+        else:
+            # Full multi-agent system
+            from chat_agents import MasterOrchestrator
+
+            orchestrator = MasterOrchestrator(vector_store, embedding_service)
+            result = orchestrator.process_query(
+                conversation_id=conversation_id,
+                org_id=org_id,
+                user_id=user_id,
+                query=message
+            )
+
+            return jsonify({
+                'answer': result['answer'],
+                'reasoning_steps': result['reasoning_steps'],
+                'sources': result['sources'],
+                'confidence': result['confidence']
+            })
+
+    except Exception as e:
+        print(f"Error processing message: {e}")
+        return jsonify({'error': f'Error processing message: {str(e)}'}), 500
+
+
+@app.route('/api/chat/<int:conversation_id>/archive', methods=['POST'])
+@login_required
+def archive_conversation(conversation_id):
+    """Archive a conversation"""
+    user_id = session['user_id']
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Verify access and ownership
+    cursor.execute('''
+        SELECT 1 FROM chat_conversations
+        WHERE id = %s AND user_id = %s
+    ''', (conversation_id, user_id))
+
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({'error': 'Conversation not found or access denied'}), 404
+
+    # Archive conversation
+    cursor.execute('''
+        UPDATE chat_conversations
+        SET is_archived = TRUE
+        WHERE id = %s
+    ''', (conversation_id,))
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({'success': True, 'conversation_id': conversation_id})
+
+
+@app.route('/api/chat/<int:conversation_id>/unarchive', methods=['POST'])
+@login_required
+def unarchive_conversation(conversation_id):
+    """Unarchive a conversation"""
+    user_id = session['user_id']
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Verify access and ownership
+    cursor.execute('''
+        SELECT 1 FROM chat_conversations
+        WHERE id = %s AND user_id = %s
+    ''', (conversation_id, user_id))
+
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({'error': 'Conversation not found or access denied'}), 404
+
+    # Unarchive conversation
+    cursor.execute('''
+        UPDATE chat_conversations
+        SET is_archived = FALSE
+        WHERE id = %s
+    ''', (conversation_id,))
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({'success': True, 'conversation_id': conversation_id})
+
 
 # ============================================================================
 # MAIN APPLICATION RUNNER

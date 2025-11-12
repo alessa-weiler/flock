@@ -1,37 +1,206 @@
+# =============================================================================
+# Flock - Git Ignore Configuration
+# =============================================================================
+
+# -----------------------------------------------------------------------------
 # Python
+# -----------------------------------------------------------------------------
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
+*.egg
+*.egg-info/
 .Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.manifest
+*.spec
+
+# Virtual Environments
 venv/
 env/
 ENV/
+env.bak/
+venv.bak/
+.venv/
+*.virtualenv
 
-# IDE
+# PyInstaller
+*.spec
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+pytest_debug.log
+
+# -----------------------------------------------------------------------------
+# Security & Secrets (CRITICAL - DO NOT COMMIT)
+# -----------------------------------------------------------------------------
+.env
+.env.local
+.env.*.local
+*.env
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+secrets.json
+credentials.json
+service-account.json
+config.local.json
+
+# -----------------------------------------------------------------------------
+# IDE & Editors
+# -----------------------------------------------------------------------------
 .vscode/
 .idea/
 *.swp
 *.swo
+*.swn
 *~
+.project
+.pydevproject
+.settings/
+*.sublime-project
+*.sublime-workspace
+.history/
 
-# OS
+# -----------------------------------------------------------------------------
+# OS Files
+# -----------------------------------------------------------------------------
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+Desktop.ini
 
-# Environment
-.env
-*.env.local
-
+# -----------------------------------------------------------------------------
 # Database
+# -----------------------------------------------------------------------------
 *.db
 *.sqlite
 *.sqlite3
+*.db-journal
+*.db-shm
+*.db-wal
+dump.rdb
 
-# Logs
+# PostgreSQL
+*.sql
+*.dump
+*.backup
+
+# -----------------------------------------------------------------------------
+# Logs & Debugging
+# -----------------------------------------------------------------------------
 *.log
+logs/
+*.log.*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+celery.log
+celery-beat.log
 
-# Distribution
-dist/
-build/
-*.egg-info/
+# -----------------------------------------------------------------------------
+# Application Specific
+# -----------------------------------------------------------------------------
+# Uploaded documents and files
+uploads/
+documents/
+temp/
+tmp/
+*.tmp
+
+# Archives and backups
+archives/
+backups/
+*.backup
+*.bak
+*.old
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# Flask
+instance/
+.webassets-cache
+flask_session/
+
+# -----------------------------------------------------------------------------
+# Cloud & Deployment
+# -----------------------------------------------------------------------------
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+
+# Docker
+docker-compose.override.yml
+.dockerignore
+
+# -----------------------------------------------------------------------------
+# Documentation (Generated)
+# -----------------------------------------------------------------------------
+docs/_build/
+docs/_static/
+docs/_templates/
+site/
+
+# -----------------------------------------------------------------------------
+# Miscellaneous
+# -----------------------------------------------------------------------------
+.sass-cache/
+.cache
+*.pid
+*.seed
+*.pid.lock
+.npm
+node_modules/
+
+# Jupyter Notebooks
+.ipynb_checkpoints
+*.ipynb
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/

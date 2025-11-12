@@ -9,11 +9,13 @@ import os
 
 # Import our new modules
 try:
-    from .linkedin_scraper import LinkedInScraper
+    # from .linkedin_scraper import LinkedInScraper  # Module not found
     from .onboarding_agent import OnboardingAgent
 except ImportError:
-    from linkedin_scraper import LinkedInScraper
+    # from linkedin_scraper import LinkedInScraper  # Module not found
     from onboarding_agent import OnboardingAgent
+
+LinkedInScraper = None  # Placeholder for missing module
 
 
 
