@@ -980,7 +980,7 @@ def process_onboarding_with_ai(user_id: int, profile_data: Dict[str, Any], user_
         linkedin_data = None
         linkedin_url = profile_data.get('linkedin_url')
 
-        if linkedin_url:
+        if linkedin_url and LinkedInScraper is not None:
             print(f"[LinkedIn] Scraping profile: {linkedin_url}")
 
             # Initialize scraper with Fresh API
@@ -993,6 +993,8 @@ def process_onboarding_with_ai(user_id: int, profile_data: Dict[str, Any], user_
                 print(f"[LinkedIn] Scraping failed: {linkedin_data.get('error')}")
             else:
                 print(f"[LinkedIn] Successfully scraped profile for {linkedin_data.get('full_name', 'Unknown')}")
+        elif linkedin_url and LinkedInScraper is None:
+            print(f"[LinkedIn] Scraper module not available, skipping LinkedIn data collection")
 
         # 2. Process with AI agent
         print(f"[AI Agent] Analyzing onboarding responses...")
