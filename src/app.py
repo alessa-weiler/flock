@@ -12,14 +12,14 @@ from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from functools import wraps
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 # Third-party imports
 import psycopg2
 import requests
 import stripe
 from dotenv import load_dotenv
-from flask import (Flask, abort, flash, get_flashed_messages, jsonify, redirect,
+from flask import (Flask, flash, get_flashed_messages, jsonify, redirect,
                    request, session, url_for)
 from flask_cors import CORS
 from openai import OpenAI
@@ -4736,7 +4736,6 @@ from onboarding import add_onboarding_routes
 
 data_encryption = DataEncryption()
 user_auth = UserAuthSystem()
-#matching_system = MatchingSystem(API_KEY)
 verification_system = IdentityVerificationSystem(user_auth)
 subscription_manager = SubscriptionManager(user_auth, get_db_connection)
 network_manager = NetworkManager(user_auth, data_encryption)
@@ -14770,13 +14769,6 @@ def track_interaction():
         
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
-
-# DEPRECATED: ML matching system removed
-# @app.route('/api/neural-network-status')
-# @login_required
-# def neural_network_status():
-#     """Get neural network training status and performance"""
-#     return jsonify({'error': 'Neural network matching system has been deprecated'}), 404
 
 # ============================================================================
 # UTILITY FUNCTIONS
