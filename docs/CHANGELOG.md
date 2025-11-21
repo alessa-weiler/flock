@@ -2,10 +2,6 @@
 
 All notable changes to the Flock project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## [Unreleased]
 
 ### Planned
 - Multi-language support for international users
@@ -356,33 +352,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **SQLite Support**: Will be removed in favor of PostgreSQL only
 - **Session Storage in Database**: Will move to Redis-only sessions
 
+- **Document storage in the first place**: Was playing around with this but honestly other pieces of software do this better
+
 ---
 
 ## Contributors
 
 Special thanks to all contributors who made version 1.0.0 possible:
 
-- Lead Developer: [@contributor1](https://github.com/contributor1)
-- Backend Engineer: [@contributor2](https://github.com/contributor2)
-- UI/UX Designer: [@contributor3](https://github.com/contributor3)
-- Documentation: [@contributor4](https://github.com/contributor4)
-
-For a full list of contributors, see [CONTRIBUTORS.md](CONTRIBUTORS.md).
+- Lead Developer: [@alessa-weiler](https://github.com/alessa-weiler)
 
 ---
 
 ## Support
 
 For questions or issues with a specific version:
-- **Current version (1.0.0)**: [Open an issue](https://github.com/yourusername/flock/issues)
+- **Current version (1.0.0)**: [Open an issue](https://github.com/alessa-weiler/flock/issues)
 - **Older versions**: Please upgrade to the latest version
 
 ---
-
-**Note**: This changelog follows [Keep a Changelog](https://keepachangelog.com/) principles and uses [Semantic Versioning](https://semver.org/).
-
-[Unreleased]: https://github.com/yourusername/flock/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/yourusername/flock/releases/tag/v1.0.0
-[0.9.0]: https://github.com/yourusername/flock/releases/tag/v0.9.0
-[0.8.0]: https://github.com/yourusername/flock/releases/tag/v0.8.0
-[0.7.0]: https://github.com/yourusername/flock/releases/tag/v0.7.0

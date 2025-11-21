@@ -27,8 +27,8 @@ setup(
     name="flock",
     version=about.get("__version__", "1.0.0"),
     author="Flock Team",
-    author_email="your-email@example.com",  # Update this
-    description="AI-Powered Professional Networking Platform",
+    author_email="alessa@pont.world",  # Update this
+    description="AI-Powered Human Compatibility and Behaviour Prediction Platform",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/your-username/flock",  # Update this

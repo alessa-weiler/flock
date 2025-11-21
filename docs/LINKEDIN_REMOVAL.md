@@ -1,7 +1,7 @@
 # LinkedIn Scraping Removal Summary
 
 **Date**: November 12, 2024
-**Reason**: Legal and ethical concerns around web scraping
+**Reason**: Legal and ethical concerns around web scraping + although it's fun, it's not really that useful and a bit expensive + ProxyCurl got sued by LinkedIn and closed down
 
 ---
 

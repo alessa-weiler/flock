@@ -741,10 +741,9 @@ docker-compose start web worker
 
 Need help with deployment?
 
-- 📧 **Email**: [INSERT SUPPORT EMAIL]
-- 💬 **Discord**: [INSERT DISCORD LINK]
-- 📖 **Documentation**: [GitHub Wiki](https://github.com/your-username/flock/wiki)
-- 🐛 **Issues**: [GitHub Issues](https://github.com/your-username/flock/issues)
+- 📧 **Email**: admin@pont.world
+
+- 🐛 **Issues**: [GitHub Issues](https://github.com/alessa-weiler/flock/issues)
 
 ---
 

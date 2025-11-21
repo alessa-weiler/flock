@@ -24,7 +24,7 @@ Instead, please report them via one of the following methods:
 
 ### Alternative Method: Email
 
-Send an email to: **[INSERT SECURITY EMAIL]**
+Send an email to: alessa@pont.world
 
 Include the following information:
 - Type of vulnerability
@@ -208,11 +208,6 @@ We currently do not have a formal bug bounty program, but we deeply appreciate s
 - Provide swag/merchandise for significant findings
 - Consider implementing a formal bug bounty program in the future
 
-## Security Contacts
-
-- **Security Issues**: [INSERT SECURITY EMAIL]
-- **General Questions**: [INSERT GENERAL EMAIL]
-- **Project Maintainer**: [INSERT MAINTAINER CONTACT]
 
 ## Additional Resources
 
