@@ -622,7 +622,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ### Community
 - **Issues**: [GitHub Issues](https://github.com/yourusername/flock/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/yourusername/flock/discussions)
-- **Email**: support@flockapp.com
+- **Email**: alessa@pont.world
 
 ### Getting Help
 1. Check existing [Issues](https://github.com/yourusername/flock/issues)
@@ -641,4 +641,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-**Built with ❤️ by the Flock Team**
+**Built with ❤️ by the Pont Connect Team**
