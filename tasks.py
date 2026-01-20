@@ -9,12 +9,12 @@ import os
 import sys
 
 # Add src directory to Python path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src', 'documents'))
+src_path = os.path.join(os.path.dirname(__file__), 'src')
+sys.path.insert(0, src_path)
 
-# Import celery app and tasks
-from celery_config import celery_app
-from tasks import (
+# Import celery app and tasks from documents module
+from documents.celery_config import celery_app
+from documents.tasks import (
     process_document_task,
     classify_document_task,
     generate_employee_embeddings_task,
