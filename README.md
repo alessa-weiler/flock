@@ -43,7 +43,7 @@
 
 ## Key Features
 
-### 🧠 **Intelligent Matching & Profiling**
+###  **Intelligent Matching & Profiling**
 - **Psychological Profiling**: 10-step comprehensive onboarding process capturing:
   - Values, risk tolerance, and decision-making patterns
   - Conflict resolution styles and relationship priorities
@@ -53,20 +53,20 @@
 - **Voice & Text Input**: Flexible data capture with OpenAI Whisper transcription
 - **Personality Synthesis**: GPT-4 generates comprehensive psychological profiles
 
-### 📚 **RAG-Powered Knowledge Base**
+###  **RAG-Powered Knowledge Base**
 - **Document Processing**: Supports PDF, DOCX, TXT, MD, CSV with OCR for scanned documents
 - **Vector Search**: Pinecone-based semantic search with 3072-dimensional embeddings
 - **Intelligent Chunking**: Context-aware text splitting with token limits
 - **Citation-Based Answers**: GPT-4 provides answers with document source attribution
 - **Multi-Tenant**: Namespace-based organization isolation
 
-### 💳 **Subscription & Payment**
+###  **Subscription & Payment**
 - **Stripe Integration**: Secure payment processing with webhook support
 - **Tiered Access**: Free tier (20 simulations) and unlimited subscription
 - **Usage Tracking**: Comprehensive analytics for API costs and embeddings
 - **Budget Management**: Configurable spending limits per organization
 
-### 🔐 **Security & Privacy**
+###  **Security & Privacy**
 - **User Authentication**: Secure session management with encrypted passwords
 - **Data Encryption**: Field-level encryption for sensitive profile data
 - **Block Lists**: User-defined exclusions for privacy control
@@ -622,7 +622,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ### Community
 - **Issues**: [GitHub Issues](https://github.com/yourusername/flock/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/yourusername/flock/discussions)
-- **Email**: support@flockapp.com
+- **Email**: alessa@pont.world
 
 ### Getting Help
 1. Check existing [Issues](https://github.com/yourusername/flock/issues)
@@ -641,4 +641,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-**Built with ❤️ by the Flock Team**
+**Built with ❤️ by the Pont Connect Team**
