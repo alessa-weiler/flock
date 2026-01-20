@@ -15,7 +15,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 # Import Flask application from package
-from flock.app import app, init_database
+from app import app, init_database
 
 # Initialize the database when the app starts
 init_database()
